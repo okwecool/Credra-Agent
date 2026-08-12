@@ -1,6 +1,7 @@
 """Day 2 artifact-backed workflow with state-driven conditional routing."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,10 @@ from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis, FinancialStatement
 from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis
+from app.models.trace import TraceStatus
 from app.report import render_credit_report
+from app.runtime.fault import ResearchFaultInjector
+from app.runtime.tracing import TimedTrace, TraceWriter
 from app.tools.anomalies import detect_anomalies
 from app.tools.artifacts import ArtifactStore
 
@@ -38,12 +42,57 @@ def build_workflow(
     settings: Settings,
     research_client: Any | None = None,
     checkpointer: Any | None = None,
+    trace_writer: TraceWriter | None = None,
+    fault_injector: ResearchFaultInjector | None = None,
 ) -> CompiledStateGraph:
     """Build the graph with case-scoped artifact dependencies."""
 
     case_dir = case_dir.resolve()
     source_dir = case_dir / "source"
     artifacts = ArtifactStore(case_dir)
+    trace = trace_writer or TraceWriter(settings.trace_dir)
+    fault = fault_injector or ResearchFaultInjector(
+        settings.trace_dir / ".fault_state", settings.research_fail_first
+    )
+
+    def traced(node_name: str, node: Callable[[AgentState], dict[str, Any]]):
+        def wrapped(state: AgentState) -> dict[str, Any]:
+            trace.instant(
+                task_id=state["task_id"],
+                node=node_name,
+                event_type="NODE_START",
+                input_summary=f"case_id={state['case_id']}",
+            )
+            timer = TimedTrace()
+            try:
+                result = node(state)
+            except Exception as exc:
+                end_time, latency_ms = timer.finish()
+                trace.write(
+                    task_id=state["task_id"],
+                    node=node_name,
+                    event_type="NODE_END",
+                    status=TraceStatus.FAILED,
+                    start_time=timer.start_time,
+                    end_time=end_time,
+                    latency_ms=latency_ms,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                raise
+            end_time, latency_ms = timer.finish()
+            trace.write(
+                task_id=state["task_id"],
+                node=node_name,
+                event_type="NODE_END",
+                status=TraceStatus.SUCCESS,
+                start_time=timer.start_time,
+                end_time=end_time,
+                latency_ms=latency_ms,
+                output_summary="keys=" + ",".join(sorted(result)),
+            )
+            return result
+
+        return wrapped
 
     def document_node(_: AgentState) -> dict[str, Any]:
         company = normalize_company_documents(source_dir)
@@ -75,15 +124,23 @@ def build_workflow(
             artifacts.read_json(state["company_artifact"])
         )
         research = research_company_and_industry(
+            state["task_id"],
             company,
             state["anomaly_flags"],
+            settings.max_retry,
+            trace,
+            fault,
             research_client,
         )
         reference = artifacts.next_version_reference(
             "research_result", state["research_artifact"]
         )
         reference = artifacts.write_json(reference, research)
-        return {"current_node": "research", "research_artifact": reference}
+        return {
+            "current_node": "research",
+            "research_artifact": reference,
+            "external_research_incomplete": research.external_research_incomplete,
+        }
 
     def risk_node(state: AgentState) -> dict[str, Any]:
         if state["financial_artifact"] is None:
@@ -118,6 +175,13 @@ def build_workflow(
         if state["risk_artifact"] is None:
             raise ValueError("risk artifact is required before approval")
         risk = RiskAnalysis.model_validate(artifacts.read_json(state["risk_artifact"]))
+        trace.instant(
+            task_id=state["task_id"],
+            node="approval",
+            event_type="INTERRUPT",
+            input_summary=f"risk_level={risk.risk_level.value}",
+            output_summary="waiting for approve or research",
+        )
         decision = interrupt(
             {
                 "task_id": state["task_id"],
@@ -158,7 +222,13 @@ def build_workflow(
             artifacts.read_json(state["financial_artifact"])
         )
         risk = RiskAnalysis.model_validate(artifacts.read_json(state["risk_artifact"]))
-        report = render_credit_report(company, financial, risk, state["human_comment"])
+        report = render_credit_report(
+            company,
+            financial,
+            risk,
+            state["human_comment"],
+            state["external_research_incomplete"],
+        )
         output_path = case_dir / "output" / "credit_report.md"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(report, encoding="utf-8")
@@ -168,12 +238,12 @@ def build_workflow(
         }
 
     builder = StateGraph(AgentState)
-    builder.add_node("document", document_node)
-    builder.add_node("financial", financial_node)
-    builder.add_node("research", research_node)
-    builder.add_node("risk", risk_node)
-    builder.add_node("approval", approval_node)
-    builder.add_node("report", report_node)
+    builder.add_node("document", traced("document", document_node))
+    builder.add_node("financial", traced("financial", financial_node))
+    builder.add_node("research", traced("research", research_node))
+    builder.add_node("risk", traced("risk", risk_node))
+    builder.add_node("approval", traced("approval", approval_node))
+    builder.add_node("report", traced("report", report_node))
     builder.add_edge(START, "document")
     builder.add_edge("document", "financial")
     builder.add_conditional_edges(

@@ -14,6 +14,16 @@ from langgraph.types import Command
 from app.config import Settings
 from app.graph.state import initial_state
 from app.graph.workflow import build_workflow
+from app.runtime.fault import ResearchFaultInjector
+from app.runtime.tracing import TraceWriter
+
+
+def _runtime_services(settings: Settings) -> tuple[TraceWriter, ResearchFaultInjector]:
+    trace = TraceWriter(settings.trace_dir)
+    fault = ResearchFaultInjector(
+        settings.trace_dir / ".fault_state", settings.research_fail_first
+    )
+    return trace, fault
 
 
 def graph_config(thread_id: str) -> dict[str, dict[str, str]]:
@@ -70,15 +80,34 @@ def start_task(
     settings: Settings,
     research_client: Any | None = None,
 ) -> dict[str, Any]:
+    trace, fault = _runtime_services(settings)
+    trace.instant(
+        task_id=thread_id,
+        node="runtime",
+        event_type="TASK_START",
+        input_summary=f"case_id={case_id}",
+    )
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         config = graph_config(thread_id)
         if checkpointer.get_tuple(config) is not None:
             raise ValueError(f"thread already exists: {thread_id}")
         graph = build_workflow(
-            _case_dir(settings, case_id), settings, research_client, checkpointer
+            _case_dir(settings, case_id),
+            settings,
+            research_client,
+            checkpointer,
+            trace,
+            fault,
         )
         graph.invoke(initial_state(thread_id, case_id), config=config)
-        return snapshot_payload(graph.get_state(config), thread_id)
+        payload = snapshot_payload(graph.get_state(config), thread_id)
+        trace.instant(
+            task_id=thread_id,
+            node="runtime",
+            event_type="TASK_STATE",
+            output_summary=f"status={payload['state'].get('status')}",
+        )
+        return payload
 
 
 def get_task_status(
@@ -87,10 +116,21 @@ def get_task_status(
     settings: Settings,
     research_client: Any | None = None,
 ) -> dict[str, Any]:
+    trace, fault = _runtime_services(settings)
+    trace.instant(
+        task_id=thread_id,
+        node="runtime",
+        event_type="STATUS_QUERY",
+    )
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         case_id = _case_id_from_checkpoint(checkpointer, thread_id)
         graph = build_workflow(
-            _case_dir(settings, case_id), settings, research_client, checkpointer
+            _case_dir(settings, case_id),
+            settings,
+            research_client,
+            checkpointer,
+            trace,
+            fault,
         )
         return snapshot_payload(graph.get_state(graph_config(thread_id)), thread_id)
 
@@ -105,11 +145,23 @@ def resume_task(
 ) -> dict[str, Any]:
     if decision not in ("approve", "research"):
         raise ValueError("decision must be approve or research")
+    trace, fault = _runtime_services(settings)
+    trace.instant(
+        task_id=thread_id,
+        node="runtime",
+        event_type="RESUME",
+        input_summary=f"decision={decision}",
+    )
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         case_id = _case_id_from_checkpoint(checkpointer, thread_id)
         config = graph_config(thread_id)
         graph = build_workflow(
-            _case_dir(settings, case_id), settings, research_client, checkpointer
+            _case_dir(settings, case_id),
+            settings,
+            research_client,
+            checkpointer,
+            trace,
+            fault,
         )
         snapshot = graph.get_state(config)
         if not any(task.interrupts for task in snapshot.tasks):
@@ -118,4 +170,11 @@ def resume_task(
             Command(resume={"decision": decision, "comment": comment}),
             config=config,
         )
-        return snapshot_payload(graph.get_state(config), thread_id)
+        payload = snapshot_payload(graph.get_state(config), thread_id)
+        trace.instant(
+            task_id=thread_id,
+            node="runtime",
+            event_type="TASK_STATE",
+            output_summary=f"status={payload['state'].get('status')}",
+        )
+        return payload

@@ -55,6 +55,15 @@ def analyze_risk(
                 evidence=["metric:current_ratio"],
             )
         )
+    if research and research.external_research_incomplete:
+        flags.append(
+            RiskFlag(
+                type="external_research",
+                severity=RiskLevel.MEDIUM,
+                description="外部调查工具调用未全部完成，存在证据缺口。",
+                evidence=[f"failed_tool:{tool}" for tool in research.failed_tools],
+            )
+        )
 
     if any(flag.severity is RiskLevel.HIGH for flag in flags):
         level = RiskLevel.HIGH

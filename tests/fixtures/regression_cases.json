@@ -1,0 +1,41 @@
+{
+  "normal_01": {
+    "revenue": [10000, 11000, 12100],
+    "cashflow": [1050, 1180, 1320],
+    "debt_ratio": [0.40, 0.40, 0.39],
+    "expected_flags": [],
+    "expected_route": "risk"
+  },
+  "normal_02": {
+    "revenue": [9000, 9450, 9900],
+    "cashflow": [800, 840, 870],
+    "debt_ratio": [0.35, 0.36, 0.37],
+    "expected_flags": [],
+    "expected_route": "risk"
+  },
+  "risk_cashflow": {
+    "revenue": [8000, 10400, 13520],
+    "cashflow": [900, 520, 180],
+    "debt_ratio": [0.41, 0.45, 0.46],
+    "expected_flags": ["REVENUE_CASHFLOW_DIVERGENCE"],
+    "expected_route": "research"
+  },
+  "risk_debt": {
+    "revenue": [10000, 11000, 12000],
+    "cashflow": [900, 950, 1000],
+    "debt_ratio": [0.40, 0.50, 0.62],
+    "expected_flags": ["DEBT_RATIO_RISING"],
+    "expected_route": "research"
+  },
+  "tool_failure": {
+    "revenue": [8000, 10400, 13520],
+    "cashflow": [900, 520, 180],
+    "debt_ratio": [0.41, 0.50, 0.65],
+    "expected_flags": [
+      "REVENUE_CASHFLOW_DIVERGENCE",
+      "DEBT_RATIO_RISING"
+    ],
+    "expected_route": "research",
+    "fail_research_tools": true
+  }
+}

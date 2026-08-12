@@ -21,6 +21,8 @@ class ResearchQueryResult(BaseModel):
     found: bool
     facts: list[ResearchFact]
     source: str = "mock_dataset"
+    status: Literal["SUCCESS", "FAILED"] = "SUCCESS"
+    error: str | None = None
 
 
 class ResearchResult(BaseModel):
@@ -31,4 +33,6 @@ class ResearchResult(BaseModel):
     anomaly_flags: list[str]
     company_result: ResearchQueryResult
     industry_result: ResearchQueryResult
-    status: Literal["COMPLETE", "PARTIAL", "EMPTY"]
+    status: Literal["COMPLETE", "PARTIAL", "EMPTY", "INCOMPLETE"]
+    external_research_incomplete: bool = False
+    failed_tools: list[str] = Field(default_factory=list)

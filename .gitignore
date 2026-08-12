@@ -22,6 +22,7 @@ env/
 checkpoints/*.db
 checkpoints/*.db-*
 traces/*.jsonl
+traces/.fault_state/
 data/*/artifacts/
 data/*/output/
 

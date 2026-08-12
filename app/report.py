@@ -14,6 +14,7 @@ def render_credit_report(
     financial: FinancialAnalysis,
     risk: RiskAnalysis,
     human_comment: str | None = None,
+    external_research_incomplete: bool = False,
 ) -> str:
     revenue = financial.metrics["revenue_growth"]
     margin = financial.metrics["net_profit_margin"]
@@ -31,6 +32,12 @@ def render_credit_report(
     else:
         risk_items = "- 未识别出显著财务风险项。"
         evidence = "- 财务指标计算结果。"
+
+    research_disclosure = (
+        "外部调查未全部完成，相关结论存在证据缺口。"
+        if external_research_incomplete
+        else "外部调查状态正常；具体事实见风险证据。"
+    )
 
     return f"""# 企业授信尽调分析报告
 
@@ -55,7 +62,7 @@ def render_credit_report(
 
 ## 4. 外部经营调查
 
-本阶段尚未执行外部经营调查，相关信息将在 Research 阶段补充。
+{research_disclosure}
 
 ## 5. 风险项
 
