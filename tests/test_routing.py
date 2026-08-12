@@ -9,6 +9,8 @@ from app.config import Settings
 from app.graph.routing import route_after_financial
 from app.graph.runner import run_workflow
 from app.graph.state import initial_state
+from app.mcp.research_client import ResearchMCPClient
+from app.mcp.research_server import mcp as research_mcp
 from app.models.financial import FinancialStatement
 from app.tools.anomalies import (
     DEBT_RATIO_RISING,
@@ -79,9 +81,14 @@ def test_normal_case_workflow_uses_artifacts_and_skips_research(tmp_path: Path) 
     assert store.read_json(result.state["risk_artifact"])["risk_level"] == "LOW"
 
 
-def test_risky_case_workflow_routes_through_research_marker(tmp_path: Path) -> None:
+def test_risky_case_workflow_routes_through_mcp_research(tmp_path: Path) -> None:
     case_dir = copy_case(tmp_path, "case_risky")
-    result = run_workflow(case_dir, task_id="risky-001", settings=settings())
+    result = run_workflow(
+        case_dir,
+        task_id="risky-001",
+        settings=settings(),
+        research_client=ResearchMCPClient(research_mcp),
+    )
 
     assert result.execution_path == ["document", "financial", "research", "risk"]
     assert result.state["anomaly_flags"] == [
@@ -89,8 +96,17 @@ def test_risky_case_workflow_routes_through_research_marker(tmp_path: Path) -> N
         DEBT_RATIO_RISING,
     ]
     assert result.state["risk_level"] == "HIGH"
-    assert result.state["research_artifact"] is None
+    assert result.state["research_artifact"] == "artifacts/research_result_v1.json"
 
     store = ArtifactStore(case_dir)
+    research = store.read_json(result.state["research_artifact"])
+    assert research["status"] == "COMPLETE"
+    assert research["company_result"]["found"] is True
+    assert research["industry_result"]["found"] is True
     risk = store.read_json(result.state["risk_artifact"])
     assert risk["requires_human_review"] is True
+    evidence = {
+        source_id for flag in risk["risk_flags"] for source_id in flag["evidence"]
+    }
+    assert "mock-company-xunchi-001" in evidence
+    assert "mock-industry-supplychain-001" in evidence

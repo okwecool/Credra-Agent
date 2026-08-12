@@ -1,0 +1,39 @@
+{
+  "companies": {
+    "迅驰供应链科技有限公司": [
+      {
+        "category": "receivables",
+        "statement": "近两年应收账款周转周期延长，回款压力有所增加。",
+        "source_id": "mock-company-xunchi-001"
+      },
+      {
+        "category": "financing",
+        "statement": "业务扩张主要依赖短期借款和供应链融资。",
+        "source_id": "mock-company-xunchi-002"
+      }
+    ],
+    "海岳精密制造有限公司": [
+      {
+        "category": "operations",
+        "statement": "主要客户及供应商结构近三年保持稳定。",
+        "source_id": "mock-company-haiyue-001"
+      }
+    ]
+  },
+  "industries": {
+    "供应链服务": [
+      {
+        "category": "industry_cashflow",
+        "statement": "供应链服务行业扩张期通常伴随较高的营运资金占用。",
+        "source_id": "mock-industry-supplychain-001"
+      }
+    ],
+    "工业设备制造": [
+      {
+        "category": "industry_demand",
+        "statement": "工业自动化设备需求与制造业资本开支周期相关。",
+        "source_id": "mock-industry-equipment-001"
+      }
+    ]
+  }
+}

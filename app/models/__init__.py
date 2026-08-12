@@ -7,6 +7,7 @@ from app.models.financial import (
     FinancialStatement,
     FinancialYear,
 )
+from app.models.research import ResearchFact, ResearchQueryResult, ResearchResult
 from app.models.risk import HumanDecision, RiskAnalysis, RiskFlag, RiskLevel
 from app.models.trace import TraceEvent, TraceStatus
 
@@ -17,6 +18,9 @@ __all__ = [
     "FinancialStatement",
     "FinancialYear",
     "HumanDecision",
+    "ResearchFact",
+    "ResearchQueryResult",
+    "ResearchResult",
     "RiskAnalysis",
     "RiskFlag",
     "RiskLevel",

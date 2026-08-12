@@ -2,11 +2,14 @@
 
 from app.config import Settings, get_settings
 from app.models.financial import FinancialAnalysis
+from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis, RiskFlag, RiskLevel
 
 
 def analyze_risk(
-    analysis: FinancialAnalysis, settings: Settings | None = None
+    analysis: FinancialAnalysis,
+    settings: Settings | None = None,
+    research: ResearchResult | None = None,
 ) -> RiskAnalysis:
     """Create a deterministic baseline until the model adapter is connected."""
 
@@ -15,6 +18,15 @@ def analyze_risk(
     debt = analysis.metrics["debt_ratio"].values
     cashflow = analysis.metrics["operating_cash_flow_trend"].values
     current_ratio = analysis.metrics["current_ratio"].values
+    research_evidence = (
+        [
+            fact.source_id
+            for result in (research.company_result, research.industry_result)
+            for fact in result.facts
+        ]
+        if research
+        else []
+    )
 
     if debt[-1] - debt[0] >= settings.debt_ratio_threshold:
         flags.append(
@@ -22,7 +34,7 @@ def analyze_risk(
                 type="leverage",
                 severity=RiskLevel.HIGH if debt[-1] >= 0.65 else RiskLevel.MEDIUM,
                 description="资产负债率在观察期内显著上升。",
-                evidence=["metric:debt_ratio"],
+                evidence=["metric:debt_ratio", *research_evidence],
             )
         )
     if cashflow[-1] < cashflow[0]:
@@ -31,7 +43,7 @@ def analyze_risk(
                 type="cashflow",
                 severity=RiskLevel.MEDIUM,
                 description="经营现金流较观察期初下降。",
-                evidence=["metric:operating_cash_flow_trend"],
+                evidence=["metric:operating_cash_flow_trend", *research_evidence],
             )
         )
     if current_ratio[-1] < 1:

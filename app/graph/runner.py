@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from app.config import Settings
 from app.graph.state import AgentState, initial_state
@@ -19,8 +20,9 @@ def run_workflow(
     *,
     task_id: str,
     settings: Settings,
+    research_client: Any | None = None,
 ) -> WorkflowResult:
-    graph = build_workflow(case_dir, settings)
+    graph = build_workflow(case_dir, settings, research_client)
     state = initial_state(task_id, case_dir.name)
     path: list[str] = []
     final_state: AgentState | None = None

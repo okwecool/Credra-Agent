@@ -1,7 +1,6 @@
 """Day 2 artifact-backed workflow with state-driven conditional routing."""
 
 import json
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -10,16 +9,17 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.document import normalize_company_documents
 from app.agents.financial import analyze_financials
+from app.agents.research import research_company_and_industry
 from app.agents.risk import analyze_risk
 from app.config import Settings
 from app.graph.routing import route_after_financial
 from app.graph.state import AgentState
+from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis, FinancialStatement
+from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis
 from app.tools.anomalies import detect_anomalies
 from app.tools.artifacts import ArtifactStore
-
-Node = Callable[[AgentState], dict[str, Any]]
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -27,7 +27,11 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.load(file)
 
 
-def build_workflow(case_dir: Path, settings: Settings) -> CompiledStateGraph:
+def build_workflow(
+    case_dir: Path,
+    settings: Settings,
+    research_client: Any | None = None,
+) -> CompiledStateGraph:
     """Build the graph with case-scoped artifact dependencies."""
 
     case_dir = case_dir.resolve()
@@ -57,9 +61,19 @@ def build_workflow(case_dir: Path, settings: Settings) -> CompiledStateGraph:
             "anomaly_flags": detect_anomalies(analysis, settings),
         }
 
-    def research_node(_: AgentState) -> dict[str, Any]:
-        # Day 3 replaces this path marker with MCP-backed research.
-        return {"current_node": "research"}
+    def research_node(state: AgentState) -> dict[str, Any]:
+        if state["company_artifact"] is None:
+            raise ValueError("company artifact is required before research")
+        company = CompanyProfile.model_validate(
+            artifacts.read_json(state["company_artifact"])
+        )
+        research = research_company_and_industry(
+            company,
+            state["anomaly_flags"],
+            research_client,
+        )
+        reference = artifacts.write_json("artifacts/research_result_v1.json", research)
+        return {"current_node": "research", "research_artifact": reference}
 
     def risk_node(state: AgentState) -> dict[str, Any]:
         if state["financial_artifact"] is None:
@@ -67,7 +81,14 @@ def build_workflow(case_dir: Path, settings: Settings) -> CompiledStateGraph:
         financial = FinancialAnalysis.model_validate(
             artifacts.read_json(state["financial_artifact"])
         )
-        risk = analyze_risk(financial, settings)
+        research = (
+            ResearchResult.model_validate(
+                artifacts.read_json(state["research_artifact"])
+            )
+            if state["research_artifact"]
+            else None
+        )
+        risk = analyze_risk(financial, settings, research)
         reference = artifacts.write_json("artifacts/risk_analysis_v1.json", risk)
         return {
             "status": "COMPLETED",
