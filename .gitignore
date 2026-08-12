@@ -23,6 +23,10 @@ checkpoints/*.db
 checkpoints/*.db-*
 traces/*.jsonl
 
+# Chainlit generated configuration and runtime uploads
+.chainlit/
+.files/
+
 # Build and packaging
 build/
 dist/
@@ -33,4 +37,3 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
-

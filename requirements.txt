@@ -1,0 +1,24 @@
+# Credra Agent MVP runtime dependencies
+# Python: 3.11
+#
+# Direct dependencies are pinned to the versions validated by the Day 0
+# checkpoint/interrupt/resume spike. Transitive resolution remains pip-managed.
+
+# Agent runtime and durable execution
+langgraph==1.2.11
+langchain-core==1.5.4
+langchain-openai==1.4.3
+langgraph-checkpoint-sqlite==3.1.1
+
+# Model client and structured configuration
+openai==2.54.0
+pydantic==2.13.4
+pydantic-settings==2.15.0
+python-dotenv==1.2.2
+
+# Research MCP server/client
+mcp==1.29.0
+fastmcp==3.4.7
+
+# Minimal demo UI; the application can fall back to CLI if UI integration blocks
+chainlit==2.11.1
