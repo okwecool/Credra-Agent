@@ -1,4 +1,4 @@
-"""Application service for the Day 1 business vertical slice."""
+"""Non-durable application service for quick offline previews."""
 
 import json
 from pathlib import Path

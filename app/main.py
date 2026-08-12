@@ -1,4 +1,4 @@
-"""Minimal CLI for the Day 1 Financial -> Risk -> Report flow."""
+"""Non-durable offline preview for the Financial -> Risk -> Report flow."""
 
 import argparse
 from pathlib import Path

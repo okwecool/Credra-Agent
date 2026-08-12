@@ -1,4 +1,4 @@
-"""Fixed report template used by the Day 1 offline vertical slice."""
+"""Fixed credit due-diligence report template."""
 
 from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis

@@ -1,4 +1,4 @@
-"""Anomaly and state-driven routing tests for the Day 2 workflow."""
+"""Anomaly and state-driven routing tests for the durable workflow."""
 
 import json
 import shutil

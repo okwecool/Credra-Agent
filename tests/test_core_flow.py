@@ -1,4 +1,4 @@
-"""Acceptance tests for the Day 1 Financial -> Risk -> Report slice."""
+"""Acceptance tests for the Financial -> Risk -> Report slice."""
 
 from pathlib import Path
 

@@ -1,4 +1,4 @@
-"""Document normalization for the Day 2 artifact workflow."""
+"""Document normalization for the artifact-backed workflow."""
 
 import json
 from pathlib import Path

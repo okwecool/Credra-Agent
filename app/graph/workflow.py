@@ -1,4 +1,4 @@
-"""Day 2 artifact-backed workflow with state-driven conditional routing."""
+"""Artifact-backed workflow with routing, MCP research, and HITL."""
 
 import json
 from collections.abc import Callable

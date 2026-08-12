@@ -2,12 +2,14 @@
 .env
 .env.*
 !.env.example
+/-PythonExecutable
 
 # Python
 __pycache__/
 *.py[cod]
 *.pyd
 .pytest_cache/
+.test-tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage

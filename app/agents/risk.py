@@ -1,4 +1,4 @@
-"""Offline structured risk baseline for the Day 1 vertical slice."""
+"""Deterministic structured risk baseline."""
 
 from app.config import Settings, get_settings
 from app.models.financial import FinancialAnalysis
