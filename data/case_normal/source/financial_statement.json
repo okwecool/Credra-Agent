@@ -1,0 +1,35 @@
+{
+  "currency": "CNY_10K",
+  "statements": [
+    {
+      "year": 2023,
+      "revenue": 10000,
+      "net_profit": 900,
+      "current_assets": 4200,
+      "current_liabilities": 2800,
+      "total_assets": 15000,
+      "total_liabilities": 6000,
+      "operating_cash_flow": 1050
+    },
+    {
+      "year": 2024,
+      "revenue": 11000,
+      "net_profit": 1045,
+      "current_assets": 4600,
+      "current_liabilities": 2950,
+      "total_assets": 16000,
+      "total_liabilities": 6400,
+      "operating_cash_flow": 1180
+    },
+    {
+      "year": 2025,
+      "revenue": 12100,
+      "net_profit": 1210,
+      "current_assets": 5100,
+      "current_liabilities": 3100,
+      "total_assets": 17200,
+      "total_liabilities": 6700,
+      "operating_cash_flow": 1320
+    }
+  ]
+}

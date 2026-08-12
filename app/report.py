@@ -1,0 +1,76 @@
+"""Fixed report template used by the Day 1 offline vertical slice."""
+
+from app.models.company import CompanyProfile
+from app.models.financial import FinancialAnalysis
+from app.models.risk import RiskAnalysis
+
+
+def _format_values(years: list[int], values: list[float]) -> str:
+    return "；".join(f"{year}: {value:.4f}" for year, value in zip(years, values))
+
+
+def render_credit_report(
+    company: CompanyProfile,
+    financial: FinancialAnalysis,
+    risk: RiskAnalysis,
+) -> str:
+    revenue = financial.metrics["revenue_growth"]
+    margin = financial.metrics["net_profit_margin"]
+    current = financial.metrics["current_ratio"]
+    debt = financial.metrics["debt_ratio"]
+    cashflow = financial.metrics["operating_cash_flow_trend"]
+
+    if risk.risk_flags:
+        risk_items = "\n".join(
+            f"- [{flag.severity.value}] {flag.description}" for flag in risk.risk_flags
+        )
+        evidence = "\n".join(
+            f"- {flag.type}: {', '.join(flag.evidence)}" for flag in risk.risk_flags
+        )
+    else:
+        risk_items = "- 未识别出显著财务风险项。"
+        evidence = "- 财务指标计算结果。"
+
+    return f"""# 企业授信尽调分析报告
+
+## 1. 企业概况
+
+- 企业名称：{company.company_name}
+- 行业：{company.industry}
+- 注册资本：{company.registered_capital}
+- 成立日期：{company.established_date}
+- 主营范围：{company.business_scope}
+
+## 2. 财务情况
+
+- 净利润率：{_format_values(margin.years, margin.values)}
+- 流动比率：{_format_values(current.years, current.values)}
+- 资产负债率：{_format_values(debt.years, debt.values)}
+
+## 3. 财务趋势
+
+- 营收增长率：{_format_values(revenue.years, revenue.values)}
+- 经营现金流：{_format_values(cashflow.years, cashflow.values)} {cashflow.unit}
+
+## 4. 外部经营调查
+
+本阶段尚未执行外部经营调查，相关信息将在 Research 阶段补充。
+
+## 5. 风险项
+
+{risk_items}
+
+## 6. 风险证据
+
+{evidence}
+
+## 7. 人工审核意见
+
+待人工审核。
+
+## 8. 综合分析
+
+风险等级：{risk.risk_level.value}。{risk.summary}
+
+> 本报告仅用于授信尽调辅助分析，不构成最终贷款决策。
+"""

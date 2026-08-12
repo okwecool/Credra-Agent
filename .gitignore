@@ -22,6 +22,8 @@ env/
 checkpoints/*.db
 checkpoints/*.db-*
 traces/*.jsonl
+data/*/artifacts/
+data/*/output/
 
 # Chainlit generated configuration and runtime uploads
 .chainlit/
