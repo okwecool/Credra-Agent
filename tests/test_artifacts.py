@@ -33,6 +33,35 @@ def test_artifact_store_round_trips_json_and_markdown(tmp_path: Path) -> None:
     assert store.read_markdown(markdown_ref) == "# Evidence\n"
 
 
+def test_artifact_store_does_not_overwrite_different_content(tmp_path: Path) -> None:
+    store = ArtifactStore(tmp_path / "case")
+    reference = "artifacts/risk_analysis_v1.json"
+    store.write_json(reference, {"risk_level": "LOW"})
+
+    with pytest.raises(FileExistsError, match="other content"):
+        store.write_json(reference, {"risk_level": "HIGH"})
+
+    assert store.read_json(reference) == {"risk_level": "LOW"}
+
+
+def test_next_artifact_version_is_derived_from_state_reference() -> None:
+    assert (
+        ArtifactStore.next_version_reference("research_result", None)
+        == "artifacts/research_result_v1.json"
+    )
+    assert (
+        ArtifactStore.next_version_reference(
+            "research_result", "artifacts/research_result_v1.json"
+        )
+        == "artifacts/research_result_v2.json"
+    )
+
+    with pytest.raises(ValueError, match="unexpected artifact reference"):
+        ArtifactStore.next_version_reference(
+            "research_result", "artifacts/risk_analysis_v1.json"
+        )
+
+
 @pytest.mark.parametrize(
     "reference",
     (

@@ -1,6 +1,7 @@
 """Case-scoped artifact persistence with stable, traversal-safe references."""
 
 import json
+import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -32,11 +33,35 @@ class ArtifactStore:
         payload = (
             value.model_dump(mode="json") if isinstance(value, BaseModel) else value
         )
-        target.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        serialized = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+        if target.exists():
+            if target.read_text(encoding="utf-8") != serialized:
+                raise FileExistsError(
+                    f"artifact already exists with other content: {reference}"
+                )
+            return reference
+        target.write_text(serialized, encoding="utf-8")
         return reference
+
+    @staticmethod
+    def next_version_reference(
+        base_name: str,
+        current_reference: str | None,
+        suffix: str = ".json",
+    ) -> str:
+        """Derive the next stable version from the reference stored in State."""
+
+        if current_reference is None:
+            version = 1
+        else:
+            match = re.fullmatch(
+                rf"artifacts/{re.escape(base_name)}_v(\d+){re.escape(suffix)}",
+                current_reference,
+            )
+            if match is None:
+                raise ValueError(f"unexpected artifact reference: {current_reference}")
+            version = int(match.group(1)) + 1
+        return f"artifacts/{base_name}_v{version}{suffix}"
 
     def read_json(self, reference: str) -> dict[str, Any]:
         target = self._resolve_reference(reference)

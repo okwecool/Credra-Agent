@@ -6,18 +6,24 @@ from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import interrupt
 
 from app.agents.document import normalize_company_documents
 from app.agents.financial import analyze_financials
 from app.agents.research import research_company_and_industry
 from app.agents.risk import analyze_risk
 from app.config import Settings
-from app.graph.routing import route_after_financial
+from app.graph.routing import (
+    route_after_approval,
+    route_after_financial,
+    route_after_risk,
+)
 from app.graph.state import AgentState
 from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis, FinancialStatement
 from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis
+from app.report import render_credit_report
 from app.tools.anomalies import detect_anomalies
 from app.tools.artifacts import ArtifactStore
 
@@ -31,6 +37,7 @@ def build_workflow(
     case_dir: Path,
     settings: Settings,
     research_client: Any | None = None,
+    checkpointer: Any | None = None,
 ) -> CompiledStateGraph:
     """Build the graph with case-scoped artifact dependencies."""
 
@@ -72,7 +79,10 @@ def build_workflow(
             state["anomaly_flags"],
             research_client,
         )
-        reference = artifacts.write_json("artifacts/research_result_v1.json", research)
+        reference = artifacts.next_version_reference(
+            "research_result", state["research_artifact"]
+        )
+        reference = artifacts.write_json(reference, research)
         return {"current_node": "research", "research_artifact": reference}
 
     def risk_node(state: AgentState) -> dict[str, Any]:
@@ -89,12 +99,72 @@ def build_workflow(
             else None
         )
         risk = analyze_risk(financial, settings, research)
-        reference = artifacts.write_json("artifacts/risk_analysis_v1.json", risk)
+        reference = artifacts.next_version_reference(
+            "risk_analysis", state["risk_artifact"]
+        )
+        reference = artifacts.write_json(reference, risk)
         return {
-            "status": "COMPLETED",
+            "status": (
+                "WAITING_APPROVAL"
+                if risk.risk_level.value in ("MEDIUM", "HIGH")
+                else "RUNNING"
+            ),
             "current_node": "risk",
             "risk_artifact": reference,
             "risk_level": risk.risk_level.value,
+        }
+
+    def approval_node(state: AgentState) -> dict[str, Any]:
+        if state["risk_artifact"] is None:
+            raise ValueError("risk artifact is required before approval")
+        risk = RiskAnalysis.model_validate(artifacts.read_json(state["risk_artifact"]))
+        decision = interrupt(
+            {
+                "task_id": state["task_id"],
+                "risk_level": risk.risk_level.value,
+                "risk_flags": [
+                    flag.model_dump(mode="json") for flag in risk.risk_flags
+                ],
+                "allowed_decisions": ["approve", "research"],
+            }
+        )
+        if not isinstance(decision, dict):
+            raise TypeError("human decision payload must be an object")
+        action = decision.get("decision")
+        if action not in ("approve", "research"):
+            raise ValueError("human decision must be approve or research")
+        comment = decision.get("comment")
+        if comment is not None and not isinstance(comment, str):
+            raise ValueError("human comment must be a string")
+        return {
+            "status": "RUNNING",
+            "current_node": "approval",
+            "human_decision": action,
+            "human_comment": comment,
+        }
+
+    def report_node(state: AgentState) -> dict[str, Any]:
+        required = (
+            state["company_artifact"],
+            state["financial_artifact"],
+            state["risk_artifact"],
+        )
+        if any(reference is None for reference in required):
+            raise ValueError("company, financial and risk artifacts are required")
+        company = CompanyProfile.model_validate(
+            artifacts.read_json(state["company_artifact"])
+        )
+        financial = FinancialAnalysis.model_validate(
+            artifacts.read_json(state["financial_artifact"])
+        )
+        risk = RiskAnalysis.model_validate(artifacts.read_json(state["risk_artifact"]))
+        report = render_credit_report(company, financial, risk, state["human_comment"])
+        output_path = case_dir / "output" / "credit_report.md"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report, encoding="utf-8")
+        return {
+            "status": "COMPLETED",
+            "current_node": "report",
         }
 
     builder = StateGraph(AgentState)
@@ -102,6 +172,8 @@ def build_workflow(
     builder.add_node("financial", financial_node)
     builder.add_node("research", research_node)
     builder.add_node("risk", risk_node)
+    builder.add_node("approval", approval_node)
+    builder.add_node("report", report_node)
     builder.add_edge(START, "document")
     builder.add_edge("document", "financial")
     builder.add_conditional_edges(
@@ -110,8 +182,18 @@ def build_workflow(
         {"research": "research", "risk": "risk"},
     )
     builder.add_edge("research", "risk")
-    builder.add_edge("risk", END)
-    return builder.compile()
+    builder.add_conditional_edges(
+        "risk",
+        route_after_risk,
+        {"approval": "approval", "report": "report"},
+    )
+    builder.add_conditional_edges(
+        "approval",
+        route_after_approval,
+        {"research": "research", "report": "report"},
+    )
+    builder.add_edge("report", END)
+    return builder.compile(checkpointer=checkpointer)
 
 
 def load_risk_artifact(case_dir: Path, reference: str) -> RiskAnalysis:

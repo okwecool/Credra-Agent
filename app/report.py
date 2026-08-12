@@ -13,6 +13,7 @@ def render_credit_report(
     company: CompanyProfile,
     financial: FinancialAnalysis,
     risk: RiskAnalysis,
+    human_comment: str | None = None,
 ) -> str:
     revenue = financial.metrics["revenue_growth"]
     margin = financial.metrics["net_profit_margin"]
@@ -66,7 +67,7 @@ def render_credit_report(
 
 ## 7. 人工审核意见
 
-待人工审核。
+{human_comment or "无人工审核意见。"}
 
 ## 8. 综合分析
 

@@ -67,7 +67,7 @@ def test_normal_case_workflow_uses_artifacts_and_skips_research(tmp_path: Path) 
     case_dir = copy_case(tmp_path, "case_normal")
     result = run_workflow(case_dir, task_id="normal-001", settings=settings())
 
-    assert result.execution_path == ["document", "financial", "risk"]
+    assert result.execution_path == ["document", "financial", "risk", "report"]
     assert result.state["status"] == "COMPLETED"
     assert result.state["anomaly_flags"] == []
     assert result.state["risk_level"] == "LOW"

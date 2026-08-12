@@ -8,7 +8,10 @@ from pydantic import ValidationError
 from app.config import Settings
 
 
-def test_settings_have_safe_local_defaults() -> None:
+def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MODEL_BASE_URL", raising=False)
+    monkeypatch.delenv("MODEL_NAME", raising=False)
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
     settings = Settings(_env_file=None)
 
     assert settings.model_base_url == "https://api.openai.com/v1"
