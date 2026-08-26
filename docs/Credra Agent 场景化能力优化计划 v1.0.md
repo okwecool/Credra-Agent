@@ -1,0 +1,721 @@
+# Credra Agent 场景化能力优化计划
+
+**版本：** v1.0  
+**制定日期：** 2026-08-26  
+**项目名称：** Credra Agent  
+**计划性质：** 现有 Day 0–Day 6 MVP 之后的场景化扩展计划  
+**预计周期：** 12–18 个有效开发日  
+**预计工作量：** 80–120 小时
+
+---
+
+# 1. 计划背景
+
+现有 Credra Agent MVP 已完成以下长任务 Agent Runtime 能力：
+
+```text
+Dynamic Routing
++
+Deterministic Financial Tool
++
+Versioned Artifact
++
+MCP Research Boundary
++
+SQLite Checkpoint / Cross-process Resume
++
+Human-in-the-loop
++
+Retry / Fault Injection / Trace
++
+CLI / Minimal Chainlit UI
+```
+
+当前系统已经能够稳定演示 Agent 的动态执行、暂停、恢复、人工介入、工具重试和过程追踪，但业务输入仍以固定结构化样例为主，Research MCP 使用本地 Mock Dataset，Risk 与 Report 使用确定性基线，Chainlit 仅提供最小审核入口。
+
+因此，当前成果适合定义为“企业授信尽调场景下的 Durable Agent 技术 MVP”，尚不足以定义为“能够对真实企业完成可信尽调的业务应用”。
+
+本计划不替代原 MVP 开发计划，而是在其可靠 Runtime 基础上，将项目扩展为：
+
+> 能够使用真实公开企业材料，通过可核验互联网来源形成 Evidence，在本地工作台中展示执行进度、完成人工审核、跨进程恢复并输出可追溯报告的场景化 Agent。
+
+---
+
+# 2. 优化目标
+
+## 2.1 核心目标
+
+本阶段需要完成以下业务闭环：
+
+```text
+真实公开年报与企业资料
+        ↓
+结构化导入与来源标注
+        ↓
+确定性财务校验与指标计算
+        ↓
+动态风险调查路径
+        ↓
+互联网搜索与事实核查
+        ↓
+带来源 Evidence 的风险分析
+        ↓
+本地工作台展示与人工审核
+        ↓
+跨进程 Resume
+        ↓
+可追溯报告与审计包
+        ↓
+人工对照验收
+```
+
+## 2.2 用户价值目标
+
+完成后，一个不了解内部实现的使用者应能够：
+
+1. 根据模板创建一个新的企业 Case；
+2. 导入公开年报整理出的财务数据及业务材料；
+3. 在运行前发现字段、年份、单位和基本勾稽错误；
+4. 启动任务并观察当前节点、执行路径和等待原因；
+5. 查看真实搜索结果及其 URL、时间和来源等级；
+6. 区分已支持、相互印证、存在冲突和尚未核实的事实；
+7. 在人工审核点批准继续或要求补充调查；
+8. 在应用或 Python 进程退出后恢复同一任务；
+9. 下载最终报告、Evidence、Artifact 和 Trace 摘要；
+10. 使用人工对照答案评价计算、异常识别和引用质量。
+
+## 2.3 非目标
+
+本阶段不实现：
+
+- 自动批准、拒绝贷款或生成授信额度；
+- 银行级信用评分模型；
+- 无限制自主浏览或自动执行外部操作；
+- 覆盖所有格式、版式和语言的通用 PDF/OCR；
+- 多 Agent 自主协商；
+- 向量数据库、长期记忆或知识图谱；
+- PostgreSQL、Redis、Kubernetes 等生产基础设施；
+- 复杂前后端分离或移动端应用；
+- 付费工商、司法或征信数据库的深度集成。
+
+---
+
+# 3. 开发原则
+
+## 3.1 真实来源优先
+
+所有进入风险分析和最终报告的外部事实都必须保留可核验来源。搜索摘要不能代替原始来源，无法核验的信息不得表述为确定事实。
+
+## 3.2 确定性核心不变
+
+以下能力继续保持确定性：
+
+| 能力 | 实现方式 |
+|---|---|
+| 财务数值读取与单位转换 | Python |
+| 财务指标计算 | Python |
+| 输入 Schema 校验 | Pydantic |
+| 已知异常规则 | 配置化规则 |
+| Graph Routing | 纯函数 |
+| Checkpoint / Resume | LangGraph + SQLite |
+| Artifact 版本管理 | 文件存储与显式引用 |
+
+LLM 只用于非结构化材料理解、查询生成、Evidence 摘要、风险解释和报告语言组织，不参与确定性财务计算或自动授信决策。
+
+## 3.3 在线与离线双模式
+
+系统必须同时支持：
+
+```text
+mock      离线测试与固定回归
+snapshot  真实来源的稳定回放与演示
+web       实时互联网搜索
+```
+
+Web 失败时不得静默回退到 Mock，以避免在真实报告中混入模拟事实。失败应显式形成 `INCOMPLETE` Research Artifact，并在 State、Risk 和 Report 中披露。
+
+## 3.4 来源分级与最小信任
+
+推荐来源等级：
+
+| 等级 | 来源类型 | 使用规则 |
+|---|---|---|
+| A | 监管部门、交易所、法院、政府公开信息 | 可直接支持重要事实 |
+| B | 企业公告、审计报告、评级机构 | 可支持企业与财务事实 |
+| C | 主流财经媒体 | 建议与 A/B 来源相互印证 |
+| D | 一般媒体、行业网站 | 仅作为调查线索或补充证据 |
+| E | 论坛、自媒体、来源不明网页 | 不单独支持风险结论 |
+
+## 3.5 可复现与可审计
+
+实时搜索必须记录 Query、URL、检索时间、来源等级、必要摘要和内容哈希。真实演示应能够切换到 Snapshot 模式复现关键结果。
+
+## 3.6 小步提交与人工审核
+
+每个 Milestone 形成独立 Git 提交。提交前必须展示拟提交文件、变更摘要、验证结果和建议提交信息，等待人工审核和明确批准。
+
+如实际依赖、API 行为、运行环境或实现边界与本计划存在出入，必须记录到 `docs/开发日志.md`。
+
+---
+
+# 4. 目标架构
+
+```mermaid
+flowchart TD
+    User["User / Reviewer"] --> Workbench["Local Chainlit Workbench"]
+    User --> CLI["Case / Task CLI"]
+    Workbench --> Runtime["Durable Task Runtime"]
+    CLI --> Runtime
+    Runtime --> Graph["LangGraph Workflow"]
+    Runtime --> Checkpoint[("SQLite Checkpoint")]
+
+    Graph --> Ingest["Document Ingestion"]
+    Ingest --> Validate["Source & Financial Validation"]
+    Validate --> Financial["Deterministic Financial Tool"]
+    Financial --> Route{"Anomaly flags?"}
+    Route -->|No| Risk["Risk Analysis"]
+    Route -->|Yes| Research["Research Agent"]
+
+    Research --> MCP["Research MCP Server"]
+    MCP --> Provider{"Search Provider"}
+    Provider --> Mock["Mock Provider"]
+    Provider --> Snapshot["Verified Snapshot Provider"]
+    Provider --> Web["Web Search Provider"]
+    Web --> Filter["Source Ranking & Filtering"]
+    Filter --> Verify["Fact Verification"]
+    Snapshot --> Verify
+    Mock --> Verify
+    Verify --> Risk
+
+    Risk --> Review{"Human Review"}
+    Review -->|Approve| Report["Traceable Report"]
+    Review -->|Research| Research
+
+    Graph --> Artifacts[("Versioned Artifacts")]
+    Runtime --> Trace["JSONL Trace & Metrics"]
+    Report --> Bundle["Report / Evidence / Audit Bundle"]
+```
+
+---
+
+# 5. 阶段总览
+
+| 阶段 | 预计时间 | 核心产出 | 阶段门禁 |
+|---|---:|---|---|
+| M0：真实案例与验收基线 | 1–2 天 | 公开企业 Case、来源清单、人工对照表 | Case 合法且可人工核验 |
+| M1：真实材料导入与校验 | 2–3 天 | Case CLI、来源清单、财务预检 | 新 Case 可在运行前通过校验 |
+| M2：互联网搜索与事实核查 | 3–4 天 | Search Provider、Tavily、Snapshot、Fact Verification | Evidence 含真实 URL 且失败不伪装成功 |
+| M3：场景化本地工作台 | 2–3 天 | Chainlit 状态时间线、Evidence、Artifact、审核和报告 | 非开发人员可完成完整任务 |
+| M4：受约束 LLM 表达层 | 2–3 天 | Evidence 摘要、风险解释、报告表达、降级机制 | 无来源事实不得进入确定结论 |
+| M5：Eval、导出与可靠性收尾 | 2–3 天 | 业务 Eval、审计包、成本指标、安全检查 | 真实 Case 与固定回归全部通过 |
+
+M0–M3 构成“可演示、可试用的场景化版本”；M4–M5 构成“质量增强版本”。
+
+---
+
+# 6. M0：真实案例与验收基线
+
+## 6.1 目标
+
+选择一家资料充分、来源公开、风险边界清晰的企业，建立第一个不依赖虚构财务数据的验收 Case。
+
+## 6.2 Case 选择原则
+
+- 优先选择公开上市公司；
+- 至少具有连续两到三年年报；
+- 能找到交易所、监管部门或企业公告等权威来源；
+- 财务数据结构清晰且单位明确；
+- 存在至少一个可核验的经营、财务或监管事项；
+- 不使用未获授权的个人、征信或内部敏感数据。
+
+## 6.3 任务
+
+- 建立 `data/<case_id>/source/` 真实 Case；
+- 整理企业基本信息、主营业务和连续年度财务数据；
+- 记录每个关键字段的原始文件、页码、表格、单位和口径；
+- 建立外部来源清单，包括 URL、来源类型、发布日期和预期事实；
+- 使用 Excel 或独立计算脚本生成财务指标对照答案；
+- 标注预期异常、预期 Research Query 和预期人工审核点；
+- 明确不应出现的错误事实和不应给出的授信结论。
+
+## 6.4 交付物
+
+```text
+data/<case_id>/source/
+├── company_profile.json
+├── financial_statement.json
+├── business_info.md
+└── source_manifest.json
+
+tests/fixtures/expected/<case_id>/
+├── expected_financial.json
+├── expected_anomalies.json
+├── expected_evidence.json
+└── acceptance_checklist.md
+```
+
+## 6.5 完成定义
+
+- 所有输入均可回溯到公开来源；
+- 人工对照财务指标已完成；
+- 预期异常和关键事实已由人工标注；
+- Case 不包含未授权敏感数据；
+- Case 可被现有离线流程读取，或明确列出 M1 所需适配项。
+
+---
+
+# 7. M1：真实材料导入与校验
+
+## 7.1 目标
+
+让用户能够按模板创建和校验新 Case，避免必须理解内部目录和 Schema 才能使用系统。
+
+## 7.2 任务
+
+- 增加 Case CLI：
+
+  ```powershell
+  python -m app.case_cli init --case-id <case_id>
+  python -m app.case_cli validate --case-id <case_id>
+  python -m app.case_cli run --case-id <case_id> --thread-id <thread_id>
+  ```
+
+- 增加 `source_manifest.json` Schema；
+- 为财务字段保存原始来源、页码、表格、单位和口径；
+- 校验必需文件、JSON Schema、企业名称一致性和年份顺序；
+- 校验元、万元、亿元等单位并统一到内部单位；
+- 增加基础财务勾稽和合理性检查；
+- 将输入错误区分为错误、警告和人工确认项；
+- 保持现有 Case A/B 兼容；
+- 第一版只支持人工结构化年报数据，不把通用 PDF/OCR 设为门禁。
+
+## 7.3 验证
+
+- 新 Case 模板可直接生成；
+- 合法真实 Case 校验通过；
+- 缺少文件、非法年份、未知单位和企业名称不一致会失败；
+- 可疑但不一定错误的数据进入人工确认提示；
+- 财务计算结果与 M0 人工答案一致；
+- 既有回归 Case 不受影响。
+
+## 7.4 完成定义
+
+- 新用户可根据模板准备一个可运行 Case；
+- 运行前能够发现主要结构和单位问题；
+- 关键数字能够回溯到年报页码；
+- 真实 Case 的确定性财务结果通过人工对照。
+
+---
+
+# 8. M2：互联网搜索与事实核查
+
+## 8.1 目标
+
+将现有本地 Mock Research 扩展为可切换的 Mock、Snapshot 和实时 Web Provider，并形成带真实来源、可核验状态的 Evidence。
+
+## 8.2 Provider 设计
+
+```text
+SearchProvider
+├── MockSearchProvider
+├── SnapshotSearchProvider
+└── TavilySearchProvider
+```
+
+现有 MCP Tool 名称 `search_company` 和 `search_industry` 保持不变，Provider 选择由配置决定。
+
+拟新增配置：
+
+```dotenv
+RESEARCH_PROVIDER=mock
+TAVILY_API_KEY=
+SEARCH_DEPTH=basic
+SEARCH_MAX_RESULTS=5
+SEARCH_TIMEOUT_SECONDS=15
+SEARCH_TIME_RANGE=year
+```
+
+真实配置由用户维护在 `.env` 中；开发仅更新 `.env.example`，不得输出或提交真实 API Key。
+
+## 8.3 任务
+
+- 定义 `SearchProvider` 接口和统一错误类型；
+- 将现有 Mock Dataset 封装为 Mock Provider；
+- 实现真实来源的 Snapshot Provider；
+- 实现 Tavily Web Provider；
+- 增加公司与行业的确定性 Query 模板；
+- 按来源域名和来源类型执行优先级排序；
+- 处理 401、429、超时、网络错误、额度耗尽和空结果；
+- 复用现有 Tool Retry、Trace 和 incomplete 披露；
+- 保存搜索 Query、标题、URL、来源域名、发布日期、检索时间、摘要、相关度和内容哈希；
+- 禁止 Web 失败时静默回退到 Mock；
+- 为真实 API 增加显式开启的 smoke test，默认测试不得消耗额度。
+
+## 8.4 查询策略
+
+基础 Query 至少覆盖：
+
+```text
+"<企业全称>" 经营异常
+"<企业全称>" 监管处罚
+"<企业全称>" 诉讼 仲裁
+"<企业全称>" 债务 逾期
+"<企业全称>" 财务造假
+"<企业全称>" 业绩预警
+"<企业全称>" 实际控制人 风险
+"<所属行业>" 景气度 风险
+```
+
+第一轮优先 A/B 级来源，第二轮再补充主流财经媒体和行业来源。
+
+## 8.5 Fact Verification
+
+每条事实必须形成以下状态之一：
+
+| 状态 | 含义 |
+|---|---|
+| `SUPPORTED` | 至少一个 A/B 级来源直接支持 |
+| `CORROBORATED` | 两个相互独立来源相互印证 |
+| `CONFLICTING` | 不同来源存在重要冲突 |
+| `UNVERIFIED` | 只有低等级、单一或间接来源 |
+| `NOT_FOUND` | 未找到能够支持该事实的来源 |
+
+Risk 和 Report 只能把 `SUPPORTED` 与 `CORROBORATED` 表述为确定事实；其他状态必须显式说明不确定性。
+
+## 8.6 Evidence Schema
+
+建议至少包含：
+
+```json
+{
+  "fact": "事实摘要",
+  "verification_status": "SUPPORTED",
+  "title": "来源标题",
+  "source_url": "https://example.com/page",
+  "source_domain": "example.com",
+  "source_tier": "A",
+  "published_at": "2026-06-30",
+  "retrieved_at": "2026-08-26T12:00:00Z",
+  "query": "企业名称 监管处罚",
+  "relevance_score": 0.87,
+  "content_hash": "sha256:..."
+}
+```
+
+## 8.7 完成定义
+
+- Web 模式能够返回真实 URL；
+- Snapshot 模式能够稳定复现真实来源；
+- 搜索失败不会混入 Mock 事实；
+- 重要外部事实具备核验状态和来源等级；
+- Risk Artifact 与最终报告可定位到 Evidence URL；
+- API Key 不进入 Trace、Artifact、日志或 Git；
+- Mock 模式的固定回归测试继续通过。
+
+---
+
+# 9. M3：场景化本地工作台
+
+## 9.1 目标
+
+在现有 CLI 和 Chainlit 基础上形成一个本地场景化 Workbench，不新增复杂前后端工程。
+
+## 9.2 任务
+
+- 保留 `app.task_cli` 作为可靠降级入口；
+- 扩展 Chainlit Case 创建与选择流程；
+- 展示 Thread ID、任务状态、当前节点和下一节点；
+- 展示节点执行时间线；
+- 展示输入校验结果和人工确认项；
+- 展示财务指标与异常标记；
+- 展示 Research Query、Evidence、来源等级和可点击 URL；
+- 展示 Artifact 版本和版本变化；
+- 展示 Retry、Interrupt 和 Resume 摘要；
+- 提供批准继续和补充调查按钮；
+- 支持输入已有 `thread_id` 恢复任务；
+- 提供 Markdown/HTML 报告预览和下载；
+- 对缺少配置、网络失败和 API 额度不足给出可理解提示。
+
+## 9.3 推荐布局
+
+```text
+┌──────────────────────────────────────────────┐
+│ Case / Thread / Status / Current Node        │
+├───────────────────┬──────────────────────────┤
+│ Execution Timeline│ Financial / Risk Summary │
+├───────────────────┼──────────────────────────┤
+│ Evidence & Sources│ Artifact Versions        │
+├───────────────────┼──────────────────────────┤
+│ Retry / Trace     │ Human Review             │
+├───────────────────┴──────────────────────────┤
+│ Report Preview / Download                    │
+└──────────────────────────────────────────────┘
+```
+
+## 9.4 完成定义
+
+- 非开发人员无需手写 Runtime 命令即可启动真实 Case；
+- 用户能够理解任务当前执行到哪里、为何暂停；
+- Evidence URL 可直接打开核验；
+- UI 关闭和重启后仍可凭 `thread_id` 恢复；
+- UI 与 CLI 使用同一个 Durable Runtime；
+- 完整演示不依赖隐藏的手工文件修改。
+
+---
+
+# 10. M4：受约束 LLM 表达层
+
+## 10.1 目标
+
+在保持确定性计算和规则路由的前提下，让模型改善非结构化材料理解、查询生成、风险解释和报告表达。
+
+## 10.2 任务
+
+- 增加运行模式：
+
+  ```dotenv
+  ANALYSIS_MODE=deterministic
+  # 或
+  ANALYSIS_MODE=llm
+  ```
+
+- 使用已配置的 OpenAI-compatible 模型连接；
+- 为 Query Planning、Evidence Summary、Risk Explanation 和 Report Draft 分别定义 Prompt；
+- 使用 Pydantic 结构化输出；
+- 明确输入 Evidence ID，要求所有重要陈述绑定 Evidence；
+- 增加 Unsupported Claim 检查；
+- 增加超时、重试、解析失败和降级处理；
+- 模型失败时回退到确定性模板，并在报告中披露降级模式；
+- 自动化测试使用 Mock Model，不调用真实 API；
+- 增加显式开启的模型连通性和真实 Case smoke test。
+
+## 10.3 约束
+
+LLM 不得：
+
+- 自行计算财务指标；
+- 修改 Artifact 历史版本；
+- 决定贷款批准、拒绝或额度；
+- 将 `UNVERIFIED` 事实改写为确定结论；
+- 生成不存在的 URL、Evidence ID 或来源；
+- 在无人工输入时跳过 HITL。
+
+## 10.4 完成定义
+
+- LLM 输出通过 Schema 校验；
+- 报告中的重要外部陈述具有 Evidence 引用；
+- 无法引用的陈述被拒绝或降级；
+- 模型不可用时系统仍可生成确定性报告；
+- API Key、完整 Prompt 和敏感源材料不写入普通 Trace；
+- deterministic 模式保持全部回归能力。
+
+---
+
+# 11. M5：Eval、导出与可靠性收尾
+
+## 11.1 目标
+
+同时评价 Runtime 正确性和业务输出质量，使真实场景演示可重复、可比较、可审计。
+
+## 11.2 Agent Eval
+
+建立 5–10 个公开或脱敏 Case，标注：
+
+- 预期财务指标；
+- 预期异常；
+- 应调查事项；
+- 关键事实及来源；
+- 不应出现的错误事实；
+- 预期人工审核点；
+- 允许的结论边界。
+
+建议指标：
+
+| 指标 | 说明 |
+|---|---|
+| Financial Accuracy | 财务计算与人工答案一致率 |
+| Anomaly Recall | 已知异常召回率 |
+| Citation Coverage | 重要事实引用覆盖率 |
+| Citation Validity | URL 是否真正支持相关陈述 |
+| Unsupported Claim Rate | 无证据结论比例 |
+| Source Quality | A/B/C 等级来源占比 |
+| Resume Success | 跨进程恢复成功率 |
+| Tool Recovery Rate | 临时故障恢复率 |
+| Human Review Integrity | 人工意见保存和展示正确性 |
+
+## 11.3 审计包导出
+
+增加：
+
+```text
+<case_id>-<thread_id>-result.zip
+├── report.md
+├── report.html
+├── evidence.json
+├── source_manifest.json
+├── artifact_manifest.json
+├── artifacts/
+├── trace_summary.json
+├── runtime_metrics.json
+└── manifest.json
+```
+
+PDF 报告可作为增强项，不阻塞第一版审计包。
+
+## 11.4 运行指标
+
+记录并展示：
+
+- 总耗时和各节点耗时；
+- Search 请求数与 API credits；
+- LLM token 和调用次数；
+- Retry 次数；
+- Artifact 数量和版本；
+- 人工等待时间；
+- 是否使用 Snapshot、Web 或降级模式。
+
+## 11.5 安全与边界检查
+
+- 上传文件类型与大小限制；
+- 路径穿越防护；
+- URL 协议和域名校验；
+- API Key 脱敏；
+- Trace 最小化；
+- 搜索网页中的 Prompt Injection 不得直接成为系统指令；
+- 报告显示检索日期、来源和信息局限；
+- 演示数据清理命令只操作明确的 Case/Thread；
+- 仓库不提交 Checkpoint、Trace、运行 Artifact 或敏感材料。
+
+## 11.6 完成定义
+
+- 真实公开 Case 通过人工对照验收；
+- 既有固定回归 Case 全部通过；
+- 关键事实引用覆盖和有效性达到预设门槛；
+- Unsupported Claim 不被静默接受；
+- Web、Snapshot、Mock 三种模式边界清晰；
+- 审计包能够独立说明一次任务使用了什么输入、来源和执行路径；
+- README、演示指南、配置示例和开发日志完整更新。
+
+---
+
+# 12. 测试策略
+
+## 12.1 测试分层
+
+| 层级 | 测试对象 | 是否访问外部服务 |
+|---|---|---|
+| 单元测试 | Schema、单位转换、来源分级、Fact 状态 | 否 |
+| 组件测试 | Provider、Snapshot、Evidence、Case Validator | 否，使用 Stub/Mock HTTP |
+| 集成测试 | Graph、Research、HITL、Artifact、报告 | 默认否 |
+| 跨进程测试 | Checkpoint / Resume | 否 |
+| UI 测试 | Workbench 展示和审核动作 | 否 |
+| Live Smoke | Tavily、模型连接、真实 Case | 是，显式开启 |
+| 业务 Eval | 真实/脱敏 Case 与人工答案 | Snapshot 为主 |
+
+## 12.2 Live Test 原则
+
+- 默认 `pytest` 不访问互联网、不消耗额度；
+- Live Test 必须使用明确标记和单独命令；
+- Live Test 缺少 Key 时应 Skip，不应失败；
+- Live Test 不输出 Key 或完整敏感响应；
+- 网络结果波动不能破坏固定回归；
+- 演示验收优先使用一次 Live Search 加一份保存的 Snapshot。
+
+## 12.3 每阶段统一门禁
+
+```text
+Ruff lint / format
+        ↓
+Unit / Component Tests
+        ↓
+Integration Tests
+        ↓
+Cross-process Resume Regression
+        ↓
+Stage-specific Acceptance
+        ↓
+Secret / Runtime Data Audit
+        ↓
+Human Review Before Commit
+```
+
+---
+
+# 13. 风险与应对
+
+| 风险 | 影响 | 应对 |
+|---|---|---|
+| 搜索结果随时间变化 | 演示不可重复 | 保存 Snapshot、Query、时间和哈希 |
+| 搜索 API 限流或额度不足 | Research 中断 | Retry、明确错误、incomplete 披露 |
+| 中文权威来源覆盖不足 | 找不到关键事实 | 域名优先、人工来源补充、Snapshot |
+| 搜索结果包含虚假信息 | 风险结论失真 | 来源分级、交叉核验、人工审核 |
+| 网页 Prompt Injection | 模型行为被污染 | 网页内容仅作为不可信数据，结构化提取 |
+| 年报单位或口径错误 | 财务指标错误 | Source Manifest、单位校验、人工确认 |
+| PDF 解析复杂度膨胀 | 阶段延期 | 第一版人工结构化，PDF/OCR 后置 |
+| LLM 生成无来源事实 | 报告不可信 | Evidence ID 约束与 Unsupported Claim 检查 |
+| UI 与 Runtime 状态分叉 | 恢复不一致 | UI 只调用统一 Durable Runtime |
+| 真实企业数据合规风险 | 数据泄露 | 优先公开资料，脱敏并限制 Trace |
+
+---
+
+# 14. 建议演示脚本
+
+最终场景化演示控制在 10–15 分钟：
+
+1. 选择一个真实公开企业 Case；
+2. 展示年报来源页码和 Case 校验结果；
+3. 启动任务，观察 Document 与 Financial 节点；
+4. 展示异常如何触发 Research；
+5. 展示 MCP 实时搜索和真实 URL；
+6. 展示 Fact Verification 和来源等级；
+7. 任务进入 `WAITING_APPROVAL`；
+8. 关闭 UI 或 Python 进程；
+9. 重启后使用相同 `thread_id` 恢复；
+10. 要求一次补充调查，展示 v1/v2 Artifact；
+11. 人工批准并生成最终报告；
+12. 下载报告和审计包；
+13. 使用人工对照表展示计算与引用质量。
+
+---
+
+# 15. 总体验收标准
+
+只有同时满足以下条件，场景化优化阶段才视为完成：
+
+- 至少一个真实公开企业 Case 完整跑通；
+- 财务指标与人工对照结果一致；
+- 关键输入能够回溯到年报页码或公开来源；
+- 实时搜索返回真实 URL，Snapshot 能够稳定复现；
+- 重要外部事实具备来源等级和核验状态；
+- 搜索或模型失败不会伪装成功或混入 Mock 事实；
+- 用户能在本地工作台观察节点、Evidence、Artifact 和审核状态；
+- UI/进程退出后能够使用同一 `thread_id` 恢复；
+- 报告不包含自动授信决定，且关键陈述具备 Evidence 引用；
+- 可导出报告、Evidence、Artifact 和 Trace 摘要；
+- 业务 Eval 与既有 Runtime 回归同时通过；
+- `.env`、API Key、Checkpoint、Trace 和敏感运行数据未进入 Git；
+- README、演示指南、配置示例和开发日志与实际实现一致。
+
+---
+
+# 16. 建议启动顺序
+
+下一开发节点从 M0 开始，不直接先写搜索或 UI：
+
+```text
+选定真实公开企业
+        ↓
+建立来源与人工对照答案
+        ↓
+实现 Case 导入和预检
+        ↓
+接入真实搜索与 Snapshot
+        ↓
+扩展本地工作台
+        ↓
+接入受约束 LLM 表达层
+        ↓
+建立业务 Eval 与审计包
+```
+
+这样能够保证每项技术扩展都服务于一个可核验的真实业务 Case，而不是继续增加无法证明业务价值的技术组件。
