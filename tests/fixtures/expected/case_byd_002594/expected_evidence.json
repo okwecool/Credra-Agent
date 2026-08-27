@@ -1,0 +1,20 @@
+{
+  "m0_current_mvp_expectation": {
+    "research_invoked": false,
+    "research_artifact": null,
+    "reason": "当前确定性异常规则对本 Case 不产生标记，因此现有离线流程按 financial -> risk 路由，不调用本地 Mock Research MCP。"
+  },
+  "authoritative_sources": [
+    "cninfo-byd-2025-annual-report",
+    "cninfo-byd-2024-annual-report",
+    "cninfo-byd-2023-audited-financial-statements",
+    "byd-investor-basic-information",
+    "shenzhen-enterprise-credit-byd"
+  ],
+  "m2_candidate_queries": [
+    "比亚迪 2025 年年度报告 经营活动产生的现金流量净额 下降 原因",
+    "比亚迪 2025 年年度报告 归属于上市公司股东的净利润 下降 原因",
+    "比亚迪 2025 年 重大诉讼 行政处罚 公开披露"
+  ],
+  "evidence_boundary": "M0 仅记录可核验来源与预期查询，不把搜索摘要、网页事实或 Mock Dataset 结果写入真实 Case 的 Evidence。"
+}

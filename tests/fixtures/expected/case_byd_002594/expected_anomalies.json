@@ -1,0 +1,40 @@
+{
+  "settings": {
+    "revenue_threshold": 0.2,
+    "cashflow_threshold": 0.0,
+    "debt_ratio_threshold": 0.15
+  },
+  "expected_flags": [],
+  "expected_route_after_financial": "risk",
+  "current_rule_observations": [
+    {
+      "rule": "REVENUE_CASHFLOW_DIVERGENCE",
+      "result": "not_triggered",
+      "reason": "2025年营收同比增长0.034568，未超过当前0.20阈值；尽管2023至2025年经营现金流累计变化为-0.65158。"
+    },
+    {
+      "rule": "DEBT_RATIO_RISING",
+      "result": "not_triggered",
+      "reason": "资产负债率从2023年的0.778585下降至2025年的0.707445，未满足上升阈值。"
+    }
+  ],
+  "business_review_signals": [
+    {
+      "signal": "NET_PROFIT_DECLINE",
+      "year": 2025,
+      "year_on_year_change": -0.189677,
+      "status": "仅作为人工对照观察项，尚非当前异常检测规则"
+    },
+    {
+      "signal": "OPERATING_CASH_FLOW_DECLINE",
+      "year": 2025,
+      "year_on_year_change": -0.556884,
+      "status": "仅作为人工对照观察项，尚非当前异常检测规则"
+    }
+  ],
+  "prohibited_conclusions": [
+    "不得因当前异常标记为空而推导为低风险或推荐授信。",
+    "不得把人工对照观察项伪装成已触发的系统异常。",
+    "不得在未完成真实搜索和事实核查前生成外部调查结论。"
+  ]
+}
