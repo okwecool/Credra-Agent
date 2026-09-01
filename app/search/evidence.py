@@ -1,15 +1,19 @@
-"""Convert provider results into ordered, auditable research evidence."""
+"""Convert provider results into staged, auditable research evidence."""
 
 import hashlib
 import re
+from collections import defaultdict
 from urllib.parse import urlparse
 
 from app.models.research import ResearchFact
 from app.models.search import (
+    EvidenceStage,
+    FilterReason,
     ResearchEvidence,
     SearchItem,
     SearchResponse,
     SourceTier,
+    SubjectMatch,
     VerificationStatus,
 )
 
@@ -30,6 +34,11 @@ _TIER_B_DOMAINS = (
     "zqrb.cn",
 )
 _TIER_RANK: dict[SourceTier, int] = {"A": 0, "B": 1, "C": 2}
+_STAGE_RANK: dict[EvidenceStage, int] = {
+    "VERIFIED": 0,
+    "CANDIDATE": 1,
+    "REJECTED": 2,
+}
 _CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "operations": ("经营异常", "异常经营", "经营风险"),
     "regulatory": ("监管", "处罚", "罚款", "处分"),
@@ -72,32 +81,70 @@ def _source_id(item: SearchItem, digest: str) -> str:
     return item.source_id or f"web-{digest.removeprefix('sha256:')[:20]}"
 
 
-def _matches_request(item: SearchItem, response: SearchResponse) -> bool:
+def _subject_match(item: SearchItem, response: SearchResponse) -> SubjectMatch:
     searchable = f"{item.title} {item.content}".casefold()
-    subject_matches = response.request.subject.casefold() in searchable
+    if response.request.subject.casefold() in searchable:
+        return "EXACT"
+    if any(
+        alias.casefold() in searchable for alias in response.request.subject_aliases
+    ):
+        return "ALIAS"
+    return "NONE"
+
+
+def _category_matches(item: SearchItem, response: SearchResponse) -> bool:
+    searchable = f"{item.title} {item.content}".casefold()
     keywords = _CATEGORY_KEYWORDS.get(response.request.category, ())
-    category_matches = not keywords or any(
-        keyword.casefold() in searchable for keyword in keywords
-    )
-    return subject_matches and category_matches
+    return not keywords or any(keyword.casefold() in searchable for keyword in keywords)
+
+
+def _filter_reasons(
+    *,
+    subject_match: SubjectMatch,
+    category_match: bool,
+    relevance_score: float,
+    min_relevance_score: float,
+) -> list[FilterReason]:
+    reasons: list[FilterReason] = []
+    if subject_match == "NONE":
+        reasons.append("SUBJECT_MISMATCH")
+    if not category_match:
+        reasons.append("CATEGORY_MISMATCH")
+    if relevance_score < min_relevance_score:
+        reasons.append("LOW_RELEVANCE")
+    return reasons
 
 
 def evidence_from_response(
     response: SearchResponse,
     *,
     min_relevance_score: float = 0.5,
+    trusted_fixture: bool = False,
 ) -> list[ResearchEvidence]:
+    """Classify raw results; Web candidates remain unverified until deep verification."""
+
     if not 0.0 <= min_relevance_score <= 1.0:
         raise ValueError("min_relevance_score must be between 0 and 1")
     evidence: list[ResearchEvidence] = []
     for item in response.items:
         tier = classify_source_tier(item.url)
-        query_match = _matches_request(item, response)
-        verification_status: VerificationStatus = (
-            "SUPPORTED"
-            if tier in ("A", "B") and query_match and item.score >= min_relevance_score
-            else "UNVERIFIED"
-        )
+        if trusted_fixture:
+            subject_match: SubjectMatch = "EXACT"
+            category_match = True
+            filter_reasons: list[FilterReason] = []
+            evidence_stage: EvidenceStage = "VERIFIED"
+            verification_status: VerificationStatus = "SUPPORTED"
+        else:
+            subject_match = _subject_match(item, response)
+            category_match = _category_matches(item, response)
+            filter_reasons = _filter_reasons(
+                subject_match=subject_match,
+                category_match=category_match,
+                relevance_score=item.score,
+                min_relevance_score=min_relevance_score,
+            )
+            evidence_stage = "REJECTED" if filter_reasons else "CANDIDATE"
+            verification_status = "UNVERIFIED"
         digest = content_hash(item.content)
         evidence.append(
             ResearchEvidence(
@@ -114,81 +161,89 @@ def evidence_from_response(
                 content_hash=digest,
                 source_id=_source_id(item, digest),
                 category=item.category or response.request.category,
-                query_match=query_match,
+                query_match=subject_match != "NONE" and category_match,
+                subject_match=subject_match,
+                category_match=category_match,
+                filter_reasons=filter_reasons,
+                evidence_stage=evidence_stage,
             )
         )
+    return _sort_evidence(evidence)
+
+
+def _sort_evidence(evidence: list[ResearchEvidence]) -> list[ResearchEvidence]:
     return sorted(
         evidence,
-        key=lambda item: (_TIER_RANK[item.source_tier], -item.relevance_score),
+        key=lambda item: (
+            _STAGE_RANK[item.evidence_stage],
+            _TIER_RANK[item.source_tier],
+            -item.relevance_score,
+            item.source_url or item.source_id,
+        ),
     )
 
 
 def deduplicate_evidence(
     evidence: list[ResearchEvidence],
 ) -> list[ResearchEvidence]:
-    unique: dict[tuple[str | None, str], ResearchEvidence] = {}
+    """Preserve every result while marking non-winning duplicates as rejected."""
+
+    grouped: dict[tuple[str | None, str], list[ResearchEvidence]] = defaultdict(list)
     for item in evidence:
-        key = (item.source_url, item.content_hash)
-        existing = unique.get(key)
-        item_is_verified = item.verification_status in {"SUPPORTED", "CORROBORATED"}
-        existing_is_verified = (
-            existing is not None
-            and existing.verification_status
-            in {
-                "SUPPORTED",
-                "CORROBORATED",
-            }
+        grouped[(item.source_url, item.content_hash)].append(item)
+
+    classified: list[ResearchEvidence] = []
+    for items in grouped.values():
+        winner = min(
+            items,
+            key=lambda item: (
+                _STAGE_RANK[item.evidence_stage],
+                -item.relevance_score,
+                item.query,
+            ),
         )
-        if (
-            existing is None
-            or (item_is_verified and not existing_is_verified)
-            or (
-                item_is_verified == existing_is_verified
-                and item.relevance_score > existing.relevance_score
+        classified.append(winner)
+        winner_used = False
+        for item in items:
+            if item is winner and not winner_used:
+                winner_used = True
+                continue
+            reasons = [*item.filter_reasons]
+            if "DUPLICATE_CONTENT" not in reasons:
+                reasons.append("DUPLICATE_CONTENT")
+            classified.append(
+                item.model_copy(
+                    update={
+                        "verification_status": "UNVERIFIED",
+                        "filter_reasons": reasons,
+                        "evidence_stage": "REJECTED",
+                    }
+                )
             )
-        ):
-            unique[key] = item
-    grouped_domains: dict[str, set[str]] = {}
-    for item in unique.values():
-        if item.verification_status == "SUPPORTED" and item.source_domain:
-            grouped_domains.setdefault(item.content_hash, set()).add(item.source_domain)
-    verified = [
-        item.model_copy(update={"verification_status": "CORROBORATED"})
-        if item.verification_status == "SUPPORTED"
-        and len(grouped_domains.get(item.content_hash, set())) >= 2
-        else item
-        for item in unique.values()
-    ]
-    return sorted(
-        verified,
-        key=lambda item: (_TIER_RANK[item.source_tier], -item.relevance_score),
-    )
+    return _sort_evidence(classified)
 
 
 def overall_verification_status(
     evidence: list[ResearchEvidence],
 ) -> VerificationStatus:
-    if not evidence:
-        return "NOT_FOUND"
-    statuses = {item.verification_status for item in evidence}
+    verified = [item for item in evidence if item.evidence_stage == "VERIFIED"]
+    statuses = {item.verification_status for item in verified}
     if "CONFLICTING" in statuses:
         return "CONFLICTING"
     if "CORROBORATED" in statuses:
         return "CORROBORATED"
     if "SUPPORTED" in statuses:
         return "SUPPORTED"
-    return "UNVERIFIED"
+    if any(item.evidence_stage == "CANDIDATE" for item in evidence):
+        return "UNVERIFIED"
+    return "NOT_FOUND"
 
 
-def facts_from_evidence(
-    evidence: list[ResearchEvidence],
-    *,
-    include_unverified: bool = False,
-) -> list[ResearchFact]:
+def facts_from_evidence(evidence: list[ResearchEvidence]) -> list[ResearchFact]:
     allowed = {"SUPPORTED", "CORROBORATED"}
     facts = []
     for item in evidence:
-        if not include_unverified and item.verification_status not in allowed:
+        if item.evidence_stage != "VERIFIED" or item.verification_status not in allowed:
             continue
         facts.append(
             ResearchFact(

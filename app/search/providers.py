@@ -81,7 +81,7 @@ class SnapshotStore:
 
     @staticmethod
     def key(request: SearchRequest) -> str:
-        canonical = request.model_dump_json()
+        canonical = request.model_dump_json(exclude={"subject_aliases"})
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def path_for(self, request: SearchRequest) -> Path:
@@ -135,7 +135,7 @@ class SnapshotSearchProvider:
 
     def search(self, request: SearchRequest) -> SearchResponse:
         response = self.store.read(request)
-        return response.model_copy(update={"provider": self.name})
+        return response.model_copy(update={"provider": self.name, "request": request})
 
 
 class TavilySearchProvider:

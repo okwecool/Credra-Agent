@@ -43,7 +43,10 @@ async def _call_with_retry(
                 end_time=end_time,
                 latency_ms=latency_ms,
                 input_summary=f"tool={tool_name};attempt={attempt + 1}",
-                output_summary=f"found={result.found};facts={len(result.facts)}",
+                output_summary=(
+                    f"found={result.found};candidates={len(result.candidate_evidence)};"
+                    f"facts={len(result.facts)};rejected={result.rejected_result_count}"
+                ),
             )
             return result
         except TemporaryResearchError as exc:
@@ -120,6 +123,20 @@ async def research_company_and_industry_async(
         status = "PARTIAL"
     else:
         status = "EMPTY"
+    results = (company_result, industry_result)
+    all_facts = [fact for result in results for fact in result.facts]
+    all_candidates = [item for result in results for item in result.candidate_evidence]
+    all_evidence = [item for result in results for item in result.evidence]
+    verification_status = "NOT_FOUND"
+    fact_statuses = {fact.verification_status for fact in all_facts}
+    if "CONFLICTING" in fact_statuses:
+        verification_status = "CONFLICTING"
+    elif "CORROBORATED" in fact_statuses:
+        verification_status = "CORROBORATED"
+    elif "SUPPORTED" in fact_statuses:
+        verification_status = "SUPPORTED"
+    elif all_candidates:
+        verification_status = "UNVERIFIED"
     return ResearchResult(
         company_name=company.company_name,
         industry=company.industry,
@@ -127,6 +144,13 @@ async def research_company_and_industry_async(
         company_result=company_result,
         industry_result=industry_result,
         status=status,
+        execution_status="INCOMPLETE" if failed_tools else "COMPLETE",
+        verification_status=verification_status,
+        candidate_count=len(all_candidates),
+        verified_fact_count=len(all_facts),
+        rejected_result_count=sum(
+            item.evidence_stage == "REJECTED" for item in all_evidence
+        ),
         external_research_incomplete=bool(failed_tools),
         failed_tools=failed_tools,
     )

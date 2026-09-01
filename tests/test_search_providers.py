@@ -63,6 +63,11 @@ def test_deterministic_query_templates_cover_m2_baseline() -> None:
         '"比亚迪股份有限公司" 实际控制人 风险',
     ]
     assert [item.query for item in industry] == ['"汽车制造业" 景气度 风险']
+    assert company[0].subject_aliases == ["比亚迪"]
+    detailed_industry = build_search_requests(
+        "industry", "汽车制造业（新能源汽车、动力电池及相关业务）"
+    )
+    assert detailed_industry[0].subject_aliases == ["汽车制造业"]
 
 
 def test_tavily_maps_real_url_and_never_sends_answer_or_raw_content() -> None:
@@ -92,7 +97,9 @@ def test_tavily_maps_real_url_and_never_sends_answer_or_raw_content() -> None:
     assert response.items[0].url == "https://www.szse.cn/disclosure/example.html"
     assert evidence[0].source_domain == "szse.cn"
     assert evidence[0].source_tier == "A"
-    assert evidence[0].verification_status == "SUPPORTED"
+    assert evidence[0].verification_status == "UNVERIFIED"
+    assert evidence[0].evidence_stage == "CANDIDATE"
+    assert evidence[0].filter_reasons == []
     assert evidence[0].content_hash.startswith("sha256:")
     assert evidence[0].query_match is True
 
@@ -116,6 +123,8 @@ def test_trusted_source_without_query_semantics_stays_unverified() -> None:
 
     assert evidence[0].source_tier == "B"
     assert evidence[0].query_match is False
+    assert evidence[0].evidence_stage == "REJECTED"
+    assert evidence[0].filter_reasons == ["CATEGORY_MISMATCH"]
     assert evidence[0].verification_status == "UNVERIFIED"
 
 

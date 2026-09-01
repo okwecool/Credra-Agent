@@ -7,6 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 QueryType = Literal["company", "industry"]
 SourceTier = Literal["A", "B", "C"]
+SubjectMatch = Literal["EXACT", "ALIAS", "NONE"]
+EvidenceStage = Literal["REJECTED", "CANDIDATE", "VERIFIED"]
+FilterReason = Literal[
+    "SUBJECT_MISMATCH",
+    "CATEGORY_MISMATCH",
+    "LOW_RELEVANCE",
+    "DUPLICATE_CONTENT",
+]
 VerificationStatus = Literal[
     "SUPPORTED",
     "CORROBORATED",
@@ -21,6 +29,7 @@ class SearchRequest(BaseModel):
 
     query_type: QueryType
     subject: str = Field(min_length=1)
+    subject_aliases: list[str] = Field(default_factory=list)
     category: str = Field(min_length=1)
     query: str = Field(min_length=1)
 
@@ -63,3 +72,7 @@ class ResearchEvidence(BaseModel):
     source_id: str = Field(min_length=1)
     category: str = "external_research"
     query_match: bool = False
+    subject_match: SubjectMatch = "NONE"
+    category_match: bool = False
+    filter_reasons: list[FilterReason] = Field(default_factory=list)
+    evidence_stage: EvidenceStage = "REJECTED"

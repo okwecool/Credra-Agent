@@ -10,8 +10,8 @@ from app.models.search import SearchItem, SearchRequest, SearchResponse
 from app.report import render_credit_report
 
 
-class OfficialSearchProvider:
-    name = "official-test"
+class VerifiedFixtureProvider:
+    name = "mock"
 
     def search(self, request: SearchRequest) -> SearchResponse:
         return SearchResponse(
@@ -43,7 +43,7 @@ def test_supported_url_reaches_risk_artifact_and_report() -> None:
     company_result = _search(
         "company",
         "比亚迪股份有限公司",
-        provider=OfficialSearchProvider(),
+        provider=VerifiedFixtureProvider(),
     )
     empty_industry = ResearchQueryResult(
         query_type="industry",

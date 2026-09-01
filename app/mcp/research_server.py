@@ -1,5 +1,6 @@
 """Research MCP Server backed by a configured pluggable search provider."""
 
+from collections.abc import Iterable
 from typing import Any, Literal
 
 from fastmcp import FastMCP
@@ -22,6 +23,7 @@ def _search(
     query_type: Literal["company", "industry"],
     query: str,
     *,
+    subject_aliases: Iterable[str] | None = None,
     provider: SearchProvider | None = None,
     settings: Settings | None = None,
 ) -> ResearchQueryResult:
@@ -31,24 +33,36 @@ def _search(
 
     resolved_settings = settings or get_settings()
     active_provider = provider or build_search_provider(resolved_settings)
-    requests = build_search_requests(query_type, normalized)
+    requests = build_search_requests(query_type, normalized, subject_aliases)
     responses = [active_provider.search(request) for request in requests]
-    evidence = deduplicate_evidence(
-        item
-        for response in responses
-        for item in evidence_from_response(
-            response,
-            min_relevance_score=resolved_settings.search_min_relevance_score,
-        )
-    )
     is_mock = active_provider.name == "mock"
-    facts = facts_from_evidence(evidence, include_unverified=is_mock)
+    evidence = deduplicate_evidence(
+        [
+            item
+            for response in responses
+            for item in evidence_from_response(
+                response,
+                min_relevance_score=resolved_settings.search_min_relevance_score,
+                trusted_fixture=is_mock,
+            )
+        ]
+    )
+    candidate_evidence = [
+        item for item in evidence if item.evidence_stage in {"CANDIDATE", "VERIFIED"}
+    ]
+    facts = facts_from_evidence(evidence)
     return ResearchQueryResult(
         query_type=query_type,
         query=" | ".join(request.query for request in requests),
         found=bool(evidence),
         facts=facts,
         evidence=evidence,
+        candidate_evidence=candidate_evidence,
+        raw_result_count=sum(len(response.items) for response in responses),
+        rejected_result_count=sum(
+            item.evidence_stage == "REJECTED" for item in evidence
+        ),
+        candidate_found=bool(candidate_evidence),
         verification_status=overall_verification_status(evidence),
         source=active_provider.name,
     )

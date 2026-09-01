@@ -23,6 +23,7 @@ def analyze_risk(
             evidence
             for result in (research.company_result, research.industry_result)
             for fact in result.facts
+            if fact.verification_status in {"SUPPORTED", "CORROBORATED"}
             for evidence in (
                 [fact.source_id, fact.source_url]
                 if fact.source_url
