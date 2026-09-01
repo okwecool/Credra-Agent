@@ -43,4 +43,5 @@ def test_settings_reject_invalid_thresholds_and_retry_count() -> None:
             max_retry=-1,
             debt_ratio_threshold=2,
             revenue_threshold=-2,
+            search_min_relevance_score=1.1,
         )

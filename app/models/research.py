@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.search import ResearchEvidence, VerificationStatus
+
 
 class ResearchFact(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -11,6 +13,8 @@ class ResearchFact(BaseModel):
     category: str = Field(min_length=1)
     statement: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
+    source_url: str | None = None
+    verification_status: VerificationStatus = "UNVERIFIED"
 
 
 class ResearchQueryResult(BaseModel):
@@ -20,6 +24,8 @@ class ResearchQueryResult(BaseModel):
     query: str = Field(min_length=1)
     found: bool
     facts: list[ResearchFact]
+    evidence: list[ResearchEvidence] = Field(default_factory=list)
+    verification_status: VerificationStatus = "NOT_FOUND"
     source: str = "mock_dataset"
     status: Literal["SUCCESS", "FAILED"] = "SUCCESS"
     error: str | None = None

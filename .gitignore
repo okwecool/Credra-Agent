@@ -42,3 +42,17 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Runtime search cache
+/data/search_snapshots/
+
+# User-created case source data is private by default
+/data/case_*/source/
+
+# Curated repository fixtures
+!/data/case_normal/source/
+!/data/case_normal/source/**
+!/data/case_risky/source/
+!/data/case_risky/source/**
+!/data/case_byd_002594/source/
+!/data/case_byd_002594/source/**

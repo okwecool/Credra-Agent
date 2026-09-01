@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,7 +13,7 @@ from app.mcp.research_client import ResearchMCPClient
 
 
 async def verify_tools() -> None:
-    client = ResearchMCPClient()
+    client = ResearchMCPClient(environment={"RESEARCH_PROVIDER": "mock"})
     company = await client.search_company("迅驰供应链科技有限公司")
     industry = await client.search_industry("供应链服务")
     assert company.found and industry.found
@@ -40,5 +41,6 @@ def verify_workflow() -> None:
 
 
 if __name__ == "__main__":
+    os.environ["RESEARCH_PROVIDER"] = "mock"
     asyncio.run(verify_tools())
     verify_workflow()

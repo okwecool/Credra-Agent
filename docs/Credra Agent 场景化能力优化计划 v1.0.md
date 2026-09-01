@@ -204,12 +204,13 @@ flowchart TD
 |---|---:|---|---|
 | M0：真实案例与验收基线 | 1–2 天 | 公开企业 Case、来源清单、人工对照表 | Case 合法且可人工核验 |
 | M1：真实材料导入与校验 | 2–3 天 | Case CLI、来源清单、财务预检 | 新 Case 可在运行前通过校验 |
-| M2：互联网搜索与事实核查 | 3–4 天 | Search Provider、Tavily、Snapshot、Fact Verification | Evidence 含真实 URL 且失败不伪装成功 |
+| M2：互联网搜索与事实核查 | 3–4 天 | Search Provider、Tavily、Snapshot、基础 Fact Verification | Evidence 含真实 URL 且失败不伪装成功 |
+| M2.1：搜索过滤与深度核验 | 3–5 天 | 实体解析、正文抓取、LLM Verifier、跨来源聚合 | 无关结果不得进入事实，确定事实可回查正文证据 |
 | M3：场景化本地工作台 | 2–3 天 | Chainlit 状态时间线、Evidence、Artifact、审核和报告 | 非开发人员可完成完整任务 |
 | M4：受约束 LLM 表达层 | 2–3 天 | Evidence 摘要、风险解释、报告表达、降级机制 | 无来源事实不得进入确定结论 |
 | M5：Eval、导出与可靠性收尾 | 2–3 天 | 业务 Eval、审计包、成本指标、安全检查 | 真实 Case 与固定回归全部通过 |
 
-M0–M3 构成“可演示、可试用的场景化版本”；M4–M5 构成“质量增强版本”。
+M0–M3（含 M2.1）构成“可演示、可试用的场景化版本”；M4–M5 构成“质量增强版本”。
 
 ---
 
@@ -411,6 +412,130 @@ Risk 和 Report 只能把 `SUPPORTED` 与 `CORROBORATED` 表述为确定事实�
 - Risk Artifact 与最终报告可定位到 Evidence URL；
 - API Key 不进入 Trace、Artifact、日志或 Git；
 - Mock 模式的固定回归测试继续通过。
+
+## 8.8 M2.1：搜索结果过滤与深度事实核验
+
+### 8.8.1 问题与边界
+
+实时搜索返回的是高召回候选，不是已经核实的事实。搜索引擎的相关度分数主要反映主题相关性，不能证明结果命中了目标企业，也不能证明正文支持待核查事实；来源等级高同样不等于内容支持当前结论。
+
+现阶段基于“主体全称、类别关键词、来源等级和最低相关度”的规则只能作为第一层安全门槛。Raw Snapshot 为审计和复现保留 Provider 原始结果，因此允许包含无关结果；Risk 和 Report 必须只消费经过核验的 Evidence，不能直接消费 Raw Snapshot。
+
+后续处理链路调整为：
+
+```text
+Raw Search Snapshot
+        ↓
+Deterministic Candidate Filter
+        ↓
+URL Fetch / HTML-PDF Extraction
+        ↓
+Structured Claim Extraction
+        ↓
+LLM Fact Verifier
+        ↓
+Cross-source Aggregation
+        ↓
+Verified Evidence → Risk / Report
+```
+
+产物应明确分层：
+
+- `raw_search_snapshot`：搜索引擎原始响应，仅用于审计、回放和调试；
+- `candidate_evidence`：通过确定性主体与类别过滤的候选材料；
+- `verified_fact`：经过正文核验和信源聚合后，允许进入 Risk/Report 的事实。
+
+### 8.8.2 确定性候选过滤
+
+- 建立企业实体别名集合，包括企业全称、证券简称、证券代码、曾用名、主要子公司和控股股东；
+- 区分目标企业、关联企业、同业企业和文章中顺带提及的企业，避免仅命中关键词即判定主体一致；
+- 为经营异常、监管处罚、诉讼仲裁、债务逾期、财务造假、业绩预警、实际控制人风险和行业风险分别维护正向关键词、排除词和必要组合；
+- 综合主体命中、类别命中、Provider 相关度、来源等级和发布时间计算候选分数；
+- 每条被排除或降级的结果记录 `filter_reason`，例如 `SUBJECT_MISMATCH`、`CATEGORY_MISMATCH`、`LOW_RELEVANCE`、`DUPLICATE_CONTENT`；
+- URL 规范化并按规范 URL、正文哈希和转载关系去重，转载同一稿件不得视为独立信源。
+
+### 8.8.3 URL 正文获取与内容提取
+
+- 增加受控 `ContentFetcher` 接口，支持 HTML 与公开 PDF；
+- 设置连接/读取超时、最大响应体积、允许的 Content-Type、重定向上限和并发上限；
+- 提取标题、发布日期、正文、公告页码或段落定位，并保存正文内容哈希；
+- 抓取失败、登录墙、反爬限制、内容删除和不支持格式必须显式记录，不得用搜索摘要伪装为已读取全文；
+- Web 内容一律视为不可信输入，隔离页面中的提示注入、脚本和操作指令，不允许网页内容改变 Agent 工作流或调用权限。
+
+### 8.8.4 大模型逐条事实核验
+
+只对通过确定性过滤的候选调用大模型，输出严格结构化结果：
+
+```json
+{
+  "subject_match": "EXACT",
+  "relation": "SUPPORTS",
+  "claim": "待核查事实",
+  "evidence_excerpt": "支持或反驳该事实的短证据片段",
+  "evidence_location": "正文段落或 PDF 页码",
+  "reason": "判定理由",
+  "confidence": 0.91
+}
+```
+
+其中 `relation` 至少支持：
+
+| 状态 | 含义 |
+|---|---|
+| `SUPPORTS` | 正文直接支持待核查事实 |
+| `REFUTES` | 正文明示反驳或否定待核查事实 |
+| `IRRELEVANT` | 主题或主体不匹配 |
+| `INSUFFICIENT` | 信息不足，无法形成判断 |
+
+大模型不得仅根据标题、来源等级或搜索分数给出 `SUPPORTS`；输出必须能定位到已抓取正文中的短证据片段。模型输出不合法、证据片段无法回查或置信度不足时统一降级为 `UNVERIFIED`。
+
+### 8.8.5 多来源聚合与最终状态
+
+- A/B 级来源正文直接支持，且主体和事实均匹配时，才能形成 `SUPPORTED`；
+- 两个真正独立的来源支持同一事实时形成 `CORROBORATED`；
+- 不同可靠来源对关键事实存在实质分歧时形成 `CONFLICTING`，不得自动选边；
+- 只有搜索摘要、低等级来源、单一间接表述或正文不足时保持 `UNVERIFIED`；
+- 完全没有合格候选时为 `NOT_FOUND`；
+- Risk 和 Report 只将 `SUPPORTED` / `CORROBORATED` 表述为确定事实，并展示 URL、证据位置、核验模型版本和核验时间。
+
+### 8.8.6 成本、缓存与配置
+
+建议新增配置：
+
+```dotenv
+SEARCH_MIN_RELEVANCE_SCORE=0.5
+SEARCH_FETCH_TIMEOUT_SECONDS=15
+SEARCH_FETCH_MAX_BYTES=5000000
+SEARCH_FETCH_MAX_CONCURRENCY=3
+FACT_VERIFIER=rules
+FACT_VERIFIER_MODEL=
+FACT_VERIFIER_MIN_CONFIDENCE=0.75
+FACT_VERIFIER_MAX_CANDIDATES=10
+```
+
+- `FACT_VERIFIER=rules` 保留离线与降级能力，`llm` 模式才执行正文级模型核验；
+- 按 `URL + content_hash + verifier_model + prompt_version` 缓存核验结果；
+- 为每个 Case 设置候选数、抓取数、模型调用数和总耗时预算；
+- 额度耗尽、模型失败或抓取失败必须进入 Retry/Trace 和 incomplete 披露，不得回退为 Mock 或把规则命中升级为确定事实。
+
+### 8.8.7 测试与验收
+
+- 将“比亚迪债务逾期 Query 返回华谊兄弟文章”固化为负向回归：必须得到 `SUBJECT_MISMATCH` / `IRRELEVANT`，且不得进入 `facts`、Risk 或 Report；
+- 可信 A/B 来源但类别不匹配时必须保持 `UNVERIFIED`；
+- 覆盖企业简称、证券代码、子公司、同名企业和正文否定语义；
+- 覆盖同稿转载去重、两个独立来源印证和可靠来源冲突；
+- 覆盖 HTML、PDF、超时、重定向、超大正文、登录墙和页面提示注入；
+- 使用固定 Snapshot 和 Mock Verifier 做默认回归，默认不得访问网络或调用真实模型；
+- 真实搜索、正文抓取和真实模型核验分别使用显式开启的 smoke test。
+
+完成定义：
+
+- Raw Snapshot 中的无关结果可保留，但每条结果的筛选去向和原因可追踪；
+- 无关企业、类别不匹配和低相关结果不会进入确定事实；
+- 每条 `SUPPORTED` / `CORROBORATED` 事实都可回查到 URL、正文证据位置和核验记录；
+- 搜索分数和来源等级不再被单独用作事实成立依据；
+- Risk/Report 不消费未经正文核验的 Web 事实；
+- Snapshot 回放、离线回归、成本预算和失败披露保持稳定。
 
 ---
 

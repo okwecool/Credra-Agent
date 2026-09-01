@@ -1,6 +1,7 @@
 """Typed FastMCP client for the Research MCP Server."""
 
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -18,11 +19,18 @@ class ResearchServiceError(RuntimeError):
 
 
 class ResearchMCPClient:
-    def __init__(self, transport: Any | None = None) -> None:
+    def __init__(
+        self,
+        transport: Any | None = None,
+        environment: dict[str, str] | None = None,
+    ) -> None:
+        child_environment = dict(os.environ)
+        child_environment.update(environment or {})
         self.transport = transport or StdioTransport(
             command=sys.executable,
             args=["-m", "app.mcp.research_server"],
             cwd=str(PROJECT_ROOT),
+            env=child_environment,
         )
 
     @staticmethod
