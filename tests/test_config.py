@@ -21,6 +21,10 @@ def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.content_fetch_provider == "auto"
     assert settings.search_fetch_max_bytes == 5_000_000
     assert settings.search_fetch_max_concurrency == 3
+    assert settings.fact_verifier == "rules"
+    assert settings.fact_verifier_min_confidence == 0.75
+    assert settings.fact_verifier_max_candidates == 10
+    assert settings.verification_snapshot_dir == Path("data/verification_snapshots")
     assert settings.data_dir.name == "data"
     assert settings.trace_dir.name == "traces"
 
@@ -48,4 +52,6 @@ def test_settings_reject_invalid_thresholds_and_retry_count() -> None:
             revenue_threshold=-2,
             search_min_relevance_score=1.1,
             search_fetch_max_concurrency=0,
+            fact_verifier_min_confidence=1.1,
+            fact_verifier_max_candidates=0,
         )

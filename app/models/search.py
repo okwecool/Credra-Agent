@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.content import FetchedContentReference
+from app.models.verification import ClaimVerification, VerificationClaim
 
 QueryType = Literal["company", "industry"]
 SourceTier = Literal["A", "B", "C"]
@@ -16,6 +17,7 @@ FilterReason = Literal[
     "CATEGORY_MISMATCH",
     "LOW_RELEVANCE",
     "DUPLICATE_CONTENT",
+    "VERIFIER_IRRELEVANT",
 ]
 VerificationStatus = Literal[
     "SUPPORTED",
@@ -79,3 +81,5 @@ class ResearchEvidence(BaseModel):
     filter_reasons: list[FilterReason] = Field(default_factory=list)
     evidence_stage: EvidenceStage = "REJECTED"
     fetched_content: FetchedContentReference | None = None
+    verification_claim: VerificationClaim | None = None
+    verification: ClaimVerification | None = None

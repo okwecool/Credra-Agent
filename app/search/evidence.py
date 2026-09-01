@@ -16,6 +16,7 @@ from app.models.search import (
     SubjectMatch,
     VerificationStatus,
 )
+from app.models.verification import VerificationClaim
 
 _TIER_A_DOMAINS = (
     "gov.cn",
@@ -49,6 +50,35 @@ _CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "controller": ("实际控制人", "实控人", "控制权"),
     "industry_risk": ("景气度", "行业风险", "下行", "产能过剩"),
 }
+_CLAIM_TEMPLATES: dict[str, str] = {
+    "operations": "{subject}存在经营异常或重大经营风险。",
+    "regulatory": "{subject}受到监管处罚、罚款或纪律处分。",
+    "legal": "{subject}涉及重大诉讼、仲裁或法院判决。",
+    "debt": "{subject}存在债务逾期或违约。",
+    "fraud": "{subject}存在财务造假、虚假记载或违规披露。",
+    "performance": "{subject}存在业绩预亏、预减或显著下滑。",
+    "controller": "{subject}的实际控制人或控制权发生重大变化。",
+    "industry_risk": "{subject}存在景气度下行、需求收缩或产能过剩风险。",
+}
+
+
+def build_verification_claim(response: SearchResponse) -> VerificationClaim:
+    """Build one stable, category-scoped claim shared by candidate sources."""
+
+    subject = response.request.subject
+    statement = _CLAIM_TEMPLATES.get(
+        response.request.category,
+        "{subject}存在与{category}相关且需要核查的公开事项。",
+    ).format(subject=subject, category=response.request.category)
+    canonical = f"{subject}\n{response.request.category}\n{statement}"
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return VerificationClaim(
+        claim_id=f"claim:{digest}",
+        subject=subject,
+        subject_aliases=response.request.subject_aliases,
+        category=response.request.category,
+        statement=statement,
+    )
 
 
 def source_domain(url: str | None) -> str | None:
@@ -126,6 +156,7 @@ def evidence_from_response(
     if not 0.0 <= min_relevance_score <= 1.0:
         raise ValueError("min_relevance_score must be between 0 and 1")
     evidence: list[ResearchEvidence] = []
+    claim = build_verification_claim(response)
     for item in response.items:
         tier = classify_source_tier(item.url)
         if trusted_fixture:
@@ -166,6 +197,7 @@ def evidence_from_response(
                 category_match=category_match,
                 filter_reasons=filter_reasons,
                 evidence_stage=evidence_stage,
+                verification_claim=claim,
             )
         )
     return _sort_evidence(evidence)
@@ -234,6 +266,8 @@ def overall_verification_status(
         return "CORROBORATED"
     if "SUPPORTED" in statuses:
         return "SUPPORTED"
+    if verified:
+        return "UNVERIFIED"
     if any(item.evidence_stage == "CANDIDATE" for item in evidence):
         return "UNVERIFIED"
     return "NOT_FOUND"
@@ -245,13 +279,23 @@ def facts_from_evidence(evidence: list[ResearchEvidence]) -> list[ResearchFact]:
     for item in evidence:
         if item.evidence_stage != "VERIFIED" or item.verification_status not in allowed:
             continue
+        verification = item.verification
         facts.append(
             ResearchFact(
                 category=item.category,
-                statement=item.fact,
+                statement=(verification.claim.statement if verification else item.fact),
                 source_id=item.source_id,
                 source_url=item.source_url,
                 verification_status=item.verification_status,
+                claim_id=verification.claim.claim_id if verification else None,
+                evidence_excerpt=(
+                    verification.evidence_excerpt if verification else None
+                ),
+                evidence_location=(
+                    verification.evidence_location if verification else None
+                ),
+                verifier_model=(verification.verifier_model if verification else None),
+                verified_at=verification.verified_at if verification else None,
             )
         )
     return facts

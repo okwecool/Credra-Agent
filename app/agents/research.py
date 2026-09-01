@@ -47,7 +47,9 @@ async def _call_with_retry(
                     f"found={result.found};candidates={len(result.candidate_evidence)};"
                     f"facts={len(result.facts)};rejected={result.rejected_result_count};"
                     f"fetched={result.fetched_content_count};"
-                    f"fetch_failed={result.failed_content_count}"
+                    f"fetch_failed={result.failed_content_count};"
+                    f"verified={result.completed_verification_count};"
+                    f"verify_failed={result.failed_verification_count}"
                 ),
             )
             return result
@@ -149,6 +151,32 @@ async def research_company_and_industry_async(
     }
     if content_fetch_incomplete:
         status = "INCOMPLETE"
+    verification_execution_statuses = {
+        result.verification_execution_status for result in results
+    }
+    completed_verification_count = sum(
+        result.completed_verification_count for result in results
+    )
+    failed_verification_count = sum(
+        result.failed_verification_count for result in results
+    )
+    if completed_verification_count and failed_verification_count:
+        verification_execution_status = "PARTIAL"
+    elif failed_verification_count:
+        verification_execution_status = "FAILED"
+    elif completed_verification_count:
+        verification_execution_status = "COMPLETE"
+    elif "DISABLED" in verification_execution_statuses:
+        verification_execution_status = "DISABLED"
+    else:
+        verification_execution_status = "NOT_NEEDED"
+    verification_incomplete = verification_execution_status in {
+        "DISABLED",
+        "PARTIAL",
+        "FAILED",
+    }
+    if verification_incomplete:
+        status = "INCOMPLETE"
     verification_status = "NOT_FOUND"
     fact_statuses = {fact.verification_status for fact in all_facts}
     if "CONFLICTING" in fact_statuses:
@@ -177,7 +205,13 @@ async def research_company_and_industry_async(
         fetched_content_count=fetched_content_count,
         failed_content_count=failed_content_count,
         content_fetch_incomplete=content_fetch_incomplete,
-        external_research_incomplete=bool(failed_tools) or content_fetch_incomplete,
+        verification_execution_status=verification_execution_status,
+        completed_verification_count=completed_verification_count,
+        failed_verification_count=failed_verification_count,
+        verification_incomplete=verification_incomplete,
+        external_research_incomplete=(
+            bool(failed_tools) or content_fetch_incomplete or verification_incomplete
+        ),
         failed_tools=failed_tools,
     )
 

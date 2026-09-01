@@ -17,11 +17,23 @@ from app.search.providers import (
     build_search_provider,
     register_search_provider,
 )
+from app.search.verifier import (
+    FactVerifier,
+    LLMFactVerifier,
+    MockFactVerifier,
+    RulesFactVerifier,
+    VerificationCacheStore,
+    build_fact_verifier,
+)
 
 __all__ = [
     "ContentFetcher",
     "ContentSnapshotStore",
+    "FactVerifier",
     "HTTPContentFetcher",
+    "LLMFactVerifier",
+    "MockFactVerifier",
+    "RulesFactVerifier",
     "SearchConfigurationError",
     "SearchProvider",
     "SearchProviderError",
@@ -29,7 +41,9 @@ __all__ = [
     "SearchRateLimitError",
     "SearchTimeoutError",
     "SnapshotContentFetcher",
+    "VerificationCacheStore",
     "build_content_fetcher",
+    "build_fact_verifier",
     "build_search_provider",
     "register_search_provider",
 ]

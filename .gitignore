@@ -46,6 +46,7 @@ Thumbs.db
 # Runtime search cache
 /data/search_snapshots/
 /data/content_snapshots/
+/data/verification_snapshots/
 
 # User-created case source data is private by default
 /data/case_*/source/

@@ -19,6 +19,9 @@ def _query_result(
     content_fetch_status: str = "NOT_NEEDED",
     fetched_content_count: int = 0,
     failed_content_count: int = 0,
+    verification_execution_status: str = "NOT_NEEDED",
+    completed_verification_count: int = 0,
+    failed_verification_count: int = 0,
 ) -> ResearchQueryResult:
     return ResearchQueryResult(
         query_type=query_type,
@@ -28,6 +31,9 @@ def _query_result(
         content_fetch_status=content_fetch_status,
         fetched_content_count=fetched_content_count,
         failed_content_count=failed_content_count,
+        verification_execution_status=verification_execution_status,
+        completed_verification_count=completed_verification_count,
+        failed_verification_count=failed_verification_count,
         verification_status="UNVERIFIED" if query_type == "company" else "NOT_FOUND",
         source="fixture",
     )
@@ -73,6 +79,51 @@ def test_fetch_failure_is_incomplete_but_not_a_failed_mcp_tool(
     assert result.content_fetch_incomplete is True
     assert result.external_research_incomplete is True
     assert result.failed_content_count == 1
+    assert result.failed_tools == []
+
+
+class VerificationFailureClient:
+    async def search_company(self, _: str) -> ResearchQueryResult:
+        return _query_result(
+            "company",
+            content_fetch_status="COMPLETE",
+            fetched_content_count=1,
+            verification_execution_status="FAILED",
+            failed_verification_count=1,
+        )
+
+    async def search_industry(self, _: str) -> ResearchQueryResult:
+        return _query_result("industry")
+
+
+def test_verification_failure_is_incomplete_but_search_execution_completed(
+    tmp_path: Path,
+) -> None:
+    result = research_company_and_industry(
+        "verification-failure-001",
+        CompanyProfile(
+            company_name="比亚迪股份有限公司",
+            industry="汽车制造业",
+            registered_capital="test",
+            established_date="test",
+            shareholders=[],
+            business_scope="test",
+            major_customers=[],
+            major_suppliers=[],
+        ),
+        anomaly_flags=[],
+        max_retry=0,
+        trace=TraceWriter(tmp_path / "traces"),
+        fault=ResearchFaultInjector(tmp_path / "fault", fail_first=False),
+        client=VerificationFailureClient(),
+    )
+
+    assert result.status == "INCOMPLETE"
+    assert result.execution_status == "COMPLETE"
+    assert result.verification_execution_status == "FAILED"
+    assert result.verification_incomplete is True
+    assert result.external_research_incomplete is True
+    assert result.failed_verification_count == 1
     assert result.failed_tools == []
 
 

@@ -33,11 +33,17 @@ def render_credit_report(
         risk_items = "- 未识别出显著财务风险项。"
         evidence = "- 财务指标计算结果。"
 
-    research_disclosure = (
-        "外部调查未全部完成，相关结论存在证据缺口。"
-        if external_research_incomplete
-        else "外部调查状态正常；具体事实见风险证据。"
+    has_research_conflict = any(
+        flag.type == "external_research_conflict" for flag in risk.risk_flags
     )
+    if has_research_conflict:
+        research_disclosure = (
+            "外部调查存在可靠来源冲突，系统未自动选边；具体来源见风险证据。"
+        )
+    elif external_research_incomplete:
+        research_disclosure = "外部调查未全部完成，相关结论存在证据缺口。"
+    else:
+        research_disclosure = "外部调查状态正常；具体事实见风险证据。"
 
     return f"""# 企业授信尽调分析报告
 

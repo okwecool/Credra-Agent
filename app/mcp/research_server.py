@@ -21,6 +21,13 @@ from app.search.evidence import (
 )
 from app.search.providers import SearchProvider, build_search_provider
 from app.search.queries import build_search_requests
+from app.search.verifier import (
+    FactVerifier,
+    VerificationCacheStore,
+    build_fact_verifier,
+    verification_counts,
+    verify_candidate_evidence,
+)
 
 mcp = FastMCP("Credra Research MCP")
 
@@ -32,6 +39,7 @@ def _search(
     subject_aliases: Iterable[str] | None = None,
     provider: SearchProvider | None = None,
     content_fetcher: ContentFetcher | None = None,
+    fact_verifier: FactVerifier | None = None,
     settings: Settings | None = None,
 ) -> ResearchQueryResult:
     normalized = query.strip()
@@ -65,6 +73,22 @@ def _search(
         max_candidates=resolved_settings.search_fetch_max_candidates,
         max_concurrency=resolved_settings.search_fetch_max_concurrency,
     )
+    active_fact_verifier = fact_verifier
+    if (
+        active_fact_verifier is None
+        and provider is None
+        and any(item.evidence_stage == "CANDIDATE" for item in evidence)
+    ):
+        active_fact_verifier = build_fact_verifier(resolved_settings)
+    evidence, verification_execution_status = verify_candidate_evidence(
+        evidence,
+        verifier=active_fact_verifier,
+        content_store=content_store,
+        cache_store=VerificationCacheStore(resolved_settings.verification_snapshot_dir),
+        min_confidence=resolved_settings.fact_verifier_min_confidence,
+        max_candidates=resolved_settings.fact_verifier_max_candidates,
+        max_input_chars=resolved_settings.fact_verifier_max_input_chars,
+    )
     candidate_evidence = [
         item for item in evidence if item.evidence_stage in {"CANDIDATE", "VERIFIED"}
     ]
@@ -77,6 +101,9 @@ def _search(
         item.fetched_content is not None
         and item.fetched_content.status in {"FAILED", "SKIPPED"}
         for item in evidence
+    )
+    completed_verification_count, failed_verification_count = verification_counts(
+        evidence
     )
     return ResearchQueryResult(
         query_type=query_type,
@@ -93,6 +120,9 @@ def _search(
         content_fetch_status=content_fetch_status,
         fetched_content_count=fetched_content_count,
         failed_content_count=failed_content_count,
+        verification_execution_status=verification_execution_status,
+        completed_verification_count=completed_verification_count,
+        failed_verification_count=failed_verification_count,
         verification_status=overall_verification_status(evidence),
         source=active_provider.name,
     )

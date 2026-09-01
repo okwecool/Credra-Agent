@@ -1,11 +1,13 @@
 """Structured external research contracts."""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.content import ContentFetchStatus
 from app.models.search import ResearchEvidence, VerificationStatus
+from app.models.verification import VerificationExecutionStatus
 
 
 class ResearchFact(BaseModel):
@@ -16,6 +18,11 @@ class ResearchFact(BaseModel):
     source_id: str = Field(min_length=1)
     source_url: str | None = None
     verification_status: VerificationStatus = "UNVERIFIED"
+    claim_id: str | None = Field(default=None, pattern=r"^claim:[0-9a-f]{64}$")
+    evidence_excerpt: str | None = None
+    evidence_location: str | None = None
+    verifier_model: str | None = None
+    verified_at: datetime | None = None
 
 
 class ResearchQueryResult(BaseModel):
@@ -33,6 +40,9 @@ class ResearchQueryResult(BaseModel):
     content_fetch_status: ContentFetchStatus = "NOT_NEEDED"
     fetched_content_count: int = Field(default=0, ge=0)
     failed_content_count: int = Field(default=0, ge=0)
+    verification_execution_status: VerificationExecutionStatus = "NOT_NEEDED"
+    completed_verification_count: int = Field(default=0, ge=0)
+    failed_verification_count: int = Field(default=0, ge=0)
     verification_status: VerificationStatus = "NOT_FOUND"
     source: str = "mock_dataset"
     status: Literal["SUCCESS", "FAILED"] = "SUCCESS"
@@ -57,5 +67,9 @@ class ResearchResult(BaseModel):
     fetched_content_count: int = Field(default=0, ge=0)
     failed_content_count: int = Field(default=0, ge=0)
     content_fetch_incomplete: bool = False
+    verification_execution_status: VerificationExecutionStatus = "NOT_NEEDED"
+    completed_verification_count: int = Field(default=0, ge=0)
+    failed_verification_count: int = Field(default=0, ge=0)
+    verification_incomplete: bool = False
     external_research_incomplete: bool = False
     failed_tools: list[str] = Field(default_factory=list)
