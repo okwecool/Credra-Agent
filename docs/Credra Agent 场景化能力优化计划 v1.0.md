@@ -100,6 +100,36 @@ CLI / Minimal Chainlit UI
 
 ---
 
+## 2.4 目标对齐审查结论（2026-09-01）
+
+本次审查以当前工作区实现为准，包含尚待人工审核与提交的 M2.1-A 变更，并暂不把 M3 工作台展示能力作为主要完成度判断项。
+
+结论分为两层：
+
+- 原始 MVP 的核心目标是验证 Durable Agent Runtime，而不是建设银行级风控系统；Dynamic Routing、Python Tool、Artifact、MCP、SQLite Checkpoint、跨进程 Resume、HITL、Retry、Fault Injection 和 JSONL Trace 已经形成稳定纵向链路，主方向没有偏离；
+- 场景化扩展的目标是让真实资料经过可核验互联网 Evidence 进入风险分析和可追溯报告；当前已完成真实 Case、导入校验、可插拔搜索和确定性候选过滤，但尚未完成正文核验、Evidence 到 Risk 的语义映射、受约束 LLM 表达和审计验收，因此还不能定义为“能够对真实企业完成可信尽调的业务应用”。
+
+当前对外定位统一为：
+
+> 基于真实企业案例、支持互联网候选检索的 Durable Agent 技术 MVP。
+
+在 M2.1、M2.2、M4 和 M5 的对应门禁完成前，不得表述为“已自动完成互联网事实核查”“已由外部调查形成可信风险结论”或“可替代专业授信尽调”。
+
+| 目标域 | 当前状态 | 审查结论 |
+|---|---|---|
+| Durable Runtime、Checkpoint、Resume、HITL | 已实现 | 原始 MVP 的核心价值已经成立 |
+| 确定性财务计算、规则路由、Pydantic 结构 | 已实现 | 与 Reliability First 和 Deterministic Where Possible 一致 |
+| 真实 Case、来源清单、导入前校验 | 已实现 | 已从纯 Mock Demo 扩展到可人工追溯的结构化真实输入 |
+| MCP 与 Mock/Snapshot/Tavily Provider | 已实现 | Provider 边界、Retry 和失败披露符合计划 |
+| Raw/Candidate/Verified 分层与负向过滤 | 已实现第一层 | 无关结果已不能进入事实，但真实 Web 候选仍未完成正文核验 |
+| Evidence 驱动的风险分析与可追溯报告 | 部分实现 | 当前外部证据与风险项的语义映射不足，不能视为业务闭环完成 |
+| 非结构化文档理解与受约束 LLM 推理 | 未进入主链路 | 属于 M4 计划项；当前 Document 节点只承担结构化输入校验与归一化 |
+| 业务 Eval、审计包和运行指标 | 未实现 | 属于 M5，不得用现有单元测试替代业务质量验收 |
+
+本次审查确认以下内容仍是明确非目标，不因路线校准而扩展范围：自动授信决策、银行级评分、通用 PDF/OCR 平台、无限制自主浏览、A2A、长期记忆和生产级基础设施。
+
+---
+
 # 3. 开发原则
 
 ## 3.1 真实来源优先
@@ -172,7 +202,7 @@ flowchart TD
     Graph --> Ingest["Document Ingestion"]
     Ingest --> Validate["Source & Financial Validation"]
     Validate --> Financial["Deterministic Financial Tool"]
-    Financial --> Route{"Anomaly flags?"}
+    Financial --> Route{"Research needed?<br/>Anomaly / Review Intent"}
     Route -->|No| Risk["Risk Analysis"]
     Route -->|Yes| Research["Research Agent"]
 
@@ -206,11 +236,12 @@ flowchart TD
 | M1：真实材料导入与校验 | 2–3 天 | Case CLI、来源清单、财务预检 | 新 Case 可在运行前通过校验 |
 | M2：互联网搜索与事实核查 | 3–4 天 | Search Provider、Tavily、Snapshot、基础 Fact Verification | Evidence 含真实 URL 且失败不伪装成功 |
 | M2.1：搜索过滤与深度核验 | 3–5 天 | 实体解析、正文抓取、LLM Verifier、跨来源聚合 | 无关结果不得进入事实，确定事实可回查正文证据 |
+| M2.2：调查语义闭环与运行隔离 | 2–3 天 | 意图驱动查询、Evidence-Risk 映射、任务级 Artifact、失败状态 | 调查响应真实意图，证据不串联，任务可独立重跑 |
 | M3：场景化本地工作台 | 2–3 天 | Chainlit 状态时间线、Evidence、Artifact、审核和报告 | 非开发人员可完成完整任务 |
 | M4：受约束 LLM 表达层 | 2–3 天 | Evidence 摘要、风险解释、报告表达、降级机制 | 无来源事实不得进入确定结论 |
 | M5：Eval、导出与可靠性收尾 | 2–3 天 | 业务 Eval、审计包、成本指标、安全检查 | 真实 Case 与固定回归全部通过 |
 
-M0–M3（含 M2.1）构成“可演示、可试用的场景化版本”；M4–M5 构成“质量增强版本”。
+M0–M3（含 M2.1 与 M2.2）构成“可演示、可试用的场景化版本”；M4–M5 构成“质量增强版本”。M3 不得早于 M2.1-B、M2.1-C 和 M2.2 的核心门禁，以避免用界面掩盖证据与风险链路尚未闭合的问题。
 
 ---
 
@@ -539,6 +570,62 @@ FACT_VERIFIER_MAX_CANDIDATES=10
 
 ---
 
+## 8.9 M2.2：调查语义闭环与运行隔离
+
+### 8.9.1 目标
+
+在进入工作台开发前，修复目标审查发现的业务语义和运行隔离问题，使“补充调查”真正响应风险信号与人工意图，使核验事实只影响与其相关的风险项，并保证同一 Case 的多个任务可以独立、可重复运行。
+
+本阶段不增加新的搜索引擎、Agent 角色或复杂平台组件，而是闭合现有纵向链路。
+
+### 8.9.2 意图驱动的 Research
+
+- 将 `anomaly_flags`、当前 `risk_flags`、`human_decision` 和 `human_comment` 归一化为结构化 `InvestigationIntent`；
+- 由 Investigation Intent 选择调查类别和 Query，不再无条件重复全部固定查询；
+- 人工选择“补充调查”时，审核意见必须进入 Query Planning、Artifact 和最小化 Trace；
+- 对同一 Intent 保持确定性 Query，对不同 Intent 能够产生可解释的 Query 差异；
+- Query Artifact 记录触发来源、调查类别、查询文本和与上一版本的变化；
+- 模型辅助 Query Planning 属于 M4 可选增强，本阶段必须保留规则化离线实现。
+
+### 8.9.3 Evidence 到 Risk 的语义映射
+
+- Verified Fact 必须保留稳定 Fact/Evidence ID、主体、类别、Claim、Relation、URL 和正文位置；
+- 按事实类别生成独立的外部风险项，例如监管、诉讼、债务、控制人和行业风险；
+- 禁止把全部外部 Evidence 无差别追加到资产负债率、现金流或流动性风险项；
+- 财务风险只引用相关财务指标和能够直接解释该指标的外部事实；
+- `SUPPORTED` / `CORROBORATED` 才可形成确定风险描述，`CONFLICTING` / `UNVERIFIED` / `NOT_FOUND` 只能形成冲突、缺口或待核验披露；
+- Risk Level 的变化必须能够回溯到具体规则和 Evidence ID，外部事实不得绕过人工审核。
+
+### 8.9.4 任务级 Artifact 与报告隔离
+
+- 将运行产物从仅按 Case 隔离调整为按 `case_id + thread_id` 或等价 Run ID 隔离；
+- 同一 Case 的两个不同任务不得共享或覆盖 `research_result_v1`、`risk_analysis_v1` 和最终报告；
+- 同一任务内的 Resume 和补充调查继续使用显式 v1/v2 版本引用；
+- 保持 `source/` 为 Case 级只读输入，运行 Artifact、Report、Trace 和 Snapshot 的职责边界清晰；
+- 为既有单任务目录提供明确兼容或迁移策略，不静默移动用户数据。
+
+### 8.9.5 失败状态与能力表述
+
+- 对无法降级的节点错误持久化 `FAILED` 状态、失败节点和最小错误摘要，使 `status` 能够解释终止原因；
+- Research 可恢复失败继续使用 `INCOMPLETE`，不得把局部证据缺口误报为整个任务 `FAILED`；
+- 在真正接入非结构化理解前，将 Document Agent 的能力边界表述为“结构化输入校验与归一化”，不得声称已经理解 `business_info.md` 正文；
+- README、架构图、演示指南和项目展示材料必须同步反映 Tavily/Snapshot、证据分层、确定性 Risk/Report 与尚未接入主链路的 LLM 边界。
+
+### 8.9.6 测试与完成定义
+
+- 相同 Case、不同 `thread_id` 并行或顺序执行时，Artifact 和 Report 相互隔离；
+- 同一任务 Resume 不重复已完成节点，补充调查生成新版本且保留历史；
+- 不同异常或人工调查意见产生与意图对应的 Query，重复相同意图保持确定性；
+- 监管、诉讼、债务和行业 Evidence 只进入对应风险项，不附着到无关财务指标；
+- 无核验事实时 Risk/Report 明确显示证据缺口，不因搜索执行成功而声称调查结论成立；
+- 不可恢复节点异常后可从 Task Status 读取 `FAILED`、失败节点和安全错误摘要；
+- 比亚迪真实 Case 在 Web 与 Snapshot 模式下完成“候选 → 正文核验 → 风险映射 → HITL → 报告”的可复现验收；
+- 既有 Runtime、Mock、Retry、Resume 和负向回归全部通过。
+
+完成 M2.2 后，才允许把 M3 工作台作为主要下一阶段；工作台只展示已有可信状态，不承担修补后端证据语义或任务隔离问题。
+
+---
+
 # 9. M3：场景化本地工作台
 
 ## 9.1 目标
@@ -813,6 +900,10 @@ Human Review Before Commit
 - 实时搜索返回真实 URL，Snapshot 能够稳定复现；
 - 重要外部事实具备来源等级和核验状态；
 - 搜索或模型失败不会伪装成功或混入 Mock 事实；
+- Research Query 能够反映异常信号或人工补充调查意图，重复调查不是无说明地重放相同查询；
+- 已核验外部事实只映射到语义相关的风险项，未核验结果和无关来源不会影响风险等级；
+- 同一 Case 的不同 `thread_id` 具有相互隔离的 Artifact 与报告；
+- 不可恢复错误能够持久化为可查询的 `FAILED` 任务状态；
 - 用户能在本地工作台观察节点、Evidence、Artifact 和审核状态；
 - UI/进程退出后能够使用同一 `thread_id` 恢复；
 - 报告不包含自动授信决定，且关键陈述具备 Evidence 引用；
@@ -825,22 +916,24 @@ Human Review Before Commit
 
 # 16. 建议启动顺序
 
-下一开发节点从 M0 开始，不直接先写搜索或 UI：
+M0、M1、M2 和 M2.1-A 已完成开发或进入提交前审核。根据 2026-09-01 目标对齐审查，后续顺序调整为：
 
 ```text
-选定真实公开企业
+M2.1-B：受控 URL 正文抓取与 HTML/PDF 内容定位
         ↓
-建立来源与人工对照答案
+M2.1-C：结构化 Claim、Verifier 与跨来源聚合
         ↓
-实现 Case 导入和预检
+M2.2：意图驱动调查、Evidence-Risk 映射、任务隔离与 FAILED 状态
         ↓
-接入真实搜索与 Snapshot
+比亚迪 Web + Snapshot 真实纵向验收
         ↓
-扩展本地工作台
+M3：扩展本地工作台
         ↓
-接入受约束 LLM 表达层
+M4：接入受约束 LLM 表达层
         ↓
-建立业务 Eval 与审计包
+M5：业务 Eval、审计包与可靠性收尾
 ```
+
+工作台不再作为深度事实核验之后的立即节点。必须先证明真实候选能够回查正文、核验事实能够正确进入对应风险项、补充调查能够响应人工意图，并且同一 Case 的多个任务相互隔离；随后再用工作台展示这些已成立的能力。
 
 这样能够保证每项技术扩展都服务于一个可核验的真实业务 Case，而不是继续增加无法证明业务价值的技术组件。
