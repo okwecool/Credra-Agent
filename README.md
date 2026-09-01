@@ -478,3 +478,22 @@ MVP 不实现：
 - 如何证明 Resume 没有重新执行已完成节点？
 
 完整演示命令见 [演示指南](docs/演示指南.md)，项目表述边界与问题参考见 [项目展示与面试说明](docs/项目展示与面试说明.md)。详细需求、技术设计、开发计划和适应性变更记录均位于 [docs](docs/) 目录。
+
+## 15. M1 Case 导入前校验
+
+使用 `app.case_cli` 创建、校验和启动结构化 Case。它不会修改 `.env`；`run` 会先完成导入前校验，失败时不会创建任务 Checkpoint。
+
+```powershell
+# 创建可编辑模板（会创建 data/case_my_company/source/）
+python -m app.case_cli init --case-id case_my_company
+
+# 校验来源、企业名称、年度、单位、财务勾稽及人工确认项
+python -m app.case_cli validate --case-id case_byd_002594
+
+# 校验通过后启动 Durable Runtime
+python -m app.case_cli run `
+  --case-id case_byd_002594 `
+  --thread-id byd-m1-demo-001
+```
+
+新 Case 使用 `source_manifest_v2`，要求每个关键财务字段记录来源、页码、表格、原始单位、内部单位 `CNY_1000` 和会计口径。`CNY`、`CNY_10K`、`CNY_1000` 和 `CNY_100M` 在预检中会换算为 `CNY_1000`；原始源文件保持不变，以便与公开年报逐项核对。旧 `case_normal` 和 `case_risky` 仍可运行，但校验会提示缺少来源清单的迁移警告。
