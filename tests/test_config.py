@@ -18,6 +18,9 @@ def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.checkpoint_db_path == Path("checkpoints/credra_agent.db")
     assert settings.max_retry == 2
     assert settings.research_fail_first is False
+    assert settings.content_fetch_provider == "auto"
+    assert settings.search_fetch_max_bytes == 5_000_000
+    assert settings.search_fetch_max_concurrency == 3
     assert settings.data_dir.name == "data"
     assert settings.trace_dir.name == "traces"
 
@@ -44,4 +47,5 @@ def test_settings_reject_invalid_thresholds_and_retry_count() -> None:
             debt_ratio_threshold=2,
             revenue_threshold=-2,
             search_min_relevance_score=1.1,
+            search_fetch_max_concurrency=0,
         )

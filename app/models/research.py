@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.content import ContentFetchStatus
 from app.models.search import ResearchEvidence, VerificationStatus
 
 
@@ -29,6 +30,9 @@ class ResearchQueryResult(BaseModel):
     raw_result_count: int = Field(default=0, ge=0)
     rejected_result_count: int = Field(default=0, ge=0)
     candidate_found: bool = False
+    content_fetch_status: ContentFetchStatus = "NOT_NEEDED"
+    fetched_content_count: int = Field(default=0, ge=0)
+    failed_content_count: int = Field(default=0, ge=0)
     verification_status: VerificationStatus = "NOT_FOUND"
     source: str = "mock_dataset"
     status: Literal["SUCCESS", "FAILED"] = "SUCCESS"
@@ -49,5 +53,9 @@ class ResearchResult(BaseModel):
     candidate_count: int = Field(default=0, ge=0)
     verified_fact_count: int = Field(default=0, ge=0)
     rejected_result_count: int = Field(default=0, ge=0)
+    content_fetch_status: ContentFetchStatus = "NOT_NEEDED"
+    fetched_content_count: int = Field(default=0, ge=0)
+    failed_content_count: int = Field(default=0, ge=0)
+    content_fetch_incomplete: bool = False
     external_research_incomplete: bool = False
     failed_tools: list[str] = Field(default_factory=list)

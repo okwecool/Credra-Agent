@@ -32,6 +32,17 @@ class Settings(BaseSettings):
     search_time_range: str = Field(default="year", pattern=r"^(|day|week|month|year)$")
     search_snapshot_dir: Path = Path("data/search_snapshots")
     search_save_snapshots: bool = True
+    content_fetch_provider: str = Field(
+        default="auto", pattern=r"^(auto|http|snapshot|disabled)$"
+    )
+    search_content_snapshot_dir: Path = Path("data/content_snapshots")
+    search_fetch_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    search_fetch_max_bytes: int = Field(default=5_000_000, ge=1_024, le=50_000_000)
+    search_fetch_max_text_chars: int = Field(default=2_000_000, ge=1_000, le=10_000_000)
+    search_fetch_max_redirects: int = Field(default=3, ge=0, le=10)
+    search_fetch_max_concurrency: int = Field(default=3, ge=1, le=10)
+    search_fetch_max_candidates: int = Field(default=10, ge=1, le=50)
+    search_fetch_max_pdf_pages: int = Field(default=200, ge=1, le=2_000)
     debt_ratio_threshold: float = Field(default=0.15, gt=0, le=1)
     cashflow_threshold: float = Field(default=0.0, ge=-1, le=1)
     revenue_threshold: float = Field(default=0.20, ge=-1, le=10)

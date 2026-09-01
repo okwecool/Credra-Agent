@@ -45,7 +45,9 @@ async def _call_with_retry(
                 input_summary=f"tool={tool_name};attempt={attempt + 1}",
                 output_summary=(
                     f"found={result.found};candidates={len(result.candidate_evidence)};"
-                    f"facts={len(result.facts)};rejected={result.rejected_result_count}"
+                    f"facts={len(result.facts)};rejected={result.rejected_result_count};"
+                    f"fetched={result.fetched_content_count};"
+                    f"fetch_failed={result.failed_content_count}"
                 ),
             )
             return result
@@ -127,6 +129,26 @@ async def research_company_and_industry_async(
     all_facts = [fact for result in results for fact in result.facts]
     all_candidates = [item for result in results for item in result.candidate_evidence]
     all_evidence = [item for result in results for item in result.evidence]
+    fetch_statuses = {result.content_fetch_status for result in results}
+    fetched_content_count = sum(result.fetched_content_count for result in results)
+    failed_content_count = sum(result.failed_content_count for result in results)
+    if fetched_content_count and failed_content_count:
+        content_fetch_status = "PARTIAL"
+    elif failed_content_count:
+        content_fetch_status = "FAILED"
+    elif fetched_content_count:
+        content_fetch_status = "COMPLETE"
+    elif "DISABLED" in fetch_statuses:
+        content_fetch_status = "DISABLED"
+    else:
+        content_fetch_status = "NOT_NEEDED"
+    content_fetch_incomplete = content_fetch_status in {
+        "DISABLED",
+        "PARTIAL",
+        "FAILED",
+    }
+    if content_fetch_incomplete:
+        status = "INCOMPLETE"
     verification_status = "NOT_FOUND"
     fact_statuses = {fact.verification_status for fact in all_facts}
     if "CONFLICTING" in fact_statuses:
@@ -151,7 +173,11 @@ async def research_company_and_industry_async(
         rejected_result_count=sum(
             item.evidence_stage == "REJECTED" for item in all_evidence
         ),
-        external_research_incomplete=bool(failed_tools),
+        content_fetch_status=content_fetch_status,
+        fetched_content_count=fetched_content_count,
+        failed_content_count=failed_content_count,
+        content_fetch_incomplete=content_fetch_incomplete,
+        external_research_incomplete=bool(failed_tools) or content_fetch_incomplete,
         failed_tools=failed_tools,
     )
 

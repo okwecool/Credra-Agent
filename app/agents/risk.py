@@ -62,12 +62,29 @@ def analyze_risk(
             )
         )
     if research and research.external_research_incomplete:
+        incomplete_evidence = [f"failed_tool:{tool}" for tool in research.failed_tools]
+        if research.content_fetch_incomplete:
+            incomplete_evidence.append(
+                f"content_fetch_status:{research.content_fetch_status}"
+            )
+            if research.failed_content_count:
+                incomplete_evidence.append(
+                    f"content_fetch_failed:{research.failed_content_count}"
+                )
+        if not incomplete_evidence:
+            incomplete_evidence.append("external_research:incomplete")
+        if research.failed_tools and research.content_fetch_incomplete:
+            description = "外部调查工具或候选正文获取未全部完成，存在证据缺口。"
+        elif research.content_fetch_incomplete:
+            description = "外部候选正文未全部获取，存在证据缺口。"
+        else:
+            description = "外部调查工具调用未全部完成，存在证据缺口。"
         flags.append(
             RiskFlag(
                 type="external_research",
                 severity=RiskLevel.MEDIUM,
-                description="外部调查工具调用未全部完成，存在证据缺口。",
-                evidence=[f"failed_tool:{tool}" for tool in research.failed_tools],
+                description=description,
+                evidence=incomplete_evidence,
             )
         )
 

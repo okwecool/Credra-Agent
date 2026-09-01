@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.content import FetchedContentReference
+
 QueryType = Literal["company", "industry"]
 SourceTier = Literal["A", "B", "C"]
 SubjectMatch = Literal["EXACT", "ALIAS", "NONE"]
@@ -76,3 +78,4 @@ class ResearchEvidence(BaseModel):
     category_match: bool = False
     filter_reasons: list[FilterReason] = Field(default_factory=list)
     evidence_stage: EvidenceStage = "REJECTED"
+    fetched_content: FetchedContentReference | None = None

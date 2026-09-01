@@ -7,6 +7,12 @@ from fastmcp import FastMCP
 
 from app.config import Settings, get_settings
 from app.models.research import ResearchQueryResult
+from app.search.content import (
+    ContentFetcher,
+    ContentSnapshotStore,
+    build_content_fetcher,
+    fetch_candidate_content,
+)
 from app.search.evidence import (
     deduplicate_evidence,
     evidence_from_response,
@@ -25,6 +31,7 @@ def _search(
     *,
     subject_aliases: Iterable[str] | None = None,
     provider: SearchProvider | None = None,
+    content_fetcher: ContentFetcher | None = None,
     settings: Settings | None = None,
 ) -> ResearchQueryResult:
     normalized = query.strip()
@@ -47,10 +54,30 @@ def _search(
             )
         ]
     )
+    active_content_fetcher = content_fetcher
+    if active_content_fetcher is None and provider is None:
+        active_content_fetcher = build_content_fetcher(resolved_settings)
+    content_store = ContentSnapshotStore(resolved_settings.search_content_snapshot_dir)
+    evidence, content_fetch_status = fetch_candidate_content(
+        evidence,
+        fetcher=active_content_fetcher,
+        snapshot_store=content_store,
+        max_candidates=resolved_settings.search_fetch_max_candidates,
+        max_concurrency=resolved_settings.search_fetch_max_concurrency,
+    )
     candidate_evidence = [
         item for item in evidence if item.evidence_stage in {"CANDIDATE", "VERIFIED"}
     ]
     facts = facts_from_evidence(evidence)
+    fetched_content_count = sum(
+        item.fetched_content is not None and item.fetched_content.status == "SUCCESS"
+        for item in evidence
+    )
+    failed_content_count = sum(
+        item.fetched_content is not None
+        and item.fetched_content.status in {"FAILED", "SKIPPED"}
+        for item in evidence
+    )
     return ResearchQueryResult(
         query_type=query_type,
         query=" | ".join(request.query for request in requests),
@@ -63,6 +90,9 @@ def _search(
             item.evidence_stage == "REJECTED" for item in evidence
         ),
         candidate_found=bool(candidate_evidence),
+        content_fetch_status=content_fetch_status,
+        fetched_content_count=fetched_content_count,
+        failed_content_count=failed_content_count,
         verification_status=overall_verification_status(evidence),
         source=active_provider.name,
     )
