@@ -238,6 +238,7 @@ def load_workbench_details(
     details: dict[str, Any] = {
         "financial": None,
         "risk": None,
+        "risk_narrative": None,
         "query_plan": None,
         "research": None,
         "anomaly_flags": list(payload.get("state", {}).get("anomaly_flags") or []),
@@ -256,6 +257,7 @@ def load_workbench_details(
         for key, detail_key in (
             ("financial_artifact", "financial"),
             ("risk_artifact", "risk"),
+            ("risk_narrative_artifact", "risk_narrative"),
             ("query_plan_artifact", "query_plan"),
             ("research_artifact", "research"),
         ):
@@ -364,6 +366,57 @@ def financial_risk_markdown(details: dict[str, Any]) -> list[str]:
             f"- **{_display_text(flag.get('severity'))} · "
             f"{_display_text(flag.get('type'))}**："
             f"{_display_text(flag.get('description'))}  \n  证据：{evidence}"
+        )
+    return lines
+
+
+def llm_narrative_markdown(details: dict[str, Any]) -> list[str]:
+    """Render only citation-checked narrative fields from the active run."""
+
+    narrative = details.get("risk_narrative")
+    if not narrative:
+        return []
+    lines = ["## LLM 风险解释"]
+    lines.append(
+        "- 模式："
+        f"`{_display_text(narrative.get('mode'))}` · 执行："
+        f"`{_display_text(narrative.get('execution_status'))}` · 模型："
+        f"`{_display_text(narrative.get('model_name'), limit=100)}`"
+    )
+    lines.append(
+        "- Prompt："
+        f"`{_display_text(narrative.get('prompt_version'), limit=100)}` · "
+        f"尝试 `{int(narrative.get('attempts') or 0)}` 次 · "
+        f"Token `{narrative.get('input_tokens') or 0}` / "
+        f"`{narrative.get('output_tokens') or 0}`"
+    )
+    if narrative.get("execution_status") == "DEGRADED":
+        lines.append(
+            "- 已安全降级："
+            f"`{_display_text(narrative.get('error_code'), limit=80)}`；"
+            "仍保留确定性风险结论，未让模型错误改变风险等级或路由。"
+        )
+    lines.append(
+        f"- 综合解释：{_display_text(narrative.get('overall_summary'), limit=800)}"
+    )
+    explanations = narrative.get("explanations") or []
+    if explanations:
+        lines.append("### 对应风险项")
+    for explanation in explanations:
+        evidence = ", ".join(
+            f"`{_display_text(item, limit=100)}`"
+            for item in explanation.get("evidence_ids", [])
+        )
+        lines.append(
+            f"- `{_display_text(explanation.get('risk_id'), limit=100)}`："
+            f"{_display_text(explanation.get('explanation'), limit=800)}  \n"
+            f"  允许证据：{evidence or '—'}"
+        )
+    limitations = narrative.get("limitations") or []
+    if limitations:
+        lines.append(
+            "- 边界说明："
+            + "；".join(_display_text(item, limit=300) for item in limitations)
         )
     return lines
 
@@ -631,6 +684,7 @@ def trace_markdown(details: dict[str, Any]) -> list[str]:
 def workbench_detail_markdown(details: dict[str, Any]) -> str:
     sections = [
         *financial_risk_markdown(details),
+        *llm_narrative_markdown(details),
         *research_details_markdown(details),
         *artifact_history_markdown(details),
         *trace_markdown(details),

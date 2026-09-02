@@ -15,6 +15,10 @@ def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     settings = Settings(_env_file=None)
 
     assert settings.model_base_url == "https://api.openai.com/v1"
+    assert settings.analysis_mode == "deterministic"
+    assert settings.analysis_llm_max_retry == 1
+    assert settings.analysis_llm_max_input_chars == 30_000
+    assert settings.analysis_llm_max_output_tokens == 1_200
     assert settings.checkpoint_db_path == Path("checkpoints/credra_agent.db")
     assert settings.max_retry == 2
     assert settings.research_fail_first is False
@@ -54,4 +58,5 @@ def test_settings_reject_invalid_thresholds_and_retry_count() -> None:
             search_fetch_max_concurrency=0,
             fact_verifier_min_confidence=1.1,
             fact_verifier_max_candidates=0,
+            analysis_llm_max_output_tokens=10,
         )

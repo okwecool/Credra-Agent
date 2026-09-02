@@ -22,6 +22,8 @@ from app.graph.routing import (
     route_after_risk,
 )
 from app.graph.state import AgentState
+from app.llm.gateway import StructuredModel, StructuredModelError, build_analysis_model
+from app.llm.risk_narrative import build_risk_narrative
 from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis, FinancialStatement
 from app.models.investigation import QueryPlan
@@ -50,6 +52,7 @@ def build_workflow(
     fault_injector: ResearchFaultInjector | None = None,
     *,
     run_dir: Path | None = None,
+    analysis_model: StructuredModel | None = None,
 ) -> CompiledStateGraph:
     """Build the graph with case inputs and isolated execution outputs."""
 
@@ -61,6 +64,17 @@ def build_workflow(
     fault = fault_injector or ResearchFaultInjector(
         settings.trace_dir / ".fault_state", settings.research_fail_first
     )
+    active_analysis_model = analysis_model
+    analysis_initialization_error: StructuredModelError | None = None
+    if settings.analysis_mode == "llm" and active_analysis_model is None:
+        try:
+            active_analysis_model = build_analysis_model(settings)
+        except StructuredModelError as exc:
+            analysis_initialization_error = exc
+        except (TypeError, ValueError):
+            analysis_initialization_error = StructuredModelError(
+                "CONFIG_ERROR", "structured analysis model configuration is invalid"
+            )
 
     def traced(node_name: str, node: Callable[[AgentState], dict[str, Any]]):
         def wrapped(state: AgentState) -> dict[str, Any]:
@@ -221,6 +235,46 @@ def build_workflow(
             "risk_analysis", state["risk_artifact"]
         )
         reference = artifacts.write_json(reference, risk)
+        narrative_timer = TimedTrace()
+        narrative = build_risk_narrative(
+            risk,
+            analysis_mode=settings.analysis_mode,
+            model=active_analysis_model,
+            model_name=settings.analysis_model or settings.model_name,
+            initialization_error=analysis_initialization_error,
+        )
+        narrative_reference = artifacts.next_version_reference(
+            "risk_narrative", state.get("risk_narrative_artifact")
+        )
+        narrative_reference = artifacts.write_json(narrative_reference, narrative)
+        if settings.analysis_mode == "llm":
+            narrative_end, narrative_latency = narrative_timer.finish()
+            trace.write(
+                task_id=state["task_id"],
+                node="risk",
+                event_type=(
+                    "LLM_SKIP"
+                    if narrative.execution_status == "NOT_NEEDED"
+                    else "LLM_CALL"
+                ),
+                status=(
+                    TraceStatus.FAILED
+                    if narrative.execution_status == "DEGRADED"
+                    else TraceStatus.SUCCESS
+                ),
+                start_time=narrative_timer.start_time,
+                end_time=narrative_end,
+                latency_ms=narrative_latency,
+                input_summary="purpose=risk_narrative",
+                output_summary=(
+                    f"model={narrative.model_name};prompt={narrative.prompt_version};"
+                    f"execution={narrative.execution_status};"
+                    f"attempts={narrative.attempts};"
+                    f"input_tokens={narrative.input_tokens};"
+                    f"output_tokens={narrative.output_tokens}"
+                ),
+                error=narrative.error_code,
+            )
         return {
             "status": (
                 "WAITING_APPROVAL"
@@ -229,6 +283,7 @@ def build_workflow(
             ),
             "current_node": "risk",
             "risk_artifact": reference,
+            "risk_narrative_artifact": narrative_reference,
             "risk_level": risk.risk_level.value,
         }
 

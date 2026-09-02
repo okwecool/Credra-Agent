@@ -17,6 +17,7 @@ class AgentState(TypedDict):
     risk_artifact: str | None
     investigation_intent_artifact: str | None
     query_plan_artifact: str | None
+    risk_narrative_artifact: str | None
     report_artifact: str | None
     anomaly_flags: list[str]
     risk_level: str | None
@@ -40,6 +41,7 @@ def initial_state(task_id: str, case_id: str, run_id: str | None = None) -> Agen
         "risk_artifact": None,
         "investigation_intent_artifact": None,
         "query_plan_artifact": None,
+        "risk_narrative_artifact": None,
         "report_artifact": None,
         "anomaly_flags": [],
         "risk_level": None,

@@ -63,7 +63,8 @@ flowchart TD
     Fetcher --> Verifier["Rules / LLM Verifier"]
     Verifier --> Research
     Research --> Risk
-    Risk --> Review{"MEDIUM / HIGH?"}
+    Risk --> Narrative["受约束 LLM 风险解释 / 确定性降级"]
+    Narrative --> Review{"MEDIUM / HIGH?"}
     Review -->|No| Report["Report"]
     Review -->|Yes| Interrupt["interrupt / Human Review"]
     Interrupt -->|Approve| Report
@@ -125,8 +126,9 @@ python -m app.mcp.research_server
 | 中间结果 | Versioned Artifacts |
 | 人工审核 | Dynamic interrupt |
 | 执行记录 | JSONL Trace |
+| 风险解释 | 受约束的 JSON LLM 输出 + 引用校验 |
 
-当前财务计算、路由、Risk 和 Report 使用可离线回归的确定性基线。正文事实核验支持严格规则模式，也可显式切换到受约束的 OpenAI-compatible LLM Verifier；模型不负责财务计算、自由路由或最终授信决策。非结构化源文档理解与 LLM 表达层仍未进入主链路。
+财务计算、异常检测、Risk 等级、Graph Routing 和报告结构保持可离线回归的确定性基线。M4-A 已在 Risk 节点后接入受约束的 OpenAI-compatible LLM 风险解释：模型只能基于确定性 Risk Artifact 输出 JSON，且每条解释和综合摘要均只能引用对应风险项已允许的证据。模型没有 Tool 权限，不能新增事实、修改 Risk 等级、改变路由或替代人工审核；模型、配置、结构化输出或引用校验失败时，任务会保留确定性结论并显式降级。该解释目前写入 Run Artifact、Trace 和工作台，尚不改写最终报告（M4-C 的范围）。
 
 ## 4. 环境要求
 
@@ -173,6 +175,21 @@ MODEL_BASE_URL=https://api.openai.com/v1
 MODEL_NAME=
 MODEL_API_KEY=
 ```
+
+主链路 LLM 风险解释字段：
+
+```dotenv
+# deterministic（默认）| llm
+ANALYSIS_MODE=deterministic
+# 留空时复用 MODEL_NAME
+ANALYSIS_MODEL=
+ANALYSIS_LLM_TIMEOUT_SECONDS=30
+ANALYSIS_LLM_MAX_RETRY=1
+ANALYSIS_LLM_MAX_INPUT_CHARS=30000
+ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
+```
+
+启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
 
 运行配置：
 

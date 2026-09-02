@@ -238,7 +238,7 @@ flowchart TD
 | M2.1：搜索过滤与深度核验 | 3–5 天 | 实体解析、正文抓取、LLM Verifier、跨来源聚合 | 无关结果不得进入事实，确定事实可回查正文证据 |
 | M2.2：调查语义闭环与运行隔离 | 2–3 天 | 意图驱动查询、Evidence-Risk 映射、任务级 Artifact、失败状态 | 调查响应真实意图，证据不串联，任务可独立重跑 |
 | M3：场景化本地工作台 | 2–3 天 | Chainlit 状态时间线、Evidence、Artifact、审核和报告 | 非开发人员可完成完整任务 |
-| M4：受约束 LLM 表达层 | 2–3 天 | Evidence 摘要、风险解释、报告表达、降级机制 | 无来源事实不得进入确定结论 |
+| M4：受约束 LLM 表达层 | 3–5 天 | 结构化模型网关、Evidence 摘要、风险解释、报告表达、降级机制 | 无来源事实不得进入确定结论 |
 | M5：Eval、导出与可靠性收尾 | 2–3 天 | 业务 Eval、审计包、成本指标、安全检查 | 真实 Case 与固定回归全部通过 |
 
 M0–M3（含 M2.1 与 M2.2）构成“可演示、可试用的场景化版本”；M4–M5 构成“质量增强版本”。M3 不得早于 M2.1-B、M2.1-C 和 M2.2 的核心门禁，以避免用界面掩盖证据与风险链路尚未闭合的问题。
@@ -677,31 +677,101 @@ FACT_VERIFIER_MAX_CANDIDATES=10
 
 # 10. M4：受约束 LLM 表达层
 
-## 10.1 目标
+## 10.1 目标与准确定位
 
-在保持确定性计算和规则路由的前提下，让模型改善非结构化材料理解、查询生成、风险解释和报告表达。
+在保持确定性计算、事实状态、风险分级和规则路由的前提下，让模型改善调查表达、风险解释和报告可读性。M4 的“接入主链路”是指模型调用成为 Graph 节点执行的一部分，并产生 Run 级可审计 Artifact；不代表把财务计算、事实裁决或授信决策交给模型。
 
-## 10.2 任务
+运行模式：
 
-- 增加运行模式：
+```dotenv
+ANALYSIS_MODE=deterministic
+# 或
+ANALYSIS_MODE=llm
+```
 
-  ```dotenv
-  ANALYSIS_MODE=deterministic
-  # 或
-  ANALYSIS_MODE=llm
-  ```
+`deterministic` 必须继续是安全默认值和完整降级路径；`llm` 使用用户维护的 `MODEL_BASE_URL`、`MODEL_NAME` 和 `MODEL_API_KEY`，可通过 M4 专用模型名覆盖基础模型名称。
 
-- 使用已配置的 OpenAI-compatible 模型连接；
-- 为 Query Planning、Evidence Summary、Risk Explanation 和 Report Draft 分别定义 Prompt；
-- 使用 Pydantic 结构化输出；
-- 明确输入 Evidence ID，要求所有重要陈述绑定 Evidence；
-- 增加 Unsupported Claim 检查；
-- 增加超时、重试、解析失败和降级处理；
-- 模型失败时回退到确定性模板，并在报告中披露降级模式；
-- 自动化测试使用 Mock Model，不调用真实 API；
-- 增加显式开启的模型连通性和真实 Case smoke test。
+## 10.2 主链路接入边界
 
-## 10.3 约束
+```text
+Document -> Financial -> Research -> Risk (deterministic)
+                                      |
+                                      +-> LLM Risk Narrative
+                                            |
+                                            +-> cited Artifact / fallback Artifact
+                                      |
+                                      v
+                                  HITL -> Report
+```
+
+- Financial 指标、Anomaly、Verified Fact、Risk Level 和是否进入 HITL 均先由现有确定性逻辑产生；
+- LLM 只能消费已经形成的结构化 Artifact，不读取 API Key、Checkpoint、完整 Trace 或未受控正文；
+- LLM 输出必须通过 Pydantic Schema 和 Evidence ID 白名单校验后才能写入新 Artifact；
+- 模型调用失败、超时、输出解析失败或引用越界时，不使业务节点失败，改写确定性降级 Artifact；
+- Trace 只记录用途、模型名、Prompt 版本、尝试次数、耗时和状态，不记录完整 Prompt、完整输入、模型原始响应或 Key；
+- 模型 Artifact 不覆盖 Financial、Research、Risk 或 Report 的历史版本。
+
+## 10.3 分段开发计划
+
+### M4-A：统一结构化模型网关与 Risk Narrative 主链路接入
+
+目标是让基础模型第一次以受控方式进入 Durable Graph 主链路。
+
+- 新增 OpenAI-compatible 结构化模型网关，统一模型、Base URL、超时、重试、JSON-only 输出和 Pydantic 校验；
+- 新增 `ANALYSIS_MODEL`、`ANALYSIS_LLM_TIMEOUT_SECONDS`、`ANALYSIS_LLM_MAX_RETRY` 和输入/输出预算配置；
+- 定义 Risk Narrative Draft/Artifact Schema；每条解释必须引用对应 Risk Flag 已存在的 Evidence ID；
+- 在确定性 Risk 完成后调用模型生成风险解释，但不允许修改 Risk Level、Risk Flag、路由或人工审核要求；
+- 模型不可用或引用越界时生成 `DEGRADED` Artifact，并保留确定性风险描述；
+- State 保存当前 Narrative Artifact 引用，Trace 保存受限 `LLM_CALL` 摘要；
+- 默认测试使用 Mock Structured Model，`deterministic` 模式不得触发模型调用。
+
+阶段门禁：Risky Case 在 `llm` + Mock 模式下生成带合法 Evidence 引用的 Narrative Artifact 并正常停在 HITL；无 Key、超时、非法 JSON、Schema 错误和虚构 Evidence 均降级且不破坏主链路；默认完整回归不联网。
+
+### M4-B：Evidence Summary 与受约束 Query Proposal
+
+- 对 Verified Fact 和证据缺口生成结构化摘要，明确区分 `SUPPORTED/CORROBORATED/CONFLICTING/UNVERIFIED`；
+- LLM 只能在 Investigation Intent 已允许的类别内提出 Query 文案，不能增加未授权调查类别；
+- 规则 Query Plan 仍是基线，模型 Proposal 单独版本化并记录接受/拒绝原因；
+- Query/Evidence Summary 绑定 Claim、Fact、Source 和 Evidence ID，不读取被拒绝正文全文；
+- Snapshot/Mock 回归继续固定输入，LLM Proposal 不得破坏离线可重放能力。
+
+阶段门禁：模型不得把 Candidate 或冲突 Evidence 写成确定事实；越界类别和不存在的 Source ID 被拒绝；模型失败时继续使用确定性 Query Plan。
+
+### M4-C：受约束报告表达与 Unsupported Claim 检查
+
+- 为 Executive Summary、Risk Explanation、Evidence Summary 和 Report Draft 使用独立 Prompt 与 Schema；
+- 报告草稿中的每个重要陈述必须携带允许的 Evidence ID；
+- 新增 Unsupported Claim 检查，拒绝不存在的 URL、Evidence ID、财务数字和确定性事实；
+- 最终报告由确定性模板组装，LLM 只填充经过校验的表达区块；
+- 报告披露运行模式、模型、降级状态、冲突和证据缺口；
+- 模型失败时完整回退现有确定性报告。
+
+阶段门禁：无来源陈述不得进入最终报告；模型不能改变财务数值、风险等级或人工决定；确定性与 LLM 模式均能生成报告。
+
+### M4-D：真实 Qwen 纵向验收、成本与稳定性
+
+- 增加显式开启的模型连通性 Smoke，不在默认 pytest 中消耗额度；
+- 使用用户配置的 Qwen 模型完成比亚迪 Snapshot/公开 Case 纵向验收；
+- 验证超时、401/429、空输出、非法 JSON、Schema 漂移、引用越界和服务不可用降级；
+- 记录每个用途的调用次数、延迟和可获得时的 Token Usage，但不记录完整 Prompt；
+- 建立固定 Mock 响应和最小真实 Case 样本，为 M5 Eval 提供基线。
+
+阶段门禁：至少一次真实模型调用生成可追溯 Artifact；关闭网络或移除模型配置后同一 Case 仍可通过确定性路径完成；真实 Key 不进入 Artifact、Trace、报告或快照。
+
+## 10.4 配置基线
+
+```dotenv
+ANALYSIS_MODE=deterministic
+ANALYSIS_MODEL=
+ANALYSIS_LLM_TIMEOUT_SECONDS=30
+ANALYSIS_LLM_MAX_RETRY=1
+ANALYSIS_LLM_MAX_INPUT_CHARS=30000
+ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
+```
+
+`ANALYSIS_MODEL` 为空时复用 `MODEL_NAME`。上述字段只进入 `.env.example`；`.env` 仍由用户维护。
+
+## 10.5 约束
 
 LLM 不得：
 
@@ -710,9 +780,11 @@ LLM 不得：
 - 决定贷款批准、拒绝或额度；
 - 将 `UNVERIFIED` 事实改写为确定结论；
 - 生成不存在的 URL、Evidence ID 或来源；
-- 在无人工输入时跳过 HITL。
+- 在无人工输入时跳过 HITL；
+- 将 Candidate、Rejected 或 `UNVERIFIED` Evidence 改写为已核验事实；
+- 输出或持久化完整 Prompt、原始模型响应、API Key 或 Authorization Header。
 
-## 10.4 完成定义
+## 10.6 完成定义
 
 - LLM 输出通过 Schema 校验；
 - 报告中的重要外部陈述具有 Evidence 引用；

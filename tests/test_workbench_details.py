@@ -280,6 +280,92 @@ def test_workbench_renders_financial_risk_and_safe_report_downloads(
     assert "&lt;script&gt;" in details["report_html"]
 
 
+def test_workbench_renders_citation_checked_llm_narrative(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    store = _prepare_run(tmp_path)
+    store.write_json(
+        "artifacts/risk_narrative_v1.json",
+        {
+            "risk_level": "HIGH",
+            "mode": "llm",
+            "execution_status": "COMPLETE",
+            "model_name": "qwen3.7-plus",
+            "prompt_version": "m4a-risk-narrative-v1",
+            "overall_summary": "流动性风险需要人工复核。",
+            "summary_evidence_ids": ["metric:current_ratio"],
+            "explanations": [
+                {
+                    "risk_id": "risk:1:liquidity",
+                    "explanation": "流动比率低于一，短期偿债能力承压。",
+                    "evidence_ids": ["metric:current_ratio"],
+                }
+            ],
+            "limitations": ["不新增外部事实。"],
+            "attempts": 1,
+            "input_tokens": 100,
+            "output_tokens": 50,
+        },
+    )
+    payload = _payload()
+    payload["state"].update(
+        {
+            "query_plan_artifact": None,
+            "research_artifact": None,
+            "risk_narrative_artifact": "artifacts/risk_narrative_v1.json",
+        }
+    )
+
+    markdown = workbench_detail_markdown(load_workbench_details(payload, settings))
+
+    assert "LLM 风险解释" in markdown
+    assert "qwen3.7-plus" in markdown
+    assert "risk:1:liquidity" in markdown
+    assert "metric:current_ratio" in markdown
+    assert "不新增外部事实" in markdown
+
+
+def test_workbench_hides_raw_llm_degradation_message(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    store = _prepare_run(tmp_path)
+    store.write_json(
+        "artifacts/risk_narrative_v1.json",
+        {
+            "risk_level": "HIGH",
+            "mode": "llm",
+            "execution_status": "DEGRADED",
+            "model_name": "unconfigured",
+            "prompt_version": "m4a-risk-narrative-v1",
+            "overall_summary": "确定性风险摘要。",
+            "summary_evidence_ids": ["metric:current_ratio"],
+            "explanations": [
+                {
+                    "risk_id": "risk:1:liquidity",
+                    "explanation": "流动比率低于一。",
+                    "evidence_ids": ["metric:current_ratio"],
+                }
+            ],
+            "limitations": ["当前内容使用确定性风险描述。"],
+            "attempts": 0,
+            "error_code": "CONFIG_ERROR",
+            "error_message": "MODEL_API_KEY=top-secret is required",
+        },
+    )
+    payload = _payload()
+    payload["state"].update(
+        {
+            "query_plan_artifact": None,
+            "research_artifact": None,
+            "risk_narrative_artifact": "artifacts/risk_narrative_v1.json",
+        }
+    )
+
+    markdown = workbench_detail_markdown(load_workbench_details(payload, settings))
+
+    assert "已安全降级" in markdown
+    assert "CONFIG_ERROR" in markdown
+    assert "top-secret" not in markdown
+
+
 def test_workbench_rejects_unsafe_report_reference(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _prepare_run(tmp_path)

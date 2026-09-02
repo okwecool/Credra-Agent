@@ -15,6 +15,7 @@ from langgraph.types import Command
 from app.config import Settings
 from app.graph.state import initial_state
 from app.graph.workflow import build_workflow
+from app.llm.gateway import StructuredModel
 from app.runtime.fault import ResearchFaultInjector
 from app.runtime.tracing import TraceWriter
 
@@ -98,6 +99,7 @@ def start_task(
     case_id: str,
     settings: Settings,
     research_client: Any | None = None,
+    analysis_model: StructuredModel | None = None,
 ) -> dict[str, Any]:
     trace, fault = _runtime_services(settings)
     trace.instant(
@@ -120,6 +122,7 @@ def start_task(
             trace,
             fault,
             run_dir=case_dir / "runs" / run_id,
+            analysis_model=analysis_model,
         )
         graph.invoke(initial_state(thread_id, case_id, run_id), config=config)
         payload = snapshot_payload(graph.get_state(config), thread_id)
@@ -137,6 +140,7 @@ def get_task_status(
     thread_id: str,
     settings: Settings,
     research_client: Any | None = None,
+    analysis_model: StructuredModel | None = None,
 ) -> dict[str, Any]:
     trace, fault = _runtime_services(settings)
     trace.instant(
@@ -155,6 +159,7 @@ def get_task_status(
             trace,
             fault,
             run_dir=_run_dir_from_checkpoint(checkpointer, case_dir, thread_id),
+            analysis_model=analysis_model,
         )
         return snapshot_payload(graph.get_state(graph_config(thread_id)), thread_id)
 
@@ -166,6 +171,7 @@ def resume_task(
     comment: str | None,
     settings: Settings,
     research_client: Any | None = None,
+    analysis_model: StructuredModel | None = None,
 ) -> dict[str, Any]:
     if decision not in ("approve", "research"):
         raise ValueError("decision must be approve or research")
@@ -188,6 +194,7 @@ def resume_task(
             trace,
             fault,
             run_dir=_run_dir_from_checkpoint(checkpointer, case_dir, thread_id),
+            analysis_model=analysis_model,
         )
         snapshot = graph.get_state(config)
         if not any(task.interrupts for task in snapshot.tasks):

@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     model_base_url: str = "https://api.openai.com/v1"
     model_name: str = ""
     model_api_key: SecretStr = SecretStr("")
+    analysis_mode: str = Field(
+        default="deterministic", pattern=r"^(deterministic|llm)$"
+    )
+    analysis_model: str = ""
+    analysis_llm_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    analysis_llm_max_retry: int = Field(default=1, ge=0, le=5)
+    analysis_llm_max_input_chars: int = Field(default=30_000, ge=1_000, le=200_000)
+    analysis_llm_max_output_tokens: int = Field(default=1_200, ge=100, le=8_000)
     checkpoint_db_path: Path = Path("checkpoints/credra_agent.db")
     max_retry: int = Field(default=2, ge=0, le=10)
     research_fail_first: bool = False

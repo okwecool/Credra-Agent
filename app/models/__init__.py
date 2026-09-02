@@ -1,5 +1,10 @@
 """Validated data contracts used across the application."""
 
+from app.models.analysis import (
+    RiskNarrativeArtifact,
+    RiskNarrativeDraft,
+    RiskNarrativeExplanation,
+)
 from app.models.company import CompanyProfile
 from app.models.financial import (
     FinancialAnalysis,
@@ -24,6 +29,9 @@ __all__ = [
     "RiskAnalysis",
     "RiskFlag",
     "RiskLevel",
+    "RiskNarrativeArtifact",
+    "RiskNarrativeDraft",
+    "RiskNarrativeExplanation",
     "TraceEvent",
     "TraceStatus",
 ]
