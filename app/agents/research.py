@@ -1,5 +1,6 @@
 """Research Agent with tool-scoped retry and auditable failures."""
 
+import inspect
 from collections.abc import Awaitable, Callable
 
 from app.mcp.research_client import (
@@ -8,12 +9,50 @@ from app.mcp.research_client import (
     run_async,
 )
 from app.models.company import CompanyProfile
+from app.models.investigation import QueryPlan
 from app.models.research import ResearchQueryResult, ResearchResult
 from app.models.trace import TraceStatus
 from app.runtime.fault import ResearchFaultInjector
 from app.runtime.tracing import TimedTrace, TraceWriter
 
 TemporaryResearchError = (TimeoutError, ResearchServiceError)
+
+
+def _planned_categories(plan: QueryPlan | None, query_type: str) -> list[str] | None:
+    if plan is None:
+        return None
+    return [
+        request.category for request in plan.queries if request.query_type == query_type
+    ]
+
+
+def _supports_categories(call: Callable[..., Awaitable[ResearchQueryResult]]) -> bool:
+    parameters = inspect.signature(call).parameters.values()
+    return any(
+        parameter.name == "categories"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+
+async def _invoke_search(
+    call: Callable[..., Awaitable[ResearchQueryResult]],
+    subject: str,
+    categories: list[str] | None,
+) -> ResearchQueryResult:
+    if categories is not None and _supports_categories(call):
+        return await call(subject, categories=categories)
+    return await call(subject)
+
+
+def _not_requested(query_type: str, subject: str) -> ResearchQueryResult:
+    return ResearchQueryResult(
+        query_type=query_type,
+        query=subject,
+        found=False,
+        facts=[],
+        source="not_requested",
+    )
 
 
 async def _call_with_retry(
@@ -89,26 +128,43 @@ async def research_company_and_industry_async(
     max_retry: int,
     trace: TraceWriter,
     fault: ResearchFaultInjector,
+    query_plan: QueryPlan | None = None,
 ) -> ResearchResult:
-    company_result = await _call_with_retry(
-        task_id=task_id,
-        tool_name="search_company",
-        query_type="company",
-        query=company.company_name,
-        call=lambda: client.search_company(company.company_name),
-        max_retry=max_retry,
-        trace=trace,
-        fault=fault,
+    company_categories = _planned_categories(query_plan, "company")
+    industry_categories = _planned_categories(query_plan, "industry")
+    company_requested = company_categories is None or bool(company_categories)
+    industry_requested = industry_categories is None or bool(industry_categories)
+    company_result = (
+        await _call_with_retry(
+            task_id=task_id,
+            tool_name="search_company",
+            query_type="company",
+            query=company.company_name,
+            call=lambda: _invoke_search(
+                client.search_company, company.company_name, company_categories
+            ),
+            max_retry=max_retry,
+            trace=trace,
+            fault=fault,
+        )
+        if company_requested
+        else _not_requested("company", company.company_name)
     )
-    industry_result = await _call_with_retry(
-        task_id=task_id,
-        tool_name="search_industry",
-        query_type="industry",
-        query=company.industry,
-        call=lambda: client.search_industry(company.industry),
-        max_retry=max_retry,
-        trace=trace,
-        fault=fault,
+    industry_result = (
+        await _call_with_retry(
+            task_id=task_id,
+            tool_name="search_industry",
+            query_type="industry",
+            query=company.industry,
+            call=lambda: _invoke_search(
+                client.search_industry, company.industry, industry_categories
+            ),
+            max_retry=max_retry,
+            trace=trace,
+            fault=fault,
+        )
+        if industry_requested
+        else _not_requested("industry", company.industry)
     )
     failed_tools = [
         tool_name
@@ -118,10 +174,18 @@ async def research_company_and_industry_async(
         )
         if result.status == "FAILED"
     ]
-    found_count = int(company_result.found) + int(industry_result.found)
+    requested_results = [
+        result
+        for result, requested in (
+            (company_result, company_requested),
+            (industry_result, industry_requested),
+        )
+        if requested
+    ]
+    found_count = sum(result.found for result in requested_results)
     if failed_tools:
         status = "INCOMPLETE"
-    elif found_count == 2:
+    elif found_count == len(requested_results):
         status = "COMPLETE"
     elif found_count == 1:
         status = "PARTIAL"
@@ -191,6 +255,8 @@ async def research_company_and_industry_async(
         company_name=company.company_name,
         industry=company.industry,
         anomaly_flags=anomaly_flags,
+        intent_id=query_plan.intent.intent_id if query_plan else None,
+        query_plan_id=query_plan.plan_id if query_plan else None,
         company_result=company_result,
         industry_result=industry_result,
         status=status,
@@ -224,6 +290,7 @@ def research_company_and_industry(
     trace: TraceWriter,
     fault: ResearchFaultInjector,
     client: ResearchMCPClient | None = None,
+    query_plan: QueryPlan | None = None,
 ) -> ResearchResult:
     client = client or ResearchMCPClient()
     return run_async(
@@ -235,5 +302,6 @@ def research_company_and_industry(
             max_retry,
             trace,
             fault,
+            query_plan,
         )
     )

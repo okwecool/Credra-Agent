@@ -102,11 +102,12 @@ def test_risky_case_workflow_routes_through_mcp_research(tmp_path: Path) -> None
     research = store.read_json(result.state["research_artifact"])
     assert research["status"] == "COMPLETE"
     assert research["company_result"]["found"] is True
-    assert research["industry_result"]["found"] is True
+    assert research["industry_result"]["found"] is False
+    assert research["industry_result"]["source"] == "not_requested"
     risk = store.read_json(result.state["risk_artifact"])
     assert risk["requires_human_review"] is True
     evidence = {
         source_id for flag in risk["risk_flags"] for source_id in flag["evidence"]
     }
     assert "mock-company-xunchi-001" in evidence
-    assert "mock-industry-supplychain-001" in evidence
+    assert "mock-industry-supplychain-001" not in evidence

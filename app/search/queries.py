@@ -67,6 +67,7 @@ def build_search_requests(
     query_type: QueryType,
     subject: str,
     subject_aliases: Iterable[str] | None = None,
+    categories: Iterable[str] | None = None,
 ) -> list[SearchRequest]:
     """Build a stable query set whose order is part of the M2 contract."""
 
@@ -77,6 +78,15 @@ def build_search_requests(
     suffixes = (
         COMPANY_QUERY_SUFFIXES if query_type == "company" else INDUSTRY_QUERY_SUFFIXES
     )
+    selected = set(categories) if categories is not None else None
+    if selected is not None:
+        known = {category for category, _ in suffixes}
+        unknown = selected - known
+        if unknown:
+            raise ValueError(
+                f"unsupported {query_type} query categories: {sorted(unknown)}"
+            )
+        suffixes = tuple(item for item in suffixes if item[0] in selected)
     return [
         SearchRequest(
             query_type=query_type,

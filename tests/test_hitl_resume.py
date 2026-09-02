@@ -100,7 +100,8 @@ def test_risky_case_interrupts_then_resumes_in_new_process(tmp_path: Path) -> No
     assert resumed["state"]["human_comment"] == "风险已由人工复核，继续形成报告。"
     assert resumed["next"] == []
     assert resumed["interrupts"] == []
-    report_path = data_dir / "case_risky" / "output" / "credit_report.md"
+    run_dir = data_dir / "case_risky" / "runs" / resumed["state"]["run_id"]
+    report_path = run_dir / "output" / "credit_report.md"
     assert report_path.is_file()
     assert "风险已由人工复核" in report_path.read_text(encoding="utf-8")
 
@@ -149,6 +150,7 @@ def test_research_decision_versions_artifacts_and_interrupts_again(
     assert researched["next"] == ["approval"]
     assert researched["interrupts"]
     assert not (case_dir / "output" / "credit_report.md").exists()
+    run_dir = case_dir / "runs" / researched["state"]["run_id"]
 
     for artifact_name in (
         "research_result_v1.json",
@@ -156,7 +158,11 @@ def test_research_decision_versions_artifacts_and_interrupts_again(
         "risk_analysis_v1.json",
         "risk_analysis_v2.json",
     ):
-        assert (case_dir / "artifacts" / artifact_name).is_file()
+        assert (run_dir / "artifacts" / artifact_name).is_file()
+    query_plan = json.loads(
+        (run_dir / "artifacts" / "query_plan_v2.json").read_text(encoding="utf-8")
+    )
+    assert query_plan["intent"]["human_comment"] == "需要补充调查后再审核。"
 
     completed = run_cli(
         db_path,
@@ -172,7 +178,7 @@ def test_research_decision_versions_artifacts_and_interrupts_again(
     assert completed["state"]["status"] == "COMPLETED"
     assert completed["state"]["human_decision"] == "approve"
     assert completed["state"]["risk_artifact"] == "artifacts/risk_analysis_v2.json"
-    assert (case_dir / "output" / "credit_report.md").is_file()
+    assert (run_dir / "output" / "credit_report.md").is_file()
 
 
 def test_low_risk_case_completes_without_interrupt(tmp_path: Path) -> None:
@@ -192,7 +198,8 @@ def test_low_risk_case_completes_without_interrupt(tmp_path: Path) -> None:
     assert completed["state"]["status"] == "COMPLETED"
     assert completed["state"]["risk_level"] == "LOW"
     assert completed["interrupts"] == []
-    assert (data_dir / "case_normal" / "output" / "credit_report.md").is_file()
+    run_dir = data_dir / "case_normal" / "runs" / completed["state"]["run_id"]
+    assert (run_dir / "output" / "credit_report.md").is_file()
 
 
 def test_cli_rejects_duplicate_start_and_non_waiting_resume(tmp_path: Path) -> None:

@@ -113,7 +113,8 @@ def test_incomplete_research_reaches_state_risk_and_report(tmp_path: Path) -> No
     )
 
     assert started["state"]["external_research_incomplete"] is True
-    store = ArtifactStore(case_dir)
+    run_dir = case_dir / "runs" / started["state"]["run_id"]
+    store = ArtifactStore(run_dir)
     research = store.read_json(started["state"]["research_artifact"])
     risk = store.read_json(started["state"]["risk_artifact"])
     assert research["status"] == "INCOMPLETE"
@@ -127,7 +128,7 @@ def test_incomplete_research_reaches_state_risk_and_report(tmp_path: Path) -> No
         research_client=AlwaysFailResearchClient(),
     )
     assert completed["state"]["status"] == "COMPLETED"
-    report = (case_dir / "output/credit_report.md").read_text(encoding="utf-8")
+    report = (run_dir / "output/credit_report.md").read_text(encoding="utf-8")
     assert "外部调查未全部完成" in report
     assert "证据缺口" in report
 

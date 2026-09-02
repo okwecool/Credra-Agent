@@ -82,7 +82,7 @@ try {
             Invoke-TaskCli -Arguments @(
                 "start", "--thread-id", $ThreadId, "--case-id", "case_normal"
             )
-            Write-Host "Report: $dataDir/case_normal/output/credit_report.md"
+            Write-Host "Report: $dataDir/case_normal/runs/<state.run_id>/output/credit_report.md"
         }
         "risky" {
             Invoke-TaskCli -Arguments @(

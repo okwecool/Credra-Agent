@@ -36,12 +36,19 @@ def render_credit_report(
     has_research_conflict = any(
         flag.type == "external_research_conflict" for flag in risk.risk_flags
     )
+    has_evidence_gap = any(
+        flag.type == "external_research_evidence_gap" for flag in risk.risk_flags
+    )
     if has_research_conflict:
         research_disclosure = (
             "外部调查存在可靠来源冲突，系统未自动选边；具体来源见风险证据。"
         )
     elif external_research_incomplete:
         research_disclosure = "外部调查未全部完成，相关结论存在证据缺口。"
+    elif has_evidence_gap:
+        research_disclosure = (
+            "外部调查已执行，但未形成可采信的核验事实，当前存在证据缺口。"
+        )
     else:
         research_disclosure = "外部调查状态正常；具体事实见风险证据。"
 

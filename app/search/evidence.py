@@ -280,14 +280,26 @@ def facts_from_evidence(evidence: list[ResearchEvidence]) -> list[ResearchFact]:
         if item.evidence_stage != "VERIFIED" or item.verification_status not in allowed:
             continue
         verification = item.verification
+        claim = verification.claim if verification else item.verification_claim
+        canonical = "\n".join(
+            (
+                claim.claim_id if claim else "",
+                item.source_id,
+                item.content_hash,
+            )
+        )
+        fact_id = f"fact:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
         facts.append(
             ResearchFact(
+                fact_id=fact_id,
+                subject=claim.subject if claim else None,
                 category=item.category,
                 statement=(verification.claim.statement if verification else item.fact),
                 source_id=item.source_id,
                 source_url=item.source_url,
                 verification_status=item.verification_status,
-                claim_id=verification.claim.claim_id if verification else None,
+                claim_id=claim.claim_id if claim else None,
+                relation=verification.relation if verification else "SUPPORTS",
                 evidence_excerpt=(
                     verification.evidence_excerpt if verification else None
                 ),

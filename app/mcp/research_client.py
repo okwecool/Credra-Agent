@@ -42,11 +42,14 @@ class ResearchMCPClient:
             payload = payload["result"]
         return ResearchQueryResult.model_validate(payload)
 
-    async def search_company(self, company_name: str) -> ResearchQueryResult:
+    async def search_company(
+        self, company_name: str, categories: list[str] | None = None
+    ) -> ResearchQueryResult:
         try:
             async with Client(self.transport) as client:
                 result = await client.call_tool(
-                    "search_company", {"company_name": company_name}
+                    "search_company",
+                    {"company_name": company_name, "categories": categories},
                 )
             return self._parse_result(result)
         except ResearchServiceError:
@@ -54,11 +57,13 @@ class ResearchMCPClient:
         except Exception as exc:
             raise ResearchServiceError(f"company research failed: {exc}") from exc
 
-    async def search_industry(self, industry: str) -> ResearchQueryResult:
+    async def search_industry(
+        self, industry: str, categories: list[str] | None = None
+    ) -> ResearchQueryResult:
         try:
             async with Client(self.transport) as client:
                 result = await client.call_tool(
-                    "search_industry", {"industry": industry}
+                    "search_industry", {"industry": industry, "categories": categories}
                 )
             return self._parse_result(result)
         except ResearchServiceError:

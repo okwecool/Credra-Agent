@@ -1,5 +1,6 @@
 """SQLite-backed start, inspect, and resume operations for Credra tasks."""
 
+import hashlib
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -66,6 +67,24 @@ def _case_id_from_checkpoint(checkpointer: SqliteSaver, thread_id: str) -> str:
     return case_id
 
 
+def run_id_for_thread(thread_id: str) -> str:
+    """Create a stable filesystem-safe run id without trusting thread text as a path."""
+
+    return hashlib.sha256(thread_id.encode("utf-8")).hexdigest()[:20]
+
+
+def _run_dir_from_checkpoint(
+    checkpointer: SqliteSaver, case_dir: Path, thread_id: str
+) -> Path:
+    checkpoint = checkpointer.get_tuple(graph_config(thread_id))
+    values = checkpoint.checkpoint.get("channel_values", {}) if checkpoint else {}
+    run_id = values.get("run_id")
+    if isinstance(run_id, str) and run_id:
+        return case_dir / "runs" / run_id
+    # Explicit compatibility: checkpoints created before M2.2 keep their case-level paths.
+    return case_dir
+
+
 def _case_dir(settings: Settings, case_id: str) -> Path:
     case_dir = settings.data_dir / case_id
     if not (case_dir / "source").is_dir():
@@ -91,15 +110,18 @@ def start_task(
         config = graph_config(thread_id)
         if checkpointer.get_tuple(config) is not None:
             raise ValueError(f"thread already exists: {thread_id}")
+        case_dir = _case_dir(settings, case_id)
+        run_id = run_id_for_thread(thread_id)
         graph = build_workflow(
-            _case_dir(settings, case_id),
+            case_dir,
             settings,
             research_client,
             checkpointer,
             trace,
             fault,
+            run_dir=case_dir / "runs" / run_id,
         )
-        graph.invoke(initial_state(thread_id, case_id), config=config)
+        graph.invoke(initial_state(thread_id, case_id, run_id), config=config)
         payload = snapshot_payload(graph.get_state(config), thread_id)
         trace.instant(
             task_id=thread_id,
@@ -124,13 +146,15 @@ def get_task_status(
     )
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         case_id = _case_id_from_checkpoint(checkpointer, thread_id)
+        case_dir = _case_dir(settings, case_id)
         graph = build_workflow(
-            _case_dir(settings, case_id),
+            case_dir,
             settings,
             research_client,
             checkpointer,
             trace,
             fault,
+            run_dir=_run_dir_from_checkpoint(checkpointer, case_dir, thread_id),
         )
         return snapshot_payload(graph.get_state(graph_config(thread_id)), thread_id)
 
@@ -155,13 +179,15 @@ def resume_task(
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         case_id = _case_id_from_checkpoint(checkpointer, thread_id)
         config = graph_config(thread_id)
+        case_dir = _case_dir(settings, case_id)
         graph = build_workflow(
-            _case_dir(settings, case_id),
+            case_dir,
             settings,
             research_client,
             checkpointer,
             trace,
             fault,
+            run_dir=_run_dir_from_checkpoint(checkpointer, case_dir, thread_id),
         )
         snapshot = graph.get_state(config)
         if not any(task.interrupts for task in snapshot.tasks):

@@ -18,43 +18,13 @@ def analyze_risk(
     debt = analysis.metrics["debt_ratio"].values
     cashflow = analysis.metrics["operating_cash_flow_trend"].values
     current_ratio = analysis.metrics["current_ratio"].values
-    research_evidence = (
-        [
-            evidence
-            for result in (research.company_result, research.industry_result)
-            for fact in result.facts
-            if fact.verification_status in {"SUPPORTED", "CORROBORATED"}
-            for evidence in [
-                fact.source_id,
-                *([fact.source_url] if fact.source_url else []),
-                *(
-                    [f"evidence_location:{fact.evidence_location}"]
-                    if fact.evidence_location
-                    else []
-                ),
-                *(
-                    [f"verifier_model:{fact.verifier_model}"]
-                    if fact.verifier_model
-                    else []
-                ),
-                *(
-                    [f"verified_at:{fact.verified_at.isoformat()}"]
-                    if fact.verified_at
-                    else []
-                ),
-            ]
-        ]
-        if research
-        else []
-    )
-
     if debt[-1] - debt[0] >= settings.debt_ratio_threshold:
         flags.append(
             RiskFlag(
                 type="leverage",
                 severity=RiskLevel.HIGH if debt[-1] >= 0.65 else RiskLevel.MEDIUM,
                 description="资产负债率在观察期内显著上升。",
-                evidence=["metric:debt_ratio", *research_evidence],
+                evidence=["metric:debt_ratio"],
             )
         )
     if cashflow[-1] < cashflow[0]:
@@ -63,7 +33,7 @@ def analyze_risk(
                 type="cashflow",
                 severity=RiskLevel.MEDIUM,
                 description="经营现金流较观察期初下降。",
-                evidence=["metric:operating_cash_flow_trend", *research_evidence],
+                evidence=["metric:operating_cash_flow_trend"],
             )
         )
     if current_ratio[-1] < 1:
@@ -142,6 +112,91 @@ def analyze_risk(
                 evidence=conflicting_evidence or ["verification_status:CONFLICTING"],
             )
         )
+
+    if research:
+        descriptions = {
+            "operations": "外部核验显示企业存在经营异常或重大经营风险事项。",
+            "regulatory": "外部核验显示企业存在监管处罚、罚款或纪律处分事项。",
+            "legal": "外部核验显示企业涉及重大诉讼、仲裁或法院判决。",
+            "debt": "外部核验显示企业存在债务逾期或违约事项。",
+            "fraud": "外部核验显示企业存在财务造假、虚假记载或违规披露事项。",
+            "performance": "外部核验显示企业存在业绩预亏、预减或显著下滑事项。",
+            "controller": "外部核验显示企业实际控制人或控制权存在重大变化。",
+            "industry_risk": "外部核验显示所在行业存在景气下行、需求收缩或产能风险。",
+        }
+        severities = {
+            "fraud": RiskLevel.HIGH,
+            "debt": RiskLevel.HIGH,
+            "legal": RiskLevel.HIGH,
+            "controller": RiskLevel.HIGH,
+        }
+        category_aliases = {
+            "receivables": "debt",
+            "financing": "debt",
+            "industry_cashflow": "industry_risk",
+            "industry_demand": "industry_risk",
+        }
+        facts_by_category: dict[str, list] = {}
+        for result in (research.company_result, research.industry_result):
+            for fact in result.facts:
+                if fact.verification_status in {"SUPPORTED", "CORROBORATED"}:
+                    category = category_aliases.get(fact.category, fact.category)
+                    facts_by_category.setdefault(category, []).append(fact)
+        for category, facts in facts_by_category.items():
+            if category not in descriptions:
+                continue
+            evidence: list[str] = []
+            for fact in facts:
+                evidence.extend(
+                    [
+                        fact.fact_id or fact.source_id,
+                        fact.source_id,
+                        f"source_id:{fact.source_id}",
+                        *([fact.source_url] if fact.source_url else []),
+                        *([f"subject:{fact.subject}"] if fact.subject else []),
+                        *([f"claim_id:{fact.claim_id}"] if fact.claim_id else []),
+                        *([f"relation:{fact.relation}"] if fact.relation else []),
+                        *(
+                            [f"verifier_model:{fact.verifier_model}"]
+                            if fact.verifier_model
+                            else []
+                        ),
+                        *(
+                            [f"verified_at:{fact.verified_at.isoformat()}"]
+                            if fact.verified_at
+                            else []
+                        ),
+                        *(
+                            [f"evidence_location:{fact.evidence_location}"]
+                            if fact.evidence_location
+                            else []
+                        ),
+                    ]
+                )
+            flags.append(
+                RiskFlag(
+                    type=f"external_{category}",
+                    severity=severities.get(category, RiskLevel.MEDIUM),
+                    description=descriptions[category],
+                    evidence=list(dict.fromkeys(evidence)),
+                )
+            )
+        if (
+            not facts_by_category
+            and research.verification_status in {"UNVERIFIED", "NOT_FOUND"}
+            and not research.external_research_incomplete
+        ):
+            flags.append(
+                RiskFlag(
+                    type="external_research_evidence_gap",
+                    severity=RiskLevel.MEDIUM,
+                    description="外部调查未形成可采信的核验事实，当前存在证据缺口。",
+                    evidence=[
+                        f"verification_status:{research.verification_status}",
+                        f"candidate_count:{research.candidate_count}",
+                    ],
+                )
+            )
 
     if any(flag.severity is RiskLevel.HIGH for flag in flags):
         level = RiskLevel.HIGH

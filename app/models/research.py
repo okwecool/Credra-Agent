@@ -7,18 +7,21 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.content import ContentFetchStatus
 from app.models.search import ResearchEvidence, VerificationStatus
-from app.models.verification import VerificationExecutionStatus
+from app.models.verification import VerificationExecutionStatus, VerificationRelation
 
 
 class ResearchFact(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    fact_id: str | None = Field(default=None, pattern=r"^fact:[0-9a-f]{64}$")
+    subject: str | None = None
     category: str = Field(min_length=1)
     statement: str = Field(min_length=1)
     source_id: str = Field(min_length=1)
     source_url: str | None = None
     verification_status: VerificationStatus = "UNVERIFIED"
     claim_id: str | None = Field(default=None, pattern=r"^claim:[0-9a-f]{64}$")
+    relation: VerificationRelation | None = None
     evidence_excerpt: str | None = None
     evidence_location: str | None = None
     verifier_model: str | None = None
@@ -55,6 +58,10 @@ class ResearchResult(BaseModel):
     company_name: str = Field(min_length=1)
     industry: str = Field(min_length=1)
     anomaly_flags: list[str]
+    intent_id: str | None = Field(default=None, pattern=r"^intent:[0-9a-f]{64}$")
+    query_plan_id: str | None = Field(
+        default=None, pattern=r"^query-plan:[0-9a-f]{64}$"
+    )
     company_result: ResearchQueryResult
     industry_result: ResearchQueryResult
     status: Literal["COMPLETE", "PARTIAL", "EMPTY", "INCOMPLETE"]

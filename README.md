@@ -8,6 +8,10 @@ Credra Agent 是一个以企业授信尽调为业务载体的长任务 Agent MVP
 - Python 财务计算与规则异常检测；
 - Artifact 与 Graph State 分离；
 - Research Agent 通过 MCP 调用外部调查工具；
+- 规则化 Investigation Intent 与可审计 Query Plan；
+- 可插拔 Tavily / Snapshot / Mock 搜索、受控正文抓取与事实核验；
+- Verified Fact 到外部风险项的类别化映射；
+- 同一 Case 下按任务 Run ID 隔离 Artifact 与报告；
 - SQLite Checkpoint 与跨进程 Resume；
 - Human-in-the-loop 风险审核；
 - Tool Retry、确定性故障注入与 JSONL Trace；
@@ -45,15 +49,19 @@ flowchart TD
     UI --> Runtime
     Runtime --> Graph["LangGraph Workflow"]
     Runtime --> Checkpoint[("SQLite Checkpoint")]
-    Graph --> Document["Document Agent"]
+    Graph --> Document["结构化输入校验与归一化"]
     Document --> Financial["Financial Agent"]
     Financial --> PythonTool["Python Financial Tool"]
     Financial --> Route{"Anomaly flags?"}
     Route -->|No| Risk["Risk Agent"]
     Route -->|Yes| Research["Research Agent"]
+    Research --> Intent["Investigation Intent / Query Plan"]
     Research --> MCPClient["MCP Client"]
     MCPClient --> MCPServer["Research MCP Server"]
-    MCPServer --> Dataset["Mock Research Dataset"]
+    MCPServer --> Provider["Tavily / Snapshot / Mock"]
+    Provider --> Fetcher["受控正文抓取 / Snapshot"]
+    Fetcher --> Verifier["Rules / LLM Verifier"]
+    Verifier --> Research
     Research --> Risk
     Risk --> Review{"MEDIUM / HIGH?"}
     Review -->|No| Report["Report"]
@@ -90,10 +98,12 @@ sequenceDiagram
 flowchart LR
     Agent["Research Agent"] --> Client["FastMCP Client"]
     Client -->|"stdio / MCP"| Server["Research MCP Server process"]
-    Server --> Company["search_company"]
-    Server --> Industry["search_industry"]
-    Company --> Mock[("Mock Dataset")]
-    Industry --> Mock
+    Server --> Company["search_company(categories)"]
+    Server --> Industry["search_industry(categories)"]
+    Company --> Providers["Tavily / Snapshot / Mock"]
+    Industry --> Providers
+    Providers --> Content["Content Fetcher"]
+    Content --> Verify["Claim Verifier"]
 ```
 
 默认情况下无需提前手动启动 MCP Server。风险 Case 进入 Research 节点时，Client 会通过以下模块命令自动启动独立 stdio 子进程：
@@ -116,7 +126,7 @@ python -m app.mcp.research_server
 | 人工审核 | Dynamic interrupt |
 | 执行记录 | JSONL Trace |
 
-当前 Risk 和 Report 使用可离线回归的确定性基线。OpenAI-compatible 模型连接配置已经预留并验证过，但模型调用尚未进入 MVP 主业务链路。
+当前财务计算、路由、Risk 和 Report 使用可离线回归的确定性基线。正文事实核验支持严格规则模式，也可显式切换到受约束的 OpenAI-compatible LLM Verifier；模型不负责财务计算、自由路由或最终授信决策。非结构化源文档理解与 LLM 表达层仍未进入主链路。
 
 ## 4. 环境要求
 
@@ -207,10 +217,10 @@ risk_level=LOW
 interrupts=[]
 ```
 
-报告位于：
+报告位于任务独立目录；实际 `run_id` 可从命令返回的 `state.run_id` 查看：
 
 ```text
-data/case_normal/output/credit_report.md
+data/case_normal/runs/<run_id>/output/credit_report.md
 ```
 
 ### Case B：风险企业
@@ -258,6 +268,8 @@ python -m app.task_cli resume `
 ```text
 research_result_v2.json
 risk_analysis_v2.json
+investigation_intent_v2.json
+query_plan_v2.json
 ```
 
 并再次进入 `WAITING_APPROVAL`。旧的 v1 Artifact 不会被覆盖。
@@ -359,13 +371,17 @@ Chainlit 只调用 Durable Runtime，不独立维护任务状态。UI 重启后�
 ```text
 data/<case_id>/
 ├── source/                 # 版本控制内的固定输入
-├── artifacts/              # 运行生成，Git忽略
-│   ├── company_profile_v1.json
-│   ├── financial_analysis_v1.json
-│   ├── research_result_v1.json
-│   └── risk_analysis_v1.json
-└── output/                 # 运行生成，Git忽略
-    └── credit_report.md
+└── runs/                   # 按任务隔离，运行生成且 Git 忽略
+    └── <run_id>/
+        ├── artifacts/
+        │   ├── company_profile_v1.json
+        │   ├── financial_analysis_v1.json
+        │   ├── investigation_intent_v1.json
+        │   ├── query_plan_v1.json
+        │   ├── research_result_v1.json
+        │   └── risk_analysis_v1.json
+        └── output/
+            └── credit_report.md
 
 checkpoints/
 └── credra_agent.db         # SQLite任务状态，Git忽略
@@ -376,6 +392,7 @@ traces/
 ```
 
 Graph State 仅保存 Artifact Reference 和路由字段，不保存完整财务数据、Research 结果或报告。
+M2.2 之前创建且已写入 Case 根目录的旧 Checkpoint 会继续读取原目录；系统不会静默移动或覆盖既有用户数据。新任务一律使用 `runs/<run_id>/`。
 
 ## 11. 测试与验证
 
@@ -403,6 +420,9 @@ python -m tests.stdio_research_smoke
 - MCP Tool 与独立 stdio Server；
 - HITL 和跨进程 Resume；
 - Retry、故障注入与 incomplete 披露；
+- Investigation Intent、Query 差异和人工意见传递；
+- Evidence-Risk 类别映射、证据缺口与冲突披露；
+- 同 Case 多任务隔离及持久化 FAILED 状态；
 - JSONL Trace Schema；
 - 五个固定 Regression Cases；
 - Chainlit 渲染边界。

@@ -1,4 +1,4 @@
-"""Case-scoped artifact persistence with stable, traversal-safe references."""
+"""Run-scoped artifact persistence with stable, traversal-safe references."""
 
 import json
 import re
@@ -9,11 +9,11 @@ from pydantic import BaseModel
 
 
 class ArtifactStore:
-    """Read and write versioned artifacts beneath one case directory."""
+    """Read and write versioned artifacts beneath one execution directory."""
 
-    def __init__(self, case_dir: Path) -> None:
-        self.case_dir = case_dir.resolve()
-        self.artifact_dir = self.case_dir / "artifacts"
+    def __init__(self, run_dir: Path) -> None:
+        self.run_dir = run_dir.resolve()
+        self.artifact_dir = self.run_dir / "artifacts"
 
     def _resolve_reference(self, reference: str) -> Path:
         normalized = PurePosixPath(reference)
@@ -22,9 +22,9 @@ class ArtifactStore:
         if len(normalized.parts) != 2 or normalized.parts[0] != "artifacts":
             raise ValueError("artifact references must be under artifacts/")
 
-        target = (self.case_dir / Path(*normalized.parts)).resolve()
+        target = (self.run_dir / Path(*normalized.parts)).resolve()
         if target.parent != self.artifact_dir:
-            raise ValueError(f"artifact path escapes case directory: {reference}")
+            raise ValueError(f"artifact path escapes run directory: {reference}")
         return target
 
     def write_json(self, reference: str, value: BaseModel | dict[str, Any]) -> str:

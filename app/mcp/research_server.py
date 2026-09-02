@@ -37,6 +37,7 @@ def _search(
     query: str,
     *,
     subject_aliases: Iterable[str] | None = None,
+    categories: Iterable[str] | None = None,
     provider: SearchProvider | None = None,
     content_fetcher: ContentFetcher | None = None,
     fact_verifier: FactVerifier | None = None,
@@ -48,7 +49,11 @@ def _search(
 
     resolved_settings = settings or get_settings()
     active_provider = provider or build_search_provider(resolved_settings)
-    requests = build_search_requests(query_type, normalized, subject_aliases)
+    requests = build_search_requests(
+        query_type, normalized, subject_aliases, categories=categories
+    )
+    if not requests:
+        raise ValueError("at least one search category is required")
     responses = [active_provider.search(request) for request in requests]
     is_mock = active_provider.name == "mock"
     evidence = deduplicate_evidence(
@@ -129,17 +134,23 @@ def _search(
 
 
 @mcp.tool
-def search_company(company_name: str) -> dict[str, Any]:
+def search_company(
+    company_name: str, categories: list[str] | None = None
+) -> dict[str, Any]:
     """Search auditable external evidence for a company."""
 
-    return _search("company", company_name).model_dump(mode="json")
+    return _search("company", company_name, categories=categories).model_dump(
+        mode="json"
+    )
 
 
 @mcp.tool
-def search_industry(industry: str) -> dict[str, Any]:
+def search_industry(
+    industry: str, categories: list[str] | None = None
+) -> dict[str, Any]:
     """Search auditable external evidence for an industry."""
 
-    return _search("industry", industry).model_dump(mode="json")
+    return _search("industry", industry, categories=categories).model_dump(mode="json")
 
 
 if __name__ == "__main__":

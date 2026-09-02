@@ -27,6 +27,7 @@ traces/*.jsonl
 traces/.fault_state/
 data/*/artifacts/
 data/*/output/
+data/*/runs/
 
 # Chainlit generated configuration and runtime uploads
 .chainlit/
