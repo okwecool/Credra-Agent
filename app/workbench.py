@@ -243,6 +243,7 @@ def load_workbench_details(
         "query_proposal": None,
         "query_plan": None,
         "research": None,
+        "report_draft": None,
         "report_expression": None,
         "anomaly_flags": list(payload.get("state", {}).get("anomaly_flags") or []),
         "report_markdown": None,
@@ -265,6 +266,7 @@ def load_workbench_details(
             ("query_proposal_artifact", "query_proposal"),
             ("query_plan_artifact", "query_plan"),
             ("research_artifact", "research"),
+            ("report_draft_artifact", "report_draft"),
             ("report_expression_artifact", "report_expression"),
         ):
             reference = state.get(key)

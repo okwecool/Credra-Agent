@@ -20,6 +20,7 @@ class AgentState(TypedDict):
     evidence_summary_artifact: str | None
     query_proposal_artifact: str | None
     risk_narrative_artifact: str | None
+    report_draft_artifact: str | None
     report_expression_artifact: str | None
     report_artifact: str | None
     anomaly_flags: list[str]
@@ -47,6 +48,7 @@ def initial_state(task_id: str, case_id: str, run_id: str | None = None) -> Agen
         "evidence_summary_artifact": None,
         "query_proposal_artifact": None,
         "risk_narrative_artifact": None,
+        "report_draft_artifact": None,
         "report_expression_artifact": None,
         "report_artifact": None,
         "anomaly_flags": [],

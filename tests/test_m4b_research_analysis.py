@@ -432,7 +432,7 @@ def test_untrusted_query_proposals_are_deterministically_rejected() -> None:
 
 
 class _MainChainModel(_ResearchAnalysisModel):
-    """One deterministic fake that supports both M4-B and the existing M4-A call."""
+    """One deterministic fake supporting all bounded main-chain LLM purposes."""
 
     def generate(
         self, *, output_schema: type, purpose: str, payload: dict, **kwargs: Any
@@ -445,6 +445,43 @@ class _MainChainModel(_ResearchAnalysisModel):
                 **kwargs,
             )
         self.calls.append(purpose)
+        if purpose == "report_draft":
+            sources = {
+                item["reference_id"]: item["statement"]
+                for item in payload["source_index"]
+            }
+            output = output_schema.model_validate(
+                {
+                    "executive_summary": sources["risk:summary"],
+                    "executive_summary_reference_ids": ["risk:summary"],
+                    "sections": [
+                        {
+                            "section": "financial_analysis",
+                            "text": sources["metric:current_ratio"],
+                            "reference_ids": ["metric:current_ratio"],
+                        },
+                        {
+                            "section": "risk_analysis",
+                            "text": sources["risk:summary"],
+                            "reference_ids": ["risk:summary"],
+                        },
+                        {
+                            "section": "evidence_assessment",
+                            "text": sources["research:status"],
+                            "reference_ids": ["research:status"],
+                        },
+                    ],
+                    "limitations": ["仅使用确定性来源索引。"],
+                }
+            )
+            return StructuredModelResult(
+                output=output,
+                model_name=self.model_name,
+                attempts=1,
+                latency_ms=3,
+                input_tokens=140,
+                output_tokens=70,
+            )
         if purpose != "risk_narrative":
             raise AssertionError(f"unexpected purpose: {purpose}")
         evidence_ids = [

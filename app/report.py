@@ -26,6 +26,47 @@ def _references(values: list[str]) -> str:
     return ", ".join(_safe_inline(value) for value in values) or "无"
 
 
+def _render_report_draft_expression(
+    expression: ReportExpressionArtifact | None,
+) -> str:
+    if expression is None:
+        return ""
+    lines = [
+        "## 执行摘要（受约束模型表达）",
+        "",
+        f"- Report Draft 源状态：{expression.report_draft_status or '未生成'}",
+    ]
+    if expression.executive_summary:
+        lines.extend(
+            (
+                "",
+                _safe_inline(expression.executive_summary),
+                "",
+                "引用：" + _references(expression.executive_summary_reference_ids),
+            )
+        )
+    else:
+        lines.append("- 没有通过二次校验的模型执行摘要，保留确定性报告内容。")
+    section_labels = {
+        "financial_analysis": "财务分析表达",
+        "risk_analysis": "风险分析表达",
+        "evidence_assessment": "证据评估表达",
+        "limitations": "局限性表达",
+    }
+    for item in expression.report_sections:
+        lines.extend(
+            (
+                "",
+                f"### {section_labels[item.section]}",
+                "",
+                _safe_inline(item.text),
+                "",
+                "引用：" + _references(item.reference_ids),
+            )
+        )
+    return "\n".join(lines)
+
+
 def _render_evidence_expression(expression: ReportExpressionArtifact | None) -> str:
     if expression is None:
         return ""
@@ -118,6 +159,7 @@ def _render_expression_audit(expression: ReportExpressionArtifact | None) -> str
         f"- 运行模式：{expression.mode}",
         f"- 报告投影状态：{expression.execution_status}",
         f"- 模型：{models}",
+        f"- Report Draft 源状态：{expression.report_draft_status or '未生成'}",
         f"- 被拒绝的不受支持陈述：{len(expression.unsupported_claims)} 条",
         "- 财务数字、风险等级、事实状态和人工决定均来自确定性 Artifact。",
         "- Query Proposal 仅供人工审核，本报告没有自动执行新增调查。",
@@ -182,8 +224,11 @@ def render_credit_report(
     evidence_expression = _render_evidence_expression(report_expression)
     risk_expression = _render_risk_expression(report_expression)
     expression_audit = _render_expression_audit(report_expression)
+    report_draft_expression = _render_report_draft_expression(report_expression)
 
     return f"""# 企业授信尽调分析报告
+
+{report_draft_expression}
 
 ## 1. 企业概况
 

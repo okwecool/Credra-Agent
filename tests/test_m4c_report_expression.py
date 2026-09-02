@@ -187,7 +187,7 @@ def test_invalid_optional_source_falls_back_without_raw_content() -> None:
     }
 
 
-def test_main_chain_builds_report_expression_without_a_third_model_call(
+def test_main_chain_builds_report_expression_with_bounded_report_draft_call(
     tmp_path: Path,
 ) -> None:
     data_dir = tmp_path / "data"
@@ -228,7 +228,14 @@ def test_main_chain_builds_report_expression_without_a_third_model_call(
     assert completed["state"]["report_expression_artifact"] == (
         "artifacts/report_expression_v1.json"
     )
-    assert model.calls == ["evidence_summary_query_proposal", "risk_narrative"]
+    assert model.calls == [
+        "evidence_summary_query_proposal",
+        "risk_narrative",
+        "report_draft",
+    ]
+    assert completed["state"]["report_draft_artifact"] == (
+        "artifacts/report_draft_v1.json"
+    )
     run_dir = data_dir / "case_risky/runs" / completed["state"]["run_id"]
     expression = json.loads(
         (run_dir / "artifacts/report_expression_v1.json").read_text(encoding="utf-8")

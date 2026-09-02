@@ -6,6 +6,10 @@ import re
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 
+from app.llm.report_draft import (
+    build_report_source_index,
+    report_source_fingerprint,
+)
 from app.llm.research_analysis import (
     build_research_evidence_gaps,
     build_research_evidence_index,
@@ -14,20 +18,30 @@ from app.models.analysis import (
     EvidenceSummaryArtifact,
     QueryProposalArtifact,
     ReportClaimComponent,
+    ReportDraftArtifact,
     ReportEvidenceGap,
     ReportEvidenceSummaryItem,
     ReportExpressionArtifact,
+    ReportExpressionSection,
     ReportQuerySuggestion,
     ReportRiskExplanation,
     RiskNarrativeArtifact,
     UnsupportedReportClaim,
     UnsupportedReportClaimReason,
 )
+from app.models.company import CompanyProfile
+from app.models.financial import FinancialAnalysis
 from app.models.investigation import QueryPlan
 from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis
 
 _URL_PATTERN = re.compile(r"(?i)(?:https?://|www\.)")
+_CREDIT_DECISION_PATTERN = re.compile(
+    r"(?i)(?:(?:建议|应当|应|可以|同意|批准|拒绝|不予).{0,12}"
+    r"(?:授信|贷款|放款)|(?:授信|贷款|放款).{0,12}"
+    r"(?:同意|批准|拒绝|不予)|(?:approve|reject|grant|deny).{0,12}"
+    r"(?:credit|loan))"
+)
 _NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_:])[-+]?(?:\d+(?:,\d{3})*(?:\.\d+)?|\.\d+)%?"
     r"(?![A-Za-z0-9_])"
@@ -58,6 +72,8 @@ def _text_rejections(
     reasons: list[UnsupportedReportClaimReason] = []
     if _URL_PATTERN.search(text):
         reasons.append("UNSUPPORTED_URL")
+    if _CREDIT_DECISION_PATTERN.search(text):
+        reasons.append("UNSUPPORTED_DECISION")
     allowed_numbers = {
         number for source in allowed_sources for number in _normalized_numbers(source)
     }
@@ -80,11 +96,15 @@ def build_report_expression(
     risk: RiskAnalysis,
     *,
     analysis_mode: str,
+    company: CompanyProfile | None = None,
+    financial: FinancialAnalysis | None = None,
+    external_research_incomplete: bool = False,
     research: ResearchResult | None = None,
     plan: QueryPlan | None = None,
     risk_narrative: RiskNarrativeArtifact | None = None,
     evidence_summary: EvidenceSummaryArtifact | None = None,
     query_proposal: QueryProposalArtifact | None = None,
+    report_draft: ReportDraftArtifact | None = None,
     source_artifacts: dict[str, str] | None = None,
     invalid_sources: Iterable[ReportClaimComponent] = (),
 ) -> ReportExpressionArtifact:
@@ -111,10 +131,79 @@ def build_report_expression(
     model_names = list(
         dict.fromkeys(
             artifact.model_name
-            for artifact in (risk_narrative, evidence_summary, query_proposal)
+            for artifact in (
+                risk_narrative,
+                evidence_summary,
+                query_proposal,
+                report_draft,
+            )
             if artifact is not None and artifact.mode == "llm"
         )
     )
+    executive_summary: str | None = None
+    executive_summary_reference_ids: list[str] = []
+    report_sections: list[ReportExpressionSection] = []
+    report_sources: dict[str, str] = {}
+    if company is not None and financial is not None:
+        report_sources = build_report_source_index(
+            company,
+            financial,
+            risk,
+            research,
+            external_research_incomplete=external_research_incomplete,
+        )
+    if report_draft is not None and report_draft.mode == "llm":
+        if report_draft.execution_status != "COMPLETE":
+            reject("report_draft", "source_artifact", "SOURCE_NOT_COMPLETE")
+        elif (
+            not report_sources
+            or report_draft.source_fingerprint
+            != report_source_fingerprint(report_sources)
+        ):
+            reject("report_draft", "source_artifact", "SOURCE_MISMATCH")
+        else:
+            summary_reasons: list[UnsupportedReportClaimReason] = []
+            summary_references = report_draft.executive_summary_reference_ids
+            if len(summary_references) != len(set(summary_references)) or not set(
+                summary_references
+            ).issubset(report_sources):
+                summary_reasons.append("UNSUPPORTED_EVIDENCE")
+            else:
+                summary_reasons.extend(
+                    _text_rejections(
+                        report_draft.executive_summary,
+                        [report_sources[item] for item in summary_references],
+                    )
+                )
+            for reason in dict.fromkeys(summary_reasons):
+                reject("report_draft", "executive_summary", reason)
+            if not summary_reasons:
+                executive_summary = report_draft.executive_summary
+                executive_summary_reference_ids = summary_references
+            for section in report_draft.sections:
+                reasons: list[UnsupportedReportClaimReason] = []
+                if len(section.reference_ids) != len(
+                    set(section.reference_ids)
+                ) or not set(section.reference_ids).issubset(report_sources):
+                    reasons.append("UNSUPPORTED_EVIDENCE")
+                else:
+                    reasons.extend(
+                        _text_rejections(
+                            section.text,
+                            [report_sources[item] for item in section.reference_ids],
+                        )
+                    )
+                for reason in dict.fromkeys(reasons):
+                    reject("report_draft", section.section, reason)
+                if not reasons:
+                    report_sections.append(
+                        ReportExpressionSection(
+                            section=section.section,
+                            text=section.text,
+                            reference_ids=section.reference_ids,
+                        )
+                    )
+
     risk_summary: str | None = None
     risk_summary_ids: list[str] = []
     risk_explanations: list[ReportRiskExplanation] = []
@@ -375,7 +464,9 @@ def build_report_expression(
                 )
 
     has_expression = bool(
-        risk_summary
+        executive_summary
+        or report_sections
+        or risk_summary
         or risk_explanations
         or evidence_overall_summary
         or evidence_items
@@ -408,7 +499,11 @@ def build_report_expression(
         query_proposal_status=(
             query_proposal.execution_status if query_proposal else None
         ),
+        report_draft_status=(report_draft.execution_status if report_draft else None),
         model_names=model_names,
+        executive_summary=executive_summary,
+        executive_summary_reference_ids=executive_summary_reference_ids,
+        report_sections=report_sections,
         risk_overall_summary=risk_summary,
         risk_summary_evidence_ids=risk_summary_ids,
         risk_explanations=risk_explanations,

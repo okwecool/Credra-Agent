@@ -23,6 +23,7 @@ from app.graph.routing import (
 )
 from app.graph.state import AgentState
 from app.llm.gateway import StructuredModel, StructuredModelError, build_analysis_model
+from app.llm.report_draft import build_report_draft
 from app.llm.research_analysis import build_research_analysis
 from app.llm.risk_narrative import build_risk_narrative
 from app.models.analysis import (
@@ -444,6 +445,49 @@ def build_workflow(
             QueryProposalArtifact,
             ("query_proposal",),
         )
+        report_draft_timer = TimedTrace()
+        report_draft = build_report_draft(
+            company,
+            financial,
+            risk,
+            research,
+            external_research_incomplete=state["external_research_incomplete"],
+            analysis_mode=settings.analysis_mode,
+            model=active_analysis_model,
+            model_name=settings.analysis_model or settings.model_name,
+            initialization_error=analysis_initialization_error,
+        )
+        report_draft_reference = artifacts.next_version_reference(
+            "report_draft", state.get("report_draft_artifact")
+        )
+        report_draft_reference = artifacts.write_json(
+            report_draft_reference, report_draft
+        )
+        if settings.analysis_mode == "llm":
+            report_draft_end, report_draft_latency = report_draft_timer.finish()
+            trace.write(
+                task_id=state["task_id"],
+                node="report",
+                event_type="LLM_CALL",
+                status=(
+                    TraceStatus.FAILED
+                    if report_draft.execution_status == "DEGRADED"
+                    else TraceStatus.SUCCESS
+                ),
+                start_time=report_draft_timer.start_time,
+                end_time=report_draft_end,
+                latency_ms=report_draft_latency,
+                input_summary="purpose=report_draft",
+                output_summary=(
+                    f"model={report_draft.model_name};"
+                    f"prompt={report_draft.prompt_version};"
+                    f"execution={report_draft.execution_status};"
+                    f"attempts={report_draft.attempts};"
+                    f"input_tokens={report_draft.input_tokens};"
+                    f"output_tokens={report_draft.output_tokens}"
+                ),
+                error=report_draft.error_code,
+            )
         source_artifacts = {
             key: reference
             for key, reference in (
@@ -451,17 +495,22 @@ def build_workflow(
                 ("evidence_summary", state.get("evidence_summary_artifact")),
                 ("query_proposal", state.get("query_proposal_artifact")),
                 ("query_plan", state.get("query_plan_artifact")),
+                ("report_draft", report_draft_reference),
             )
             if reference
         }
         report_expression = build_report_expression(
             risk,
             analysis_mode=settings.analysis_mode,
+            company=company,
+            financial=financial,
+            external_research_incomplete=state["external_research_incomplete"],
             research=research,
             plan=plan,
             risk_narrative=risk_narrative,
             evidence_summary=evidence_summary,
             query_proposal=query_proposal,
+            report_draft=report_draft,
             source_artifacts=source_artifacts,
             invalid_sources=invalid_sources,
         )
@@ -485,6 +534,7 @@ def build_workflow(
         return {
             "status": "COMPLETED",
             "current_node": "report",
+            "report_draft_artifact": report_draft_reference,
             "report_expression_artifact": report_expression_reference,
             "report_artifact": "output/credit_report.md",
         }

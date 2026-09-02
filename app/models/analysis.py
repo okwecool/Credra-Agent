@@ -46,6 +46,7 @@ ReportClaimComponent = Literal[
     "evidence_summary",
     "evidence_gap",
     "query_proposal",
+    "report_draft",
 ]
 UnsupportedReportClaimReason = Literal[
     "SOURCE_INVALID",
@@ -56,6 +57,7 @@ UnsupportedReportClaimReason = Literal[
     "UNSUPPORTED_FACT",
     "UNSUPPORTED_NUMBER",
     "UNSUPPORTED_URL",
+    "UNSUPPORTED_DECISION",
     "INVALID_QUERY_REFERENCE",
 ]
 
@@ -293,6 +295,81 @@ class QueryProposalArtifact(BaseModel):
         return self
 
 
+ReportDraftSectionName = Literal[
+    "financial_analysis",
+    "risk_analysis",
+    "evidence_assessment",
+    "limitations",
+]
+
+
+class ReportDraftSection(BaseModel):
+    """One model-authored report paragraph with deterministic references."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    section: ReportDraftSectionName
+    text: str = Field(min_length=1, max_length=1_500)
+    reference_ids: list[str] = Field(min_length=1, max_length=20)
+
+
+class ReportDraft(BaseModel):
+    """Untrusted Executive Summary and report prose returned by the model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    executive_summary: str = Field(min_length=1, max_length=2_000)
+    executive_summary_reference_ids: list[str] = Field(min_length=1, max_length=30)
+    sections: list[ReportDraftSection] = Field(min_length=1, max_length=4)
+    limitations: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def sections_are_unique(self) -> "ReportDraft":
+        names = [item.section for item in self.sections]
+        if len(names) != len(set(names)):
+            raise ValueError("report draft sections must be unique")
+        return self
+
+
+class ReportDraftArtifact(BaseModel):
+    """Run-scoped Report Draft before the final M4-C1 projection gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["deterministic", "llm"]
+    execution_status: AnalysisExecutionStatus
+    model_name: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    source_fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    executive_summary: str = Field(min_length=1, max_length=2_000)
+    executive_summary_reference_ids: list[str] = Field(
+        default_factory=list, max_length=30
+    )
+    sections: list[ReportDraftSection] = Field(default_factory=list, max_length=4)
+    limitations: list[str] = Field(default_factory=list, max_length=20)
+    attempts: int = Field(default=0, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    error_code: AnalysisErrorCode | None = None
+    error_message: str | None = None
+
+    @model_validator(mode="after")
+    def execution_fields_are_consistent(self) -> "ReportDraftArtifact":
+        if self.execution_status == "DEGRADED":
+            if not self.error_code or not self.error_message:
+                raise ValueError("degraded report draft requires a safe error")
+        elif self.error_code or self.error_message:
+            raise ValueError(
+                "successful or skipped report draft cannot contain an error"
+            )
+        if self.execution_status == "COMPLETE" and (
+            not self.executive_summary_reference_ids or not self.sections
+        ):
+            raise ValueError("complete report draft requires cited content")
+        return self
+
+
 class ReportRiskExplanation(BaseModel):
     """Risk prose accepted for the final report after a second citation check."""
 
@@ -342,6 +419,16 @@ class ReportQuerySuggestion(BaseModel):
     execution_status: Literal["NOT_EXECUTED"] = "NOT_EXECUTED"
 
 
+class ReportExpressionSection(BaseModel):
+    """Report Draft prose accepted by the final second-pass gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    section: ReportDraftSectionName
+    text: str = Field(min_length=1, max_length=1_500)
+    reference_ids: list[str] = Field(min_length=1, max_length=20)
+
+
 class UnsupportedReportClaim(BaseModel):
     """A rejected model-authored report item without retaining raw unsafe text."""
 
@@ -362,7 +449,15 @@ class ReportExpressionArtifact(BaseModel):
     risk_narrative_status: AnalysisExecutionStatus | None = None
     evidence_summary_status: AnalysisExecutionStatus | None = None
     query_proposal_status: AnalysisExecutionStatus | None = None
+    report_draft_status: AnalysisExecutionStatus | None = None
     model_names: list[str] = Field(default_factory=list, max_length=8)
+    executive_summary: str | None = Field(default=None, max_length=2_000)
+    executive_summary_reference_ids: list[str] = Field(
+        default_factory=list, max_length=30
+    )
+    report_sections: list[ReportExpressionSection] = Field(
+        default_factory=list, max_length=4
+    )
     risk_overall_summary: str | None = Field(default=None, max_length=2_000)
     risk_summary_evidence_ids: list[str] = Field(default_factory=list, max_length=80)
     risk_explanations: list[ReportRiskExplanation] = Field(
@@ -381,14 +476,16 @@ class ReportExpressionArtifact(BaseModel):
     unsupported_claims: list[UnsupportedReportClaim] = Field(
         default_factory=list, max_length=120
     )
-    source_artifacts: dict[str, str] = Field(default_factory=dict, max_length=4)
+    source_artifacts: dict[str, str] = Field(default_factory=dict, max_length=5)
     limitations: list[str] = Field(default_factory=list, max_length=20)
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @model_validator(mode="after")
     def status_matches_included_expression(self) -> "ReportExpressionArtifact":
         has_expression = bool(
-            self.risk_overall_summary
+            self.executive_summary
+            or self.report_sections
+            or self.risk_overall_summary
             or self.risk_explanations
             or self.evidence_overall_summary
             or self.evidence_items
