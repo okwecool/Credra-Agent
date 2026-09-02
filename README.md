@@ -350,19 +350,16 @@ Remove-Item Env:MAX_RETRY
 chainlit run chainlit_app.py
 ```
 
-浏览器访问 Chainlit 输出的本地地址，然后输入：
+浏览器访问 Chainlit 输出的本地地址，然后可以：
 
-```text
-start case_normal
-start case_risky
-status <thread_id>
-resume <thread_id> approve|research [comment]
-```
+- 从首页预检列表直接启动 Case；
+- 点击“恢复已有任务”并输入 `thread_id`；
+- 查看 Case、Thread、Run、状态、当前/下一节点和风险等级；
+- 查看结构化输入预检、节点进度和当前 Artifact 引用；
+- 风险任务使用“批准并继续”或“补充调查”按钮，并填写人工意见；
+- 点击“刷新状态”读取 Durable Runtime 的最新状态。
 
-风险任务会显示风险项和 Evidence，并提供：
-
-- 继续生成报告；
-- 补充调查。
+`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；Evidence 详情、Trace 时间线和报告下载属于后续 M3-B/C。
 
 Chainlit 只调用 Durable Runtime，不独立维护任务状态。UI 重启后仍能凭 `thread_id` Resume。
 
