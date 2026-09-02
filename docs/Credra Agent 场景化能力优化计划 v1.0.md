@@ -720,7 +720,7 @@ Document -> Financial -> Research (deterministic)
 
 ## 10.3 分段开发计划
 
-实施状态（2026-09-02）：M4-A 与 M4-B 已完成实现并通过离线 Mock/主链路回归；M4-D 已完成一次真实 Qwen 纵向成功验收和确定性降级验证，但异常矩阵与固定 Eval 样本尚未全部完成；M4-C 仍待开发。此状态不改变下列阶段的验收约束。
+实施状态（2026-09-02）：M4-A、M4-B 与 M4-C1 已完成实现并通过离线 Mock/主链路回归；M4-D 已完成一次真实 Qwen 纵向成功验收和确定性降级验证，但异常矩阵与固定 Eval 样本尚未全部完成；M4-C2 的独立 Report Draft 模型调用仍待开发。此状态不改变下列阶段的验收约束。
 
 ### M4-A：统一结构化模型网关与 Risk Narrative 主链路接入
 
@@ -750,14 +750,12 @@ Document -> Financial -> Research (deterministic)
 
 ### M4-C：受约束报告表达与 Unsupported Claim 检查
 
-- 为 Executive Summary、Risk Explanation、Evidence Summary 和 Report Draft 使用独立 Prompt 与 Schema；
-- 报告草稿中的每个重要陈述必须携带允许的 Evidence ID；
-- 新增 Unsupported Claim 检查，拒绝不存在的 URL、Evidence ID、财务数字和确定性事实；
-- 最终报告由确定性模板组装，LLM 只填充经过校验的表达区块；
-- 报告披露运行模式、模型、降级状态、冲突和证据缺口；
-- 模型失败时完整回退现有确定性报告。
+- **M4-C1（已实现）：** Report 节点不新增模型调用，只消费 M4-A/B 已生成的 Risk Narrative、Evidence Summary 和 Query Proposal；对 Risk/Evidence/Fact/Gap/Query 引用、确定性数字、事实原文和 URL 执行第二次交叉校验；
+- M4-C1 将通过校验的表达投影到 `report_expression_vN.json`，最终报告由确定性模板组装并披露运行模式、模型、源状态、证据缺口、`NOT_EXECUTED` 查询建议和拒绝原因统计；无效、缺失或降级的可选模型 Artifact 不使 Report 节点失败，而是完整回退确定性内容；
+- **M4-C2（待实现）：** 为 Executive Summary 与 Report Draft 增加独立 Prompt、Schema 和模型调用；每个重要陈述必须携带允许的 Evidence ID，并复用 M4-C1 的二次门禁后才能进入报告；
+- M4-C2 仍不得改变财务数值、Verified Fact、Risk Level、Graph Routing 或人工决定，模型失败时继续使用 M4-C1/确定性报告。
 
-阶段门禁：无来源陈述不得进入最终报告；模型不能改变财务数值、风险等级或人工决定；确定性与 LLM 模式均能生成报告。
+M4-C1 阶段门禁：未经支持的 URL、数字、Evidence/Fact 和 Query 引用不得进入最终报告；Query Proposal 始终保持 `NOT_EXECUTED`；确定性与 LLM 模式均能生成报告；Report 阶段模型调用次数为零。M4-C 总门禁还要求 M4-C2 的 Report Draft 调用通过同一约束与降级回归。
 
 ### M4-D：真实 Qwen 纵向验收、成本与稳定性
 

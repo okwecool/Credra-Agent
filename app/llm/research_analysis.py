@@ -60,7 +60,7 @@ def _fact_key(fact: ResearchFact) -> tuple[str, str | None, str]:
     return (fact.source_id, fact.claim_id, fact.category)
 
 
-def _evidence_records(research: ResearchResult) -> list[dict[str, Any]]:
+def build_research_evidence_index(research: ResearchResult) -> list[dict[str, Any]]:
     """Build a compact index without rejected evidence or fetched document text."""
 
     facts_by_key = {
@@ -115,7 +115,7 @@ def _evidence_records(research: ResearchResult) -> list[dict[str, Any]]:
     )
 
 
-def _evidence_gaps(
+def build_research_evidence_gaps(
     research: ResearchResult, plan: QueryPlan, records: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     record_categories = {
@@ -505,8 +505,8 @@ def build_research_analysis(
 ) -> ResearchAnalysisArtifacts:
     """Return bounded summaries and review-only proposals without changing QueryPlan."""
 
-    records = _evidence_records(research)
-    gaps = _evidence_gaps(research, plan, records)
+    records = build_research_evidence_index(research)
+    gaps = build_research_evidence_gaps(research, plan, records)
     if analysis_mode == "deterministic":
         return _fallback(
             research,

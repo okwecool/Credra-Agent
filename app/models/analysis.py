@@ -40,6 +40,24 @@ QueryProposalRejectionReason = Literal[
     "DUPLICATE_PROPOSAL",
     "INVALID_QUERY_FORMAT",
 ]
+ReportExpressionStatus = Literal["COMPLETE", "PARTIAL", "FALLBACK"]
+ReportClaimComponent = Literal[
+    "risk_narrative",
+    "evidence_summary",
+    "evidence_gap",
+    "query_proposal",
+]
+UnsupportedReportClaimReason = Literal[
+    "SOURCE_INVALID",
+    "SOURCE_NOT_COMPLETE",
+    "SOURCE_MISMATCH",
+    "UNKNOWN_RISK_ID",
+    "UNSUPPORTED_EVIDENCE",
+    "UNSUPPORTED_FACT",
+    "UNSUPPORTED_NUMBER",
+    "UNSUPPORTED_URL",
+    "INVALID_QUERY_REFERENCE",
+]
 
 
 class RiskNarrativeExplanation(BaseModel):
@@ -272,4 +290,113 @@ class QueryProposalArtifact(BaseModel):
                 raise ValueError("degraded proposals require a safe error")
         elif self.error_code or self.error_message:
             raise ValueError("successful or skipped proposals cannot contain an error")
+        return self
+
+
+class ReportRiskExplanation(BaseModel):
+    """Risk prose accepted for the final report after a second citation check."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    risk_id: str = Field(pattern=r"^risk:\d+:[a-z][a-z0-9_]*$")
+    explanation: str = Field(min_length=1, max_length=1_000)
+    evidence_ids: list[str] = Field(min_length=1, max_length=40)
+
+
+class ReportEvidenceSummaryItem(BaseModel):
+    """Verified-fact prose accepted for the final report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str = Field(pattern=r"^evidence:[0-9a-f]{64}$")
+    verification_status: Literal["SUPPORTED", "CORROBORATED"]
+    summary: str = Field(min_length=1, max_length=1_000)
+    source_id: str = Field(min_length=1)
+    claim_id: str = Field(pattern=r"^claim:[0-9a-f]{64}$")
+    fact_id: str = Field(pattern=r"^fact:[0-9a-f]{64}$")
+
+
+class ReportEvidenceGap(BaseModel):
+    """Non-factual research gap disclosure accepted for the final report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    gap_id: str = Field(pattern=r"^gap:[0-9a-f]{64}$")
+    query_type: Literal["company", "industry"]
+    category: str = Field(min_length=1, max_length=80)
+    reason: EvidenceGapReason
+    summary: str = Field(min_length=1, max_length=800)
+
+
+class ReportQuerySuggestion(BaseModel):
+    """An accepted-for-review Query that remains explicitly unexecuted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: str = Field(pattern=r"^query-proposal:[0-9a-f]{64}$")
+    query_type: Literal["company", "industry"]
+    category: str = Field(min_length=1, max_length=80)
+    query: str = Field(min_length=1, max_length=320)
+    reference_ids: list[str] = Field(min_length=1, max_length=8)
+    rationale: str = Field(min_length=1, max_length=800)
+    execution_status: Literal["NOT_EXECUTED"] = "NOT_EXECUTED"
+
+
+class UnsupportedReportClaim(BaseModel):
+    """A rejected model-authored report item without retaining raw unsafe text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    component: ReportClaimComponent
+    item_id: str = Field(min_length=1, max_length=160)
+    reason: UnsupportedReportClaimReason
+
+
+class ReportExpressionArtifact(BaseModel):
+    """Validated projection of existing model Artifacts into the fixed report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["deterministic", "llm"]
+    execution_status: ReportExpressionStatus
+    risk_narrative_status: AnalysisExecutionStatus | None = None
+    evidence_summary_status: AnalysisExecutionStatus | None = None
+    query_proposal_status: AnalysisExecutionStatus | None = None
+    model_names: list[str] = Field(default_factory=list, max_length=8)
+    risk_overall_summary: str | None = Field(default=None, max_length=2_000)
+    risk_summary_evidence_ids: list[str] = Field(default_factory=list, max_length=80)
+    risk_explanations: list[ReportRiskExplanation] = Field(
+        default_factory=list, max_length=40
+    )
+    evidence_overall_summary: str | None = Field(default=None, max_length=2_000)
+    evidence_summary_ids: list[str] = Field(default_factory=list, max_length=40)
+    evidence_items: list[ReportEvidenceSummaryItem] = Field(
+        default_factory=list, max_length=40
+    )
+    evidence_gaps: list[ReportEvidenceGap] = Field(default_factory=list, max_length=40)
+    query_suggestions: list[ReportQuerySuggestion] = Field(
+        default_factory=list, max_length=12
+    )
+    rejected_query_proposal_count: int = Field(default=0, ge=0)
+    unsupported_claims: list[UnsupportedReportClaim] = Field(
+        default_factory=list, max_length=120
+    )
+    source_artifacts: dict[str, str] = Field(default_factory=dict, max_length=4)
+    limitations: list[str] = Field(default_factory=list, max_length=20)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def status_matches_included_expression(self) -> "ReportExpressionArtifact":
+        has_expression = bool(
+            self.risk_overall_summary
+            or self.risk_explanations
+            or self.evidence_overall_summary
+            or self.evidence_items
+            or self.evidence_gaps
+            or self.query_suggestions
+        )
+        if self.execution_status == "FALLBACK" and has_expression:
+            raise ValueError("fallback report expression cannot include model prose")
+        if self.execution_status in {"COMPLETE", "PARTIAL"} and not has_expression:
+            raise ValueError("accepted report expression requires included content")
         return self

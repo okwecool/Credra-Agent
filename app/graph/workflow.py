@@ -25,6 +25,12 @@ from app.graph.state import AgentState
 from app.llm.gateway import StructuredModel, StructuredModelError, build_analysis_model
 from app.llm.research_analysis import build_research_analysis
 from app.llm.risk_narrative import build_risk_narrative
+from app.models.analysis import (
+    EvidenceSummaryArtifact,
+    QueryProposalArtifact,
+    ReportClaimComponent,
+    RiskNarrativeArtifact,
+)
 from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis, FinancialStatement
 from app.models.investigation import QueryPlan
@@ -32,6 +38,7 @@ from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis
 from app.models.trace import TraceStatus
 from app.report import render_credit_report
+from app.report_expression import build_report_expression
 from app.runtime.fault import ResearchFaultInjector
 from app.runtime.tracing import TimedTrace, TraceWriter
 from app.tools.anomalies import detect_anomalies
@@ -391,12 +398,86 @@ def build_workflow(
             artifacts.read_json(state["financial_artifact"])
         )
         risk = RiskAnalysis.model_validate(artifacts.read_json(state["risk_artifact"]))
+        invalid_sources: list[ReportClaimComponent] = []
+
+        def optional_artifact(
+            reference: str | None,
+            model: type[
+                ResearchResult
+                | QueryPlan
+                | RiskNarrativeArtifact
+                | EvidenceSummaryArtifact
+                | QueryProposalArtifact
+            ],
+            affected_components: tuple[ReportClaimComponent, ...],
+        ) -> Any | None:
+            if not reference:
+                return None
+            try:
+                return model.model_validate(artifacts.read_json(reference))
+            except (OSError, TypeError, ValueError):
+                invalid_sources.extend(affected_components)
+                return None
+
+        research = optional_artifact(
+            state.get("research_artifact"),
+            ResearchResult,
+            ("evidence_summary", "evidence_gap", "query_proposal"),
+        )
+        plan = optional_artifact(
+            state.get("query_plan_artifact"),
+            QueryPlan,
+            ("evidence_summary", "evidence_gap", "query_proposal"),
+        )
+        risk_narrative = optional_artifact(
+            state.get("risk_narrative_artifact"),
+            RiskNarrativeArtifact,
+            ("risk_narrative",),
+        )
+        evidence_summary = optional_artifact(
+            state.get("evidence_summary_artifact"),
+            EvidenceSummaryArtifact,
+            ("evidence_summary", "evidence_gap"),
+        )
+        query_proposal = optional_artifact(
+            state.get("query_proposal_artifact"),
+            QueryProposalArtifact,
+            ("query_proposal",),
+        )
+        source_artifacts = {
+            key: reference
+            for key, reference in (
+                ("risk_narrative", state.get("risk_narrative_artifact")),
+                ("evidence_summary", state.get("evidence_summary_artifact")),
+                ("query_proposal", state.get("query_proposal_artifact")),
+                ("query_plan", state.get("query_plan_artifact")),
+            )
+            if reference
+        }
+        report_expression = build_report_expression(
+            risk,
+            analysis_mode=settings.analysis_mode,
+            research=research,
+            plan=plan,
+            risk_narrative=risk_narrative,
+            evidence_summary=evidence_summary,
+            query_proposal=query_proposal,
+            source_artifacts=source_artifacts,
+            invalid_sources=invalid_sources,
+        )
+        report_expression_reference = artifacts.next_version_reference(
+            "report_expression", state.get("report_expression_artifact")
+        )
+        report_expression_reference = artifacts.write_json(
+            report_expression_reference, report_expression
+        )
         report = render_credit_report(
             company,
             financial,
             risk,
             state["human_comment"],
             state["external_research_incomplete"],
+            report_expression,
         )
         output_path = run_dir / "output" / "credit_report.md"
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -404,6 +485,7 @@ def build_workflow(
         return {
             "status": "COMPLETED",
             "current_node": "report",
+            "report_expression_artifact": report_expression_reference,
             "report_artifact": "output/credit_report.md",
         }
 

@@ -164,6 +164,7 @@ def _artifact_markdown(state: dict[str, Any]) -> list[str]:
         ("Query Proposal", state.get("query_proposal_artifact")),
         ("Risk", state.get("risk_artifact")),
         ("LLM Narrative", state.get("risk_narrative_artifact")),
+        ("Report Expression", state.get("report_expression_artifact")),
         ("Report", state.get("report_artifact")),
     ]
     lines = ["## Artifact 引用", "| 类型 | 当前版本 |", "|---|---|"]

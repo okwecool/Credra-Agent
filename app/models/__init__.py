@@ -6,10 +6,16 @@ from app.models.analysis import (
     EvidenceSummaryEntry,
     QueryProposal,
     QueryProposalArtifact,
+    ReportEvidenceGap,
+    ReportEvidenceSummaryItem,
+    ReportExpressionArtifact,
+    ReportQuerySuggestion,
+    ReportRiskExplanation,
     ResearchAnalysisDraft,
     RiskNarrativeArtifact,
     RiskNarrativeDraft,
     RiskNarrativeExplanation,
+    UnsupportedReportClaim,
 )
 from app.models.company import CompanyProfile
 from app.models.financial import (
@@ -34,6 +40,11 @@ __all__ = [
     "HumanDecision",
     "QueryProposal",
     "QueryProposalArtifact",
+    "ReportEvidenceGap",
+    "ReportEvidenceSummaryItem",
+    "ReportExpressionArtifact",
+    "ReportQuerySuggestion",
+    "ReportRiskExplanation",
     "ResearchAnalysisDraft",
     "ResearchFact",
     "ResearchQueryResult",
@@ -46,4 +57,5 @@ __all__ = [
     "RiskNarrativeExplanation",
     "TraceEvent",
     "TraceStatus",
+    "UnsupportedReportClaim",
 ]
