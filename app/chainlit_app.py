@@ -14,6 +14,11 @@ from app.cases import validate_case
 from app.config import Settings, get_settings
 from app.mcp.research_client import ResearchServiceError
 from app.runtime.tasks import get_task_status, resume_task, start_task
+from app.workbench import (
+    friendly_error_summary,
+    load_workbench_details,
+    workbench_detail_markdown,
+)
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
 _STATUS_LABELS = {
@@ -233,10 +238,44 @@ def _task_actions(payload: dict[str, Any]) -> list[cl.Action]:
     return actions
 
 
+def _report_elements(payload: dict[str, Any], details: dict[str, Any]) -> list[cl.File]:
+    markdown = details.get("report_markdown")
+    html = details.get("report_html")
+    if not isinstance(markdown, str) or not isinstance(html, str):
+        return []
+    case_id = str(payload.get("state", {}).get("case_id") or "credra")
+    if not _CASE_ID.fullmatch(case_id):
+        case_id = "credra"
+    thread_id = str(payload.get("thread_id") or "workbench")
+    return [
+        cl.File(
+            thread_id=thread_id,
+            name=f"{case_id}_credit_report.md",
+            content=markdown.encode("utf-8"),
+            display="inline",
+            mime="text/markdown",
+        ),
+        cl.File(
+            thread_id=thread_id,
+            name=f"{case_id}_credit_report.html",
+            content=html.encode("utf-8"),
+            display="inline",
+            mime="text/html",
+        ),
+    ]
+
+
 async def _send_payload(payload: dict[str, Any]) -> None:
     cl.user_session.set("credra_thread_id", payload["thread_id"])
+    details = await asyncio.to_thread(load_workbench_details, payload, get_settings())
+    content = _risk_markdown(payload)
+    detail_content = workbench_detail_markdown(details)
+    if detail_content:
+        content += "\n\n---\n\n" + detail_content
     await cl.Message(
-        content=_risk_markdown(payload), actions=_task_actions(payload)
+        content=content,
+        actions=_task_actions(payload),
+        elements=_report_elements(payload, details),
     ).send()
 
 
@@ -282,11 +321,7 @@ async def _ask_text(prompt: str) -> str | None:
 
 
 def _safe_error(exc: Exception) -> str:
-    message = re.sub(
-        r"(?i)(api[_-]?key|authorization|bearer)(\s*[:=]\s*)\S+",
-        r"\1\2[REDACTED]",
-        str(exc),
-    )[:300]
+    message = friendly_error_summary(exc)
     return f"{type(exc).__name__}: {message}"
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from app.chainlit_app import (
     _case_catalog_markdown,
     _node_states,
+    _report_elements,
     _risk_markdown,
     discover_cases,
     serialize_for_debug,
@@ -99,3 +100,22 @@ def test_chainlit_discovers_and_preflights_cases(tmp_path: Path) -> None:
     assert all(item["valid"] for item in cases)
     assert "case_byd_002594" in markdown
     assert "not-a-case" not in markdown
+
+
+def test_chainlit_report_elements_use_in_memory_content() -> None:
+    payload = {"state": {"case_id": "case_demo"}}
+    elements = _report_elements(
+        payload,
+        {
+            "report_markdown": "# Report\n",
+            "report_html": "<!doctype html><p>Report</p>",
+        },
+    )
+
+    assert [element.name for element in elements] == [
+        "case_demo_credit_report.md",
+        "case_demo_credit_report.html",
+    ]
+    assert elements[0].content == b"# Report\n"
+    assert elements[1].mime == "text/html"
+    assert all(element.path is None for element in elements)

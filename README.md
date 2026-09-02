@@ -359,7 +359,9 @@ chainlit run chainlit_app.py
 - 风险任务使用“批准并继续”或“补充调查”按钮，并填写人工意见；
 - 点击“刷新状态”读取 Durable Runtime 的最新状态。
 
-`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；Evidence 详情、Trace 时间线和报告下载属于后续 M3-B/C。
+`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要。报告预览与下载属于后续 M3-C。
+
+Evidence 中只有通过安全检查的公开 `http/https` URL 会呈现为可点击链接；页面最多展示前 12 条 Evidence 和最近 16 个 Trace 事件，完整数据仍保留在当前 Run Artifact 与任务 Trace 中。工作台不读取或展示正文快照。
 
 Chainlit 只调用 Durable Runtime，不独立维护任务状态。UI 重启后仍能凭 `thread_id` Resume。
 
