@@ -4,7 +4,13 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def use_mock_research_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never spend external search quota during normal pytest runs."""
+def use_offline_safe_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never spend external search or model quota during normal pytest runs."""
 
+    monkeypatch.setenv("ANALYSIS_MODE", "deterministic")
+    monkeypatch.delenv("ANALYSIS_LLM_ENABLE_THINKING", raising=False)
+    monkeypatch.setenv("MODEL_API_KEY", "")
     monkeypatch.setenv("RESEARCH_PROVIDER", "mock")
+    monkeypatch.setenv("TAVILY_API_KEY", "")
+    monkeypatch.setenv("CONTENT_FETCH_PROVIDER", "disabled")
+    monkeypatch.setenv("FACT_VERIFIER", "rules")

@@ -720,7 +720,7 @@ Document -> Financial -> Research (deterministic)
 
 ## 10.3 分段开发计划
 
-实施状态（2026-09-02）：M4-A 与 M4-B 已完成实现并通过离线 Mock/主链路回归；M4-C、M4-D 仍按以下边界待开发。此状态不改变下列阶段的验收约束。
+实施状态（2026-09-02）：M4-A 与 M4-B 已完成实现并通过离线 Mock/主链路回归；M4-D 已完成一次真实 Qwen 纵向成功验收和确定性降级验证，但异常矩阵与固定 Eval 样本尚未全部完成；M4-C 仍待开发。此状态不改变下列阶段的验收约束。
 
 ### M4-A：统一结构化模型网关与 Risk Narrative 主链路接入
 
@@ -769,18 +769,22 @@ Document -> Financial -> Research (deterministic)
 
 阶段门禁：至少一次真实模型调用生成可追溯 Artifact；关闭网络或移除模型配置后同一 Case 仍可通过确定性路径完成；真实 Key 不进入 Artifact、Trace、报告或快照。
 
+阶段进展（2026-09-02）：使用隔离 `case_risky`、Mock Research 和 Rules Verifier 完成真实 `qwen3.7-plus` 主链路验收。关闭混合思考后，Evidence Summary/Query Proposal 与 Risk Narrative 两个用途均在首次尝试生成 `COMPLETE` Artifact，引用与状态门禁通过，任务保持 `WAITING_APPROVAL`；首次未关闭思考的调用按设计生成 `DEGRADED` Artifact 并继续到 HITL。401/429、空输出、Schema 漂移等完整异常矩阵和固定 Eval 样本仍待后续完成，因此 M4-D 尚未整体关闭。
+
 ## 10.4 配置基线
 
 ```dotenv
 ANALYSIS_MODE=deterministic
 ANALYSIS_MODEL=
+# DashScope Qwen 混合思考模型的 JSON Mode：false；其他 Provider 可不配置
+# ANALYSIS_LLM_ENABLE_THINKING=false
 ANALYSIS_LLM_TIMEOUT_SECONDS=30
 ANALYSIS_LLM_MAX_RETRY=1
 ANALYSIS_LLM_MAX_INPUT_CHARS=30000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
 ```
 
-`ANALYSIS_MODEL` 为空时复用 `MODEL_NAME`。上述字段只进入 `.env.example`；`.env` 仍由用户维护。
+`ANALYSIS_MODEL` 为空时复用 `MODEL_NAME`。`ANALYSIS_LLM_ENABLE_THINKING` 是可选 Provider 扩展；DashScope Qwen 混合思考模型使用 JSON Mode 时应显式设为 `false`，未配置时不得向其他 OpenAI-compatible Provider 注入该参数。OpenAI SDK 内部重试应关闭，由 `ANALYSIS_LLM_MAX_RETRY` 统一控制可审计的应用级尝试次数。上述字段只进入 `.env.example`；`.env` 仍由用户维护。
 
 ## 10.5 约束
 

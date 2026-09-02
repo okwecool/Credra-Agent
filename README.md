@@ -184,13 +184,15 @@ MODEL_API_KEY=
 ANALYSIS_MODE=deterministic
 # 留空时复用 MODEL_NAME
 ANALYSIS_MODEL=
+# DashScope Qwen 混合思考模型使用 JSON Mode 时显式设为 false；其他 Provider 可不配置
+# ANALYSIS_LLM_ENABLE_THINKING=false
 ANALYSIS_LLM_TIMEOUT_SECONDS=30
 ANALYSIS_LLM_MAX_RETRY=1
 ANALYSIS_LLM_MAX_INPUT_CHARS=30000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
 ```
 
-启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
+启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。DashScope 的 Qwen 混合思考模型在结构化 JSON Mode 下还应设置 `ANALYSIS_LLM_ENABLE_THINKING=false`；该字段未配置时不会向其他 OpenAI-compatible Provider 发送厂商扩展参数。网关关闭 OpenAI SDK 的隐式重试，只执行 `ANALYSIS_LLM_MAX_RETRY` 定义的应用级重试。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
 
 运行配置：
 

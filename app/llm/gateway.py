@@ -69,6 +69,7 @@ class OpenAICompatibleStructuredModel:
         max_attempts: int,
         max_input_chars: int,
         max_output_tokens: int,
+        enable_thinking: bool | None = None,
         client: Any | None = None,
     ) -> None:
         if not api_key.strip():
@@ -85,10 +86,12 @@ class OpenAICompatibleStructuredModel:
         self._max_attempts = max_attempts
         self._max_input_chars = max_input_chars
         self._max_output_tokens = max_output_tokens
+        self._enable_thinking = enable_thinking
         self._client = client or OpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=timeout_seconds,
+            max_retries=0,
         )
 
     def generate(
@@ -125,12 +128,17 @@ class OpenAICompatibleStructuredModel:
         last_code: AnalysisErrorCode = "MODEL_ERROR"
         for attempt in range(1, self._max_attempts + 1):
             try:
+                request: dict[str, Any] = {
+                    "model": self.model_name,
+                    "messages": messages,
+                    "temperature": 0,
+                    "max_tokens": self._max_output_tokens,
+                    "response_format": {"type": "json_object"},
+                }
+                if self._enable_thinking is not None:
+                    request["extra_body"] = {"enable_thinking": self._enable_thinking}
                 response = self._client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    temperature=0,
-                    max_tokens=self._max_output_tokens,
-                    response_format={"type": "json_object"},
+                    **request,
                 )
                 content = response.choices[0].message.content
                 if not isinstance(content, str) or not content.strip():
@@ -176,5 +184,6 @@ def build_analysis_model(
         max_attempts=settings.analysis_llm_max_retry + 1,
         max_input_chars=settings.analysis_llm_max_input_chars,
         max_output_tokens=settings.analysis_llm_max_output_tokens,
+        enable_thinking=settings.analysis_llm_enable_thinking,
         client=client,
     )

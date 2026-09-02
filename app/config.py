@@ -23,6 +23,7 @@ class Settings(BaseSettings):
         default="deterministic", pattern=r"^(deterministic|llm)$"
     )
     analysis_model: str = ""
+    analysis_llm_enable_thinking: bool | None = None
     analysis_llm_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     analysis_llm_max_retry: int = Field(default=1, ge=0, le=5)
     analysis_llm_max_input_chars: int = Field(default=30_000, ge=1_000, le=200_000)

@@ -144,7 +144,73 @@ def test_openai_gateway_retries_invalid_json_and_returns_validated_output() -> N
     assert result.output.overall_summary == "风险较高。"
     assert len(client.completions.calls) == 2
     assert "tools" not in client.completions.calls[0]
+    assert "extra_body" not in client.completions.calls[0]
     assert client.completions.calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_openai_gateway_forwards_explicit_non_thinking_json_mode() -> None:
+    content = json.dumps(
+        {
+            "overall_summary": "风险较高。",
+            "summary_evidence_ids": ["metric:current_ratio"],
+            "explanations": [
+                {
+                    "risk_id": "risk:1:liquidity",
+                    "explanation": "流动性承压。",
+                    "evidence_ids": ["metric:current_ratio"],
+                }
+            ],
+            "limitations": [],
+        },
+        ensure_ascii=False,
+    )
+    client = _FakeClient([content])
+    model = OpenAICompatibleStructuredModel(
+        api_key="test-key",
+        base_url="https://llm.example.test/v1",
+        model_name="test-model",
+        timeout_seconds=5,
+        max_attempts=1,
+        max_input_chars=10_000,
+        max_output_tokens=500,
+        enable_thinking=False,
+        client=client,
+    )
+
+    model.generate(
+        output_schema=RiskNarrativeDraft,
+        purpose="risk_narrative",
+        prompt_version="test-v1",
+        system_prompt="Return JSON only.",
+        payload={"risk": "bounded"},
+    )
+
+    assert client.completions.calls[0]["extra_body"] == {"enable_thinking": False}
+
+
+def test_openai_gateway_disables_sdk_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def build_client(**kwargs: Any) -> _FakeClient:
+        captured.update(kwargs)
+        return _FakeClient([])
+
+    monkeypatch.setattr("app.llm.gateway.OpenAI", build_client)
+
+    OpenAICompatibleStructuredModel(
+        api_key="test-key",
+        base_url="https://llm.example.test/v1",
+        model_name="test-model",
+        timeout_seconds=17,
+        max_attempts=2,
+        max_input_chars=10_000,
+        max_output_tokens=500,
+    )
+
+    assert captured["timeout"] == 17
+    assert captured["max_retries"] == 0
 
 
 def test_analysis_model_requires_configuration_without_exposing_key() -> None:

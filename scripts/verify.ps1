@@ -80,9 +80,25 @@ $testTempRoot = Join-Path $projectRoot ".test-tmp"
 $testTempDir = Join-Path $testTempRoot ([guid]::NewGuid().ToString("N"))
 $previousTemp = $env:TEMP
 $previousTmp = $env:TMP
+$offlineEnvironment = @{
+    ANALYSIS_MODE = $env:ANALYSIS_MODE
+    ANALYSIS_LLM_ENABLE_THINKING = $env:ANALYSIS_LLM_ENABLE_THINKING
+    MODEL_API_KEY = $env:MODEL_API_KEY
+    RESEARCH_PROVIDER = $env:RESEARCH_PROVIDER
+    TAVILY_API_KEY = $env:TAVILY_API_KEY
+    CONTENT_FETCH_PROVIDER = $env:CONTENT_FETCH_PROVIDER
+    FACT_VERIFIER = $env:FACT_VERIFIER
+}
 New-Item -ItemType Directory -Path $testTempDir -Force | Out-Null
 $env:TEMP = $testTempDir
 $env:TMP = $testTempDir
+$env:ANALYSIS_MODE = "deterministic"
+Remove-Item Env:ANALYSIS_LLM_ENABLE_THINKING -ErrorAction SilentlyContinue
+$env:MODEL_API_KEY = ""
+$env:RESEARCH_PROVIDER = "mock"
+$env:TAVILY_API_KEY = ""
+$env:CONTENT_FETCH_PROVIDER = "disabled"
+$env:FACT_VERIFIER = "rules"
 Push-Location $projectRoot
 try {
     Write-Host "Python: $pythonExe"
@@ -115,6 +131,15 @@ finally {
     Pop-Location
     $env:TEMP = $previousTemp
     $env:TMP = $previousTmp
+    foreach ($entry in $offlineEnvironment.GetEnumerator()) {
+        $environmentPath = "Env:$($entry.Key)"
+        if ($null -eq $entry.Value) {
+            Remove-Item -Path $environmentPath -ErrorAction SilentlyContinue
+        }
+        else {
+            Set-Item -Path $environmentPath -Value $entry.Value
+        }
+    }
     $resolvedProjectRoot = (Resolve-Path -LiteralPath $projectRoot).Path
     $resolvedTestTempRoot = (Resolve-Path -LiteralPath $testTempRoot).Path
     if ($resolvedTestTempRoot.StartsWith(
