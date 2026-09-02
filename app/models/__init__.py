@@ -1,6 +1,12 @@
 """Validated data contracts used across the application."""
 
 from app.models.analysis import (
+    EvidenceGap,
+    EvidenceSummaryArtifact,
+    EvidenceSummaryEntry,
+    QueryProposal,
+    QueryProposalArtifact,
+    ResearchAnalysisDraft,
     RiskNarrativeArtifact,
     RiskNarrativeDraft,
     RiskNarrativeExplanation,
@@ -18,11 +24,17 @@ from app.models.trace import TraceEvent, TraceStatus
 
 __all__ = [
     "CompanyProfile",
+    "EvidenceGap",
+    "EvidenceSummaryArtifact",
+    "EvidenceSummaryEntry",
     "FinancialAnalysis",
     "FinancialMetric",
     "FinancialStatement",
     "FinancialYear",
     "HumanDecision",
+    "QueryProposal",
+    "QueryProposalArtifact",
+    "ResearchAnalysisDraft",
     "ResearchFact",
     "ResearchQueryResult",
     "ResearchResult",

@@ -4,6 +4,7 @@ from app.config import Settings, get_settings
 from app.models.financial import FinancialAnalysis
 from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis, RiskFlag, RiskLevel
+from app.tools.investigation import canonical_research_category
 
 
 def analyze_risk(
@@ -130,17 +131,11 @@ def analyze_risk(
             "legal": RiskLevel.HIGH,
             "controller": RiskLevel.HIGH,
         }
-        category_aliases = {
-            "receivables": "debt",
-            "financing": "debt",
-            "industry_cashflow": "industry_risk",
-            "industry_demand": "industry_risk",
-        }
         facts_by_category: dict[str, list] = {}
         for result in (research.company_result, research.industry_result):
             for fact in result.facts:
                 if fact.verification_status in {"SUPPORTED", "CORROBORATED"}:
-                    category = category_aliases.get(fact.category, fact.category)
+                    category = canonical_research_category(fact.category)
                     facts_by_category.setdefault(category, []).append(fact)
         for category, facts in facts_by_category.items():
             if category not in descriptions:

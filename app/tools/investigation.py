@@ -22,6 +22,12 @@ CATEGORY_ORDER = (
     "controller",
     "industry_risk",
 )
+LEGACY_RESEARCH_CATEGORY_ALIASES = {
+    "receivables": "debt",
+    "financing": "debt",
+    "industry_cashflow": "industry_risk",
+    "industry_demand": "industry_risk",
+}
 
 _ANOMALY_CATEGORIES = {
     "REVENUE_CASHFLOW_DIVERGENCE": ("operations", "performance"),
@@ -53,6 +59,12 @@ _COMMENT_KEYWORDS = {
 
 def _ordered(categories: set[str]) -> list[str]:
     return [category for category in CATEGORY_ORDER if category in categories]
+
+
+def canonical_research_category(category: str) -> str:
+    """Map historical Mock/Snapshot labels to current investigation categories."""
+
+    return LEGACY_RESEARCH_CATEGORY_ALIASES.get(category, category)
 
 
 def _digest(prefix: str, payload: object) -> str:

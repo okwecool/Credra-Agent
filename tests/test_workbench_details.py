@@ -366,6 +366,105 @@ def test_workbench_hides_raw_llm_degradation_message(tmp_path: Path) -> None:
     assert "top-secret" not in markdown
 
 
+def test_workbench_renders_bounded_evidence_summary_and_review_only_queries(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    store = _prepare_run(tmp_path)
+    evidence_id = "evidence:" + "a" * 64
+    gap_id = "gap:" + "b" * 64
+    store.write_json(
+        "artifacts/evidence_summary_v1.json",
+        {
+            "mode": "llm",
+            "execution_status": "COMPLETE",
+            "model_name": "qwen3.7-plus",
+            "prompt_version": "m4b-evidence-summary-query-proposal-v1",
+            "verified_summary": "仅汇总已核验的债务风险事实。",
+            "summary_evidence_ids": [evidence_id],
+            "entries": [
+                {
+                    "evidence_id": evidence_id,
+                    "source_id": "source-001",
+                    "claim_id": "claim:" + "c" * 64,
+                    "fact_id": "fact:" + "d" * 64,
+                    "verification_status": "SUPPORTED",
+                    "category": "debt",
+                    "summary": "该证据已通过 Claim 级核验。",
+                }
+            ],
+            "gaps": [
+                {
+                    "gap_id": gap_id,
+                    "query_type": "industry",
+                    "category": "regulatory",
+                    "reason": "NO_CANDIDATE",
+                    "summary": "行业监管类别暂无保留候选。",
+                }
+            ],
+            "limitations": ["不将未核验证据写成事实。"],
+            "attempts": 1,
+            "input_tokens": 100,
+            "output_tokens": 40,
+        },
+    )
+    store.write_json(
+        "artifacts/query_proposal_v1.json",
+        {
+            "mode": "llm",
+            "execution_status": "DEGRADED",
+            "model_name": "qwen3.7-plus",
+            "prompt_version": "m4b-evidence-summary-query-proposal-v1",
+            "allowed_categories": ["debt", "regulatory"],
+            "proposals": [
+                {
+                    "query_type": "company",
+                    "category": "debt",
+                    "query": "测试企业 债务 展期",
+                    "reference_ids": [evidence_id],
+                    "rationale": "供人工补充调查。",
+                    "decision": "ACCEPTED_FOR_REVIEW",
+                    "rejection_reasons": [],
+                },
+                {
+                    "query_type": "company",
+                    "category": "fraud",
+                    "query": "测试企业 舞弊",
+                    "reference_ids": [evidence_id],
+                    "rationale": "越权建议。",
+                    "decision": "REJECTED",
+                    "rejection_reasons": ["UNAUTHORIZED_CATEGORY"],
+                },
+            ],
+            "limitations": ["规则 Query Plan 不会被修改。"],
+            "attempts": 1,
+            "error_code": "MODEL_ERROR",
+            "error_message": "MODEL_API_KEY=top-secret unavailable",
+        },
+    )
+    payload = _payload()
+    payload["state"].update(
+        {
+            "query_plan_artifact": None,
+            "research_artifact": None,
+            "evidence_summary_artifact": "artifacts/evidence_summary_v1.json",
+            "query_proposal_artifact": "artifacts/query_proposal_v1.json",
+        }
+    )
+
+    markdown = workbench_detail_markdown(load_workbench_details(payload, settings))
+
+    assert "Evidence Summary（受约束 LLM）" in markdown
+    assert "Query Proposal（仅供人工审核）" in markdown
+    assert evidence_id in markdown
+    assert gap_id in markdown
+    assert "ACCEPTED_FOR_REVIEW" in markdown
+    assert "UNAUTHORIZED_CATEGORY" in markdown
+    assert "不会自动执行" in markdown
+    assert "MODEL_ERROR" in markdown
+    assert "top-secret" not in markdown
+
+
 def test_workbench_rejects_unsafe_report_reference(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _prepare_run(tmp_path)

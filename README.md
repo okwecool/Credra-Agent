@@ -62,7 +62,8 @@ flowchart TD
     Provider --> Fetcher["受控正文抓取 / Snapshot"]
     Fetcher --> Verifier["Rules / LLM Verifier"]
     Verifier --> Research
-    Research --> Risk
+    Research --> ResearchExpression["受约束 LLM Evidence Summary / Query Proposal"]
+    ResearchExpression --> Risk
     Risk --> Narrative["受约束 LLM 风险解释 / 确定性降级"]
     Narrative --> Review{"MEDIUM / HIGH?"}
     Review -->|No| Report["Report"]
@@ -126,9 +127,9 @@ python -m app.mcp.research_server
 | 中间结果 | Versioned Artifacts |
 | 人工审核 | Dynamic interrupt |
 | 执行记录 | JSONL Trace |
-| 风险解释 | 受约束的 JSON LLM 输出 + 引用校验 |
+| LLM 表达 | 受约束的 JSON 输出 + 引用/状态校验 |
 
-财务计算、异常检测、Risk 等级、Graph Routing 和报告结构保持可离线回归的确定性基线。M4-A 已在 Risk 节点后接入受约束的 OpenAI-compatible LLM 风险解释：模型只能基于确定性 Risk Artifact 输出 JSON，且每条解释和综合摘要均只能引用对应风险项已允许的证据。模型没有 Tool 权限，不能新增事实、修改 Risk 等级、改变路由或替代人工审核；模型、配置、结构化输出或引用校验失败时，任务会保留确定性结论并显式降级。该解释目前写入 Run Artifact、Trace 和工作台，尚不改写最终报告（M4-C 的范围）。
+财务计算、异常检测、Verified Fact、Risk 等级、Graph Routing 和报告结构保持可离线回归的确定性基线。M4-A 在 Risk 节点后接入受约束的 OpenAI-compatible LLM 风险解释；M4-B 在 Research 节点内基于已形成的结构化证据索引生成 Evidence Summary 与仅供人工审核的 Query Proposal。模型没有 Tool 权限，不能新增事实、提升 Evidence 状态、修改规则 Query Plan、风险等级、路由或替代人工审核；模型、配置、结构化输出或引用校验失败时，任务保留确定性结论并写入 `DEGRADED` Artifact。模型输出只写入独立 Run Artifact、受限 Trace 和工作台，尚不改写最终报告（M4-C 的范围）。
 
 ## 4. 环境要求
 
@@ -176,7 +177,7 @@ MODEL_NAME=
 MODEL_API_KEY=
 ```
 
-主链路 LLM 风险解释字段：
+主链路 LLM 表达字段（M4-A 风险解释与 M4-B 调查表达共用）：
 
 ```dotenv
 # deterministic（默认）| llm
@@ -376,7 +377,7 @@ chainlit run chainlit_app.py
 - 风险任务使用“批准并继续”或“补充调查”按钮，并填写人工意见；
 - 点击“刷新状态”读取 Durable Runtime 的最新状态。
 
-`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要。报告预览与下载属于后续 M3-C。
+`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要；M3-C 已提供安全的 Markdown/HTML 报告预览和下载。M4-A/B 进一步展示风险解释、Evidence Summary 与人工审核式 Query Proposal 的状态、引用和降级信息。
 
 Evidence 中只有通过安全检查的公开 `http/https` URL 会呈现为可点击链接；页面最多展示前 12 条 Evidence 和最近 16 个 Trace 事件，完整数据仍保留在当前 Run Artifact 与任务 Trace 中。工作台不读取或展示正文快照。
 
@@ -395,7 +396,10 @@ data/<case_id>/
         │   ├── investigation_intent_v1.json
         │   ├── query_plan_v1.json
         │   ├── research_result_v1.json
-        │   └── risk_analysis_v1.json
+        │   ├── evidence_summary_v1.json
+        │   ├── query_proposal_v1.json
+        │   ├── risk_analysis_v1.json
+        │   └── risk_narrative_v1.json
         └── output/
             └── credit_report.md
 
@@ -441,7 +445,8 @@ python -m tests.stdio_research_smoke
 - 同 Case 多任务隔离及持久化 FAILED 状态；
 - JSONL Trace Schema；
 - 五个固定 Regression Cases；
-- Chainlit 渲染边界。
+- Chainlit 渲染边界；
+- M4-A 风险解释与 M4-B Evidence Summary / Query Proposal 的 Schema、引用边界、降级和主链路回归。
 
 Chainlit 的传递依赖 `traceloop` 目前可能产生 Pydantic 旧式 Config 的弃用警告，不影响测试通过或项目代码。
 

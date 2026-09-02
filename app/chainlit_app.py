@@ -160,6 +160,8 @@ def _artifact_markdown(state: dict[str, Any]) -> list[str]:
         ("Intent", state.get("investigation_intent_artifact")),
         ("Query Plan", state.get("query_plan_artifact")),
         ("Research", state.get("research_artifact")),
+        ("Evidence Summary", state.get("evidence_summary_artifact")),
+        ("Query Proposal", state.get("query_proposal_artifact")),
         ("Risk", state.get("risk_artifact")),
         ("LLM Narrative", state.get("risk_narrative_artifact")),
         ("Report", state.get("report_artifact")),

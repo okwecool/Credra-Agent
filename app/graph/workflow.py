@@ -23,6 +23,7 @@ from app.graph.routing import (
 )
 from app.graph.state import AgentState
 from app.llm.gateway import StructuredModel, StructuredModelError, build_analysis_model
+from app.llm.research_analysis import build_research_analysis
 from app.llm.risk_narrative import build_risk_narrative
 from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis, FinancialStatement
@@ -209,11 +210,63 @@ def build_workflow(
             "research_result", state["research_artifact"]
         )
         reference = artifacts.write_json(reference, research)
+        research_analysis_timer = TimedTrace()
+        research_analysis = build_research_analysis(
+            research,
+            plan,
+            analysis_mode=settings.analysis_mode,
+            model=active_analysis_model,
+            model_name=settings.analysis_model or settings.model_name,
+            initialization_error=analysis_initialization_error,
+        )
+        evidence_summary_reference = artifacts.next_version_reference(
+            "evidence_summary", state.get("evidence_summary_artifact")
+        )
+        evidence_summary_reference = artifacts.write_json(
+            evidence_summary_reference, research_analysis.evidence_summary
+        )
+        query_proposal_reference = artifacts.next_version_reference(
+            "query_proposal", state.get("query_proposal_artifact")
+        )
+        query_proposal_reference = artifacts.write_json(
+            query_proposal_reference, research_analysis.query_proposal
+        )
+        if settings.analysis_mode == "llm":
+            analysis_end, analysis_latency = research_analysis_timer.finish()
+            summary = research_analysis.evidence_summary
+            trace.write(
+                task_id=state["task_id"],
+                node="research",
+                event_type=(
+                    "LLM_SKIP"
+                    if summary.execution_status == "NOT_NEEDED"
+                    else "LLM_CALL"
+                ),
+                status=(
+                    TraceStatus.FAILED
+                    if summary.execution_status == "DEGRADED"
+                    else TraceStatus.SUCCESS
+                ),
+                start_time=research_analysis_timer.start_time,
+                end_time=analysis_end,
+                latency_ms=analysis_latency,
+                input_summary="purpose=evidence_summary_query_proposal",
+                output_summary=(
+                    f"model={summary.model_name};prompt={summary.prompt_version};"
+                    f"execution={summary.execution_status};"
+                    f"attempts={summary.attempts};"
+                    f"input_tokens={summary.input_tokens};"
+                    f"output_tokens={summary.output_tokens}"
+                ),
+                error=summary.error_code,
+            )
         return {
             "current_node": "research",
             "research_artifact": reference,
             "investigation_intent_artifact": intent_reference,
             "query_plan_artifact": plan_reference,
+            "evidence_summary_artifact": evidence_summary_reference,
+            "query_proposal_artifact": query_proposal_reference,
             "external_research_incomplete": research.external_research_incomplete,
         }
 

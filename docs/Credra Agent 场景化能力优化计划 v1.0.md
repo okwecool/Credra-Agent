@@ -694,14 +694,21 @@ ANALYSIS_MODE=llm
 ## 10.2 主链路接入边界
 
 ```text
-Document -> Financial -> Research -> Risk (deterministic)
-                                      |
-                                      +-> LLM Risk Narrative
-                                            |
-                                            +-> cited Artifact / fallback Artifact
-                                      |
-                                      v
-                                  HITL -> Report
+Document -> Financial -> Research (deterministic)
+                              |
+                              +-> LLM Evidence Summary / Query Proposal
+                              |       |
+                              |       +-> cited / review-only Artifact or fallback
+                              |
+                              v
+                         Risk (deterministic)
+                              |
+                              +-> LLM Risk Narrative
+                                    |
+                                    +-> cited Artifact / fallback Artifact
+                              |
+                              v
+                          HITL -> Report
 ```
 
 - Financial 指标、Anomaly、Verified Fact、Risk Level 和是否进入 HITL 均先由现有确定性逻辑产生；
@@ -712,6 +719,8 @@ Document -> Financial -> Research -> Risk (deterministic)
 - 模型 Artifact 不覆盖 Financial、Research、Risk 或 Report 的历史版本。
 
 ## 10.3 分段开发计划
+
+实施状态（2026-09-02）：M4-A 与 M4-B 已完成实现并通过离线 Mock/主链路回归；M4-C、M4-D 仍按以下边界待开发。此状态不改变下列阶段的验收约束。
 
 ### M4-A：统一结构化模型网关与 Risk Narrative 主链路接入
 
@@ -734,6 +743,8 @@ Document -> Financial -> Research -> Risk (deterministic)
 - 规则 Query Plan 仍是基线，模型 Proposal 单独版本化并记录接受/拒绝原因；
 - Query/Evidence Summary 绑定 Claim、Fact、Source 和 Evidence ID，不读取被拒绝正文全文；
 - Snapshot/Mock 回归继续固定输入，LLM Proposal 不得破坏离线可重放能力。
+
+实现产物为 `evidence_summary_vN.json` 与 `query_proposal_vN.json`。后者只记录 `ACCEPTED_FOR_REVIEW` 或 `REJECTED` 的人工审核结论及原因，不触发搜索、不改写 `query_plan_vN.json`，也不改变 Graph Routing。
 
 阶段门禁：模型不得把 Candidate 或冲突 Evidence 写成确定事实；越界类别和不存在的 Source ID 被拒绝；模型失败时继续使用确定性 Query Plan。
 

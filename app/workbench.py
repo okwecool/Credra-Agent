@@ -239,6 +239,8 @@ def load_workbench_details(
         "financial": None,
         "risk": None,
         "risk_narrative": None,
+        "evidence_summary": None,
+        "query_proposal": None,
         "query_plan": None,
         "research": None,
         "anomaly_flags": list(payload.get("state", {}).get("anomaly_flags") or []),
@@ -258,6 +260,8 @@ def load_workbench_details(
             ("financial_artifact", "financial"),
             ("risk_artifact", "risk"),
             ("risk_narrative_artifact", "risk_narrative"),
+            ("evidence_summary_artifact", "evidence_summary"),
+            ("query_proposal_artifact", "query_proposal"),
             ("query_plan_artifact", "query_plan"),
             ("research_artifact", "research"),
         ):
@@ -626,6 +630,133 @@ def research_details_markdown(details: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _analysis_execution_lines(artifact: dict[str, Any]) -> list[str]:
+    lines = [
+        (
+            "- 模式："
+            f"`{_display_text(artifact.get('mode'))}` · 执行："
+            f"`{_display_text(artifact.get('execution_status'))}` · 模型："
+            f"`{_display_text(artifact.get('model_name'), limit=100)}`"
+        ),
+        (
+            "- Prompt："
+            f"`{_display_text(artifact.get('prompt_version'), limit=100)}` · "
+            f"尝试 `{int(artifact.get('attempts') or 0)}` 次 · "
+            f"Token `{artifact.get('input_tokens') or 0}` / "
+            f"`{artifact.get('output_tokens') or 0}`"
+        ),
+    ]
+    if artifact.get("execution_status") == "DEGRADED":
+        lines.append(
+            "- 已安全降级："
+            f"`{_display_text(artifact.get('error_code'), limit=80)}`；"
+            "确定性 Research 与规则 Query Plan 保持不变。"
+        )
+    return lines
+
+
+def evidence_summary_markdown(details: dict[str, Any]) -> list[str]:
+    summary = details.get("evidence_summary")
+    if not summary:
+        return []
+    lines = ["## Evidence Summary（受约束 LLM）", *_analysis_execution_lines(summary)]
+    lines.append(
+        f"- 已核验摘要：{_display_text(summary.get('verified_summary'), limit=1_000)}"
+    )
+    references = summary.get("summary_evidence_ids") or []
+    if references:
+        lines.append(
+            "- 摘要引用："
+            + ", ".join(f"`{_display_text(item, limit=100)}`" for item in references)
+        )
+    entries = summary.get("entries") or []
+    if entries:
+        lines.append("### Evidence 状态")
+    for entry in entries:
+        bindings = [
+            f"Evidence `{_display_text(entry.get('evidence_id'), limit=100)}`",
+            f"Source `{_display_text(entry.get('source_id'), limit=100)}`",
+        ]
+        if entry.get("claim_id"):
+            bindings.append(
+                f"Claim `{_display_text(entry.get('claim_id'), limit=100)}`"
+            )
+        if entry.get("fact_id"):
+            bindings.append(f"Fact `{_display_text(entry.get('fact_id'), limit=100)}`")
+        lines.append(
+            f"- **{_display_text(entry.get('verification_status'))} · "
+            f"{_display_text(entry.get('category'))}**："
+            f"{_display_text(entry.get('summary'), limit=800)}  \n"
+            f"  {' · '.join(bindings)}"
+        )
+        source_category = entry.get("source_category")
+        if source_category and source_category != entry.get("category"):
+            lines.append(
+                "  来源类别："
+                f"`{_display_text(source_category, limit=100)}`（已映射到当前调查类别）"
+            )
+    gaps = summary.get("gaps") or []
+    if gaps:
+        lines.append("### 证据缺口")
+    for gap in gaps:
+        lines.append(
+            f"- `{_display_text(gap.get('reason'))}` · "
+            f"`{_display_text(gap.get('query_type'))}/"
+            f"{_display_text(gap.get('category'))}`："
+            f"{_display_text(gap.get('summary'), limit=700)}  \n"
+            f"  Gap `{_display_text(gap.get('gap_id'), limit=100)}`"
+        )
+    limitations = summary.get("limitations") or []
+    if limitations:
+        lines.append(
+            "- 边界说明："
+            + "；".join(_display_text(item, limit=300) for item in limitations)
+        )
+    return lines
+
+
+def query_proposal_markdown(details: dict[str, Any]) -> list[str]:
+    proposal = details.get("query_proposal")
+    if not proposal:
+        return []
+    lines = ["## Query Proposal（仅供人工审核）", *_analysis_execution_lines(proposal)]
+    categories = proposal.get("allowed_categories") or []
+    lines.append(
+        "- 允许类别："
+        + ", ".join(f"`{_display_text(category)}`" for category in categories)
+    )
+    items = proposal.get("proposals") or []
+    if not items:
+        lines.append("_本轮没有模型 Query 建议；规则 Query Plan 仍是唯一执行计划。_")
+        return lines
+    for item in items:
+        references = ", ".join(
+            f"`{_display_text(reference, limit=100)}`"
+            for reference in item.get("reference_ids", [])
+        )
+        lines.append(
+            f"### {_display_text(item.get('query_type'))} / "
+            f"{_display_text(item.get('category'))} · "
+            f"`{_display_text(item.get('decision'))}`"
+        )
+        lines.append(f"- 建议 Query：{_display_text(item.get('query'), limit=500)}")
+        lines.append(f"- 关联引用：{references or '—'}")
+        lines.append(
+            "- 建议理由（不构成事实）："
+            f"{_display_text(item.get('rationale'), limit=700)}"
+        )
+        reasons = item.get("rejection_reasons") or []
+        if reasons:
+            lines.append(
+                "- 拒绝原因："
+                + ", ".join(f"`{_display_text(reason)}`" for reason in reasons)
+            )
+    lines.append(
+        "> 任何 `ACCEPTED_FOR_REVIEW` 建议也不会自动执行；当前规则 Query Plan 未被修改。"
+    )
+    return lines
+
+
 def artifact_history_markdown(details: dict[str, Any]) -> list[str]:
     history = details.get("artifact_history") or []
     if not history:
@@ -686,6 +817,8 @@ def workbench_detail_markdown(details: dict[str, Any]) -> str:
         *financial_risk_markdown(details),
         *llm_narrative_markdown(details),
         *research_details_markdown(details),
+        *evidence_summary_markdown(details),
+        *query_proposal_markdown(details),
         *artifact_history_markdown(details),
         *trace_markdown(details),
         *report_preview_markdown(details),

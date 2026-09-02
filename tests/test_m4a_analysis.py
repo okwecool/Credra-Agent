@@ -272,7 +272,12 @@ def test_llm_risk_narrative_enters_durable_main_chain_without_changing_hitl(
     assert narrative["model_name"] == "mock-qwen"
     assert narrative["explanations"]
     events = read_trace(tmp_path / "traces/m4a-main-chain.jsonl")
-    llm_events = [event for event in events if event["event_type"] == "LLM_CALL"]
+    llm_events = [
+        event
+        for event in events
+        if event["event_type"] == "LLM_CALL"
+        and event["input_summary"] == "purpose=risk_narrative"
+    ]
     assert len(llm_events) == 1
     assert "execution=COMPLETE" in llm_events[0]["output_summary"]
     serialized_trace = json.dumps(events, ensure_ascii=False)
