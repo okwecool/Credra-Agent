@@ -183,9 +183,11 @@ def test_openai_gateway_forwards_explicit_non_thinking_json_mode() -> None:
         prompt_version="test-v1",
         system_prompt="Return JSON only.",
         payload={"risk": "bounded"},
+        max_output_tokens=777,
     )
 
     assert client.completions.calls[0]["extra_body"] == {"enable_thinking": False}
+    assert client.completions.calls[0]["max_tokens"] == 777
 
 
 def test_openai_gateway_disables_sdk_retries(

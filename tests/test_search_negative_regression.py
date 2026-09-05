@@ -19,6 +19,12 @@ FIXTURE_PATH = (
     / "search_snapshots"
     / "byd_debt_huayi_irrelevant.json"
 )
+YIHALU_FIXTURE_PATH = (
+    Path(__file__).parent
+    / "fixtures"
+    / "search_snapshots"
+    / "byd_debt_yihualu_irrelevant.json"
+)
 IRRELEVANT_URL = (
     "https://www.21jingji.com/article/20260419/herald/"
     "f5699fc0901ca19aeb0b63ddc6fdccd5.html"
@@ -27,6 +33,12 @@ IRRELEVANT_URL = (
 
 def load_fixture() -> SearchResponse:
     return SearchResponse.model_validate_json(FIXTURE_PATH.read_text(encoding="utf-8"))
+
+
+def load_yihualu_fixture() -> SearchResponse:
+    return SearchResponse.model_validate_json(
+        YIHALU_FIXTURE_PATH.read_text(encoding="utf-8")
+    )
 
 
 class NegativeSnapshotProvider:
@@ -104,6 +116,18 @@ def test_wrong_company_snapshot_replays_with_same_rejection(tmp_path: Path) -> N
     assert replayed.items[0].url == IRRELEVANT_URL
     assert evidence[0].filter_reasons == ["SUBJECT_MISMATCH"]
     assert evidence[0].evidence_stage == "REJECTED"
+
+
+def test_tier_c_body_only_alias_hit_is_rejected_before_content_fetch() -> None:
+    evidence = evidence_from_response(load_yihualu_fixture())
+
+    assert len(evidence) == 1
+    assert evidence[0].source_tier == "C"
+    assert evidence[0].subject_match == "ALIAS"
+    assert evidence[0].category_match is True
+    assert evidence[0].filter_reasons == ["SUBJECT_TITLE_MISMATCH"]
+    assert evidence[0].evidence_stage == "REJECTED"
+    assert evidence[0].verification_status == "UNVERIFIED"
 
 
 def test_wrong_company_never_reaches_facts_risk_or_report() -> None:

@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     analysis_llm_max_retry: int = Field(default=1, ge=0, le=5)
     analysis_llm_max_input_chars: int = Field(default=30_000, ge=1_000, le=200_000)
     analysis_llm_max_output_tokens: int = Field(default=1_200, ge=100, le=8_000)
+    analysis_llm_research_max_output_tokens: int = Field(
+        default=2_400, ge=100, le=8_000
+    )
     checkpoint_db_path: Path = Path("checkpoints/credra_agent.db")
     max_retry: int = Field(default=2, ge=0, le=10)
     research_fail_first: bool = False
@@ -54,6 +57,7 @@ class Settings(BaseSettings):
     search_fetch_max_pdf_pages: int = Field(default=200, ge=1, le=2_000)
     fact_verifier: str = Field(default="rules", pattern=r"^(rules|llm|disabled)$")
     fact_verifier_model: str = ""
+    fact_verifier_enable_thinking: bool | None = None
     fact_verifier_min_confidence: float = Field(default=0.75, ge=0.0, le=1.0)
     fact_verifier_max_candidates: int = Field(default=10, ge=1, le=50)
     fact_verifier_max_input_chars: int = Field(default=30_000, ge=1_000, le=200_000)

@@ -83,22 +83,26 @@ $previousTmp = $env:TMP
 $offlineEnvironment = @{
     ANALYSIS_MODE = $env:ANALYSIS_MODE
     ANALYSIS_LLM_ENABLE_THINKING = $env:ANALYSIS_LLM_ENABLE_THINKING
+    ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS = $env:ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS
     MODEL_API_KEY = $env:MODEL_API_KEY
     RESEARCH_PROVIDER = $env:RESEARCH_PROVIDER
     TAVILY_API_KEY = $env:TAVILY_API_KEY
     CONTENT_FETCH_PROVIDER = $env:CONTENT_FETCH_PROVIDER
     FACT_VERIFIER = $env:FACT_VERIFIER
+    FACT_VERIFIER_ENABLE_THINKING = $env:FACT_VERIFIER_ENABLE_THINKING
 }
 New-Item -ItemType Directory -Path $testTempDir -Force | Out-Null
 $env:TEMP = $testTempDir
 $env:TMP = $testTempDir
 $env:ANALYSIS_MODE = "deterministic"
 Remove-Item Env:ANALYSIS_LLM_ENABLE_THINKING -ErrorAction SilentlyContinue
+Remove-Item Env:ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS -ErrorAction SilentlyContinue
 $env:MODEL_API_KEY = ""
 $env:RESEARCH_PROVIDER = "mock"
 $env:TAVILY_API_KEY = ""
 $env:CONTENT_FETCH_PROVIDER = "disabled"
 $env:FACT_VERIFIER = "rules"
+Remove-Item Env:FACT_VERIFIER_ENABLE_THINKING -ErrorAction SilentlyContinue
 Push-Location $projectRoot
 try {
     Write-Host "Python: $pythonExe"

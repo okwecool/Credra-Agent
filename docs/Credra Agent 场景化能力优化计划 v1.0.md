@@ -540,6 +540,7 @@ SEARCH_FETCH_MAX_BYTES=5000000
 SEARCH_FETCH_MAX_CONCURRENCY=3
 FACT_VERIFIER=rules
 FACT_VERIFIER_MODEL=
+# FACT_VERIFIER_ENABLE_THINKING=false
 FACT_VERIFIER_MIN_CONFIDENCE=0.75
 FACT_VERIFIER_MAX_CANDIDATES=10
 ```
@@ -767,7 +768,7 @@ M4-C 阶段门禁：未经支持的 URL、数字、Evidence/Fact/Metric/Risk 和
 
 阶段门禁：至少一次真实模型调用生成可追溯 Artifact；关闭网络或移除模型配置后同一 Case 仍可通过确定性路径完成；真实 Key 不进入 Artifact、Trace、报告或快照。
 
-阶段进展（2026-09-02）：使用隔离 `case_risky`、Mock Research 和 Rules Verifier 完成真实 `qwen3.7-plus` 主链路验收。关闭混合思考后，Evidence Summary/Query Proposal 与 Risk Narrative 两个用途均在首次尝试生成 `COMPLETE` Artifact，引用与状态门禁通过，任务保持 `WAITING_APPROVAL`；首次未关闭思考的调用按设计生成 `DEGRADED` Artifact 并继续到 HITL。401/429、空输出、Schema 漂移等完整异常矩阵和固定 Eval 样本仍待后续完成，因此 M4-D 尚未整体关闭。
+阶段进展（2026-09-02）：首先使用隔离 `case_risky`、Mock Research 和 Rules Verifier 完成真实 `qwen3.7-plus` 的 M4-A/B 验收。随后使用比亚迪真实 Case 完成 M4-C2 首次纵向验收：Risk Narrative 两轮均为 `COMPLETE`，Report Draft 首次尝试生成 `COMPLETE` Artifact，最终报告完成且二次门禁正确剔除模型换算百分比、无引用阈值推导等 Unsupported Number，调查不完整和人工意见均被披露，密钥未进入 Trace/Artifact/报告。真实 Tavily 返回 15 条原始结果并保留 3 条候选，正文抓取 3/3 成功；其中一条实际主题为易华录的文章因弱别名命中误入候选，但保持 `UNVERIFIED`，未进入 Fact 或确定性风险。Fact Verifier 尚未继承 Qwen 的 `enable_thinking=false` Provider 参数，3 条均以 `INVALID_OUTPUT` 降级；M4-B 在 1200 Token 输出预算下两次 `INVALID_OUTPUT`，同一输入临时提高到 2400 后第二次尝试以 1631 输出 Token 成功，说明需按用途校准输出预算。Fact Verifier 兼容修复、搜索负样本增强、真实 Report Draft 的表达通过率优化，以及 401/429、空输出、Schema 漂移等完整异常矩阵和固定 Eval 样本仍待完成，因此 M4-D 尚未整体关闭。
 
 ## 10.4 配置基线
 
@@ -780,6 +781,7 @@ ANALYSIS_LLM_TIMEOUT_SECONDS=30
 ANALYSIS_LLM_MAX_RETRY=1
 ANALYSIS_LLM_MAX_INPUT_CHARS=30000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
+ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS=2400
 ```
 
 `ANALYSIS_MODEL` 为空时复用 `MODEL_NAME`。`ANALYSIS_LLM_ENABLE_THINKING` 是可选 Provider 扩展；DashScope Qwen 混合思考模型使用 JSON Mode 时应显式设为 `false`，未配置时不得向其他 OpenAI-compatible Provider 注入该参数。OpenAI SDK 内部重试应关闭，由 `ANALYSIS_LLM_MAX_RETRY` 统一控制可审计的应用级尝试次数。上述字段只进入 `.env.example`；`.env` 仍由用户维护。
@@ -1022,3 +1024,13 @@ M5：业务 Eval、审计包与可靠性收尾
 工作台不再作为深度事实核验之后的立即节点。必须先证明真实候选能够回查正文、核验事实能够正确进入对应风险项、补充调查能够响应人工意图，并且同一 Case 的多个任务相互隔离；随后再用工作台展示这些已成立的能力。
 
 这样能够保证每项技术扩展都服务于一个可核验的真实业务 Case，而不是继续增加无法证明业务价值的技术组件。
+
+## 16.1 M4 真实验收问题修复收口（2026-09-02）
+
+M4-C2 首次真实纵向验收暴露的三项问题已形成明确修复基线：
+
+- Fact Verifier 必须继承或显式覆盖 `ANALYSIS_LLM_ENABLE_THINKING`，关闭 OpenAI SDK 隐式重试，并将完整输出 JSON Schema 与固定枚举发送给模型；非法结构只执行配置允许的应用级重试。Prompt 版本升级后不得复用旧失败缓存；
+- M4-B Evidence Summary / Query Proposal 使用独立的 `ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS=2400` 默认预算，不扩大 Risk Narrative 与 Report Draft 的 1200-token 默认边界；
+- 对公司查询的 C 级来源，标题必须命中目标主体或别名；只在摘要/正文偶然出现目标的弱结果以 `SUBJECT_TITLE_MISMATCH` 提前拒绝。比亚迪查询召回易华录文章是固定负向回归；A/B 级公告或权威报道仍可依靠正文主体匹配进入候选。
+
+修复验收必须同时满足：离线全量门禁通过；新核验缓存下真实 Qwen Fact Verifier 不再产生 `INVALID_OUTPUT`；M4-B 首轮完成；易华录结果没有正文引用、Verifier 记录、Fact、Risk 或 Report 传播；最终 Unsupported Claim 门禁继续拒绝模型自行换算或推导的数字。Snapshot 回放用于固定搜索输入，但事实核验和主链路表达必须执行真实模型调用。

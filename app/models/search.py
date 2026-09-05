@@ -14,6 +14,7 @@ SubjectMatch = Literal["EXACT", "ALIAS", "NONE"]
 EvidenceStage = Literal["REJECTED", "CANDIDATE", "VERIFIED"]
 FilterReason = Literal[
     "SUBJECT_MISMATCH",
+    "SUBJECT_TITLE_MISMATCH",
     "CATEGORY_MISMATCH",
     "LOW_RELEVANCE",
     "DUPLICATE_CONTENT",

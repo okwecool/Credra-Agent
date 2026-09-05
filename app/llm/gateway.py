@@ -53,6 +53,7 @@ class StructuredModel(Protocol):
         prompt_version: str,
         system_prompt: str,
         payload: dict[str, Any],
+        max_output_tokens: int | None = None,
     ) -> StructuredModelResult[OutputT]: ...
 
 
@@ -102,6 +103,7 @@ class OpenAICompatibleStructuredModel:
         prompt_version: str,
         system_prompt: str,
         payload: dict[str, Any],
+        max_output_tokens: int | None = None,
     ) -> StructuredModelResult[OutputT]:
         serialized_input = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if len(serialized_input) > self._max_input_chars:
@@ -132,7 +134,11 @@ class OpenAICompatibleStructuredModel:
                     "model": self.model_name,
                     "messages": messages,
                     "temperature": 0,
-                    "max_tokens": self._max_output_tokens,
+                    "max_tokens": (
+                        max_output_tokens
+                        if max_output_tokens is not None
+                        else self._max_output_tokens
+                    ),
                     "response_format": {"type": "json_object"},
                 }
                 if self._enable_thinking is not None:

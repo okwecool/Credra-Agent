@@ -9,8 +9,10 @@ def use_offline_safe_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("ANALYSIS_MODE", "deterministic")
     monkeypatch.delenv("ANALYSIS_LLM_ENABLE_THINKING", raising=False)
+    monkeypatch.delenv("ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.setenv("MODEL_API_KEY", "")
     monkeypatch.setenv("RESEARCH_PROVIDER", "mock")
     monkeypatch.setenv("TAVILY_API_KEY", "")
     monkeypatch.setenv("CONTENT_FETCH_PROVIDER", "disabled")
     monkeypatch.setenv("FACT_VERIFIER", "rules")
+    monkeypatch.delenv("FACT_VERIFIER_ENABLE_THINKING", raising=False)

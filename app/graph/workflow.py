@@ -225,6 +225,7 @@ def build_workflow(
             analysis_mode=settings.analysis_mode,
             model=active_analysis_model,
             model_name=settings.analysis_model or settings.model_name,
+            max_output_tokens=settings.analysis_llm_research_max_output_tokens,
             initialization_error=analysis_initialization_error,
         )
         evidence_summary_reference = artifacts.next_version_reference(

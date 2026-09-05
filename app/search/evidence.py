@@ -111,8 +111,8 @@ def _source_id(item: SearchItem, digest: str) -> str:
     return item.source_id or f"web-{digest.removeprefix('sha256:')[:20]}"
 
 
-def _subject_match(item: SearchItem, response: SearchResponse) -> SubjectMatch:
-    searchable = f"{item.title} {item.content}".casefold()
+def _subject_match_text(value: str, response: SearchResponse) -> SubjectMatch:
+    searchable = value.casefold()
     if response.request.subject.casefold() in searchable:
         return "EXACT"
     if any(
@@ -120,6 +120,10 @@ def _subject_match(item: SearchItem, response: SearchResponse) -> SubjectMatch:
     ):
         return "ALIAS"
     return "NONE"
+
+
+def _subject_match(item: SearchItem, response: SearchResponse) -> SubjectMatch:
+    return _subject_match_text(f"{item.title} {item.content}", response)
 
 
 def _category_matches(item: SearchItem, response: SearchResponse) -> bool:
@@ -131,6 +135,8 @@ def _category_matches(item: SearchItem, response: SearchResponse) -> bool:
 def _filter_reasons(
     *,
     subject_match: SubjectMatch,
+    title_subject_match: SubjectMatch,
+    require_title_subject_match: bool,
     category_match: bool,
     relevance_score: float,
     min_relevance_score: float,
@@ -138,6 +144,8 @@ def _filter_reasons(
     reasons: list[FilterReason] = []
     if subject_match == "NONE":
         reasons.append("SUBJECT_MISMATCH")
+    elif require_title_subject_match and title_subject_match == "NONE":
+        reasons.append("SUBJECT_TITLE_MISMATCH")
     if not category_match:
         reasons.append("CATEGORY_MISMATCH")
     if relevance_score < min_relevance_score:
@@ -167,9 +175,14 @@ def evidence_from_response(
             verification_status: VerificationStatus = "SUPPORTED"
         else:
             subject_match = _subject_match(item, response)
+            title_subject_match = _subject_match_text(item.title, response)
             category_match = _category_matches(item, response)
             filter_reasons = _filter_reasons(
                 subject_match=subject_match,
+                title_subject_match=title_subject_match,
+                require_title_subject_match=(
+                    response.request.query_type == "company" and tier == "C"
+                ),
                 category_match=category_match,
                 relevance_score=item.score,
                 min_relevance_score=min_relevance_score,

@@ -7,6 +7,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+import app.search.verifier as verifier_module
 from app.agents.risk import analyze_risk
 from app.config import Settings
 from app.mcp.research_server import _search
@@ -458,14 +461,15 @@ def test_single_oversized_segment_is_truncated_to_model_input_budget(
 
 
 class FakeCompletions:
-    def __init__(self, content: str) -> None:
-        self.content = content
+    def __init__(self, content: str | list[str]) -> None:
+        self.contents = content if isinstance(content, list) else [content]
         self.calls: list[dict] = []
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
+        content = self.contents.pop(0)
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=self.content))]
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
         )
 
 
@@ -506,24 +510,112 @@ def test_llm_verifier_uses_json_only_prompt_and_rejects_invalid_output() -> None
     call = completions.calls[0]
     assert call["response_format"] == {"type": "json_object"}
     assert "不可信" in call["messages"][0]["content"]
+    assert "INSUFFICIENT" in call["messages"][0]["content"]
     assert CLAIM in call["messages"][1]["content"]
+    assert "output_json_schema" in call["messages"][1]["content"]
+    assert "extra_body" not in call
 
+    retry_completions = FakeCompletions(["not-json", decision.model_dump_json()])
     invalid = LLMFactVerifier(
         api_key="test-key",
         base_url="https://llm.example.test/v1",
         model_name="test-model",
         timeout_seconds=1,
-        max_attempts=1,
+        max_attempts=2,
+        client=SimpleNamespace(chat=SimpleNamespace(completions=retry_completions)),
+    )
+    retry_outcome = invalid.verify(request)
+
+    assert retry_outcome.attempts == 2
+    assert len(retry_completions.calls) == 2
+
+    exhausted = LLMFactVerifier(
+        api_key="test-key",
+        base_url="https://llm.example.test/v1",
+        model_name="test-model",
+        timeout_seconds=1,
+        max_attempts=2,
         client=SimpleNamespace(
-            chat=SimpleNamespace(completions=FakeCompletions("not-json"))
+            chat=SimpleNamespace(
+                completions=FakeCompletions(["not-json", "still-not-json"])
+            )
         ),
     )
-    try:
-        invalid.verify(request)
-    except FactVerifierError as exc:
-        assert exc.code == "INVALID_OUTPUT"
-    else:
-        raise AssertionError("invalid structured output should fail")
+    with pytest.raises(FactVerifierError) as captured:
+        exhausted.verify(request)
+    assert captured.value.code == "INVALID_OUTPUT"
+    assert captured.value.attempts == 2
+
+
+def test_llm_verifier_forwards_non_thinking_and_disables_sdk_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    decision = _decision("INSUFFICIENT", CLAIM)
+    completions = FakeCompletions(decision.model_dump_json())
+    captured: dict = {}
+
+    def build_client(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    monkeypatch.setattr(verifier_module, "OpenAI", build_client)
+    verifier = LLMFactVerifier(
+        api_key="test-key",
+        base_url="https://llm.example.test/v1",
+        model_name="test-model",
+        timeout_seconds=17,
+        max_attempts=1,
+        enable_thinking=False,
+    )
+    response = SearchResponse(
+        provider="snapshot",
+        request=SearchRequest(
+            query_type="company",
+            subject=SUBJECT,
+            category="debt",
+            query="test",
+        ),
+        items=[],
+    )
+    request = VerifierInput(
+        claim=build_verification_claim(response),
+        source_id="llm-source",
+        source_url="https://www.szse.cn/disclosure/llm.html",
+        source_tier="A",
+        document_hash=_hash(CLAIM),
+        segments=[ContentSegment(location="paragraph:1", text=CLAIM)],
+    )
+
+    outcome = verifier.verify(request)
+
+    assert outcome.decision.relation == "INSUFFICIENT"
+    assert captured["timeout"] == 17
+    assert captured["max_retries"] == 0
+    assert completions.calls[0]["extra_body"] == {"enable_thinking": False}
+
+
+def test_fact_verifier_inherits_analysis_thinking_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict = {}
+
+    def build_verifier(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(name="llm", model_name=kwargs["model_name"])
+
+    monkeypatch.setattr(verifier_module, "LLMFactVerifier", build_verifier)
+
+    build_fact_verifier(
+        Settings(
+            _env_file=None,
+            fact_verifier="llm",
+            model_name="configured-model",
+            model_api_key="test-key",
+            analysis_llm_enable_thinking=False,
+        )
+    )
+
+    assert captured["enable_thinking"] is False
 
 
 class OneCandidateProvider:

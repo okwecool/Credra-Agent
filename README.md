@@ -190,9 +190,13 @@ ANALYSIS_LLM_TIMEOUT_SECONDS=30
 ANALYSIS_LLM_MAX_RETRY=1
 ANALYSIS_LLM_MAX_INPUT_CHARS=30000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
+# M4-B Evidence Summary / Query Proposal 独立输出上限
+ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS=2400
 ```
 
-启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。DashScope 的 Qwen 混合思考模型在结构化 JSON Mode 下还应设置 `ANALYSIS_LLM_ENABLE_THINKING=false`；该字段未配置时不会向其他 OpenAI-compatible Provider 发送厂商扩展参数。网关关闭 OpenAI SDK 的隐式重试，只执行 `ANALYSIS_LLM_MAX_RETRY` 定义的应用级重试。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
+启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。DashScope 的 Qwen 混合思考模型在结构化 JSON Mode 下还应设置 `ANALYSIS_LLM_ENABLE_THINKING=false`；该字段未配置时不会向其他 OpenAI-compatible Provider 发送厂商扩展参数。网关关闭 OpenAI SDK 的隐式重试，只执行 `ANALYSIS_LLM_MAX_RETRY` 定义的应用级重试。M4-B 的 JSON 结构显著大于风险叙事和报告草稿，因此通过 `ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS` 使用独立的 2400-token 默认上限。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
+
+当 `FACT_VERIFIER=llm` 时，核验器默认继承 `ANALYSIS_LLM_ENABLE_THINKING`；如需独立覆盖，可配置 `FACT_VERIFIER_ENABLE_THINKING=false`。核验请求携带严格 JSON Schema，SDK 隐式重试关闭，实际尝试次数由 `FACT_VERIFIER_MAX_RETRY` 控制。
 
 运行配置：
 
