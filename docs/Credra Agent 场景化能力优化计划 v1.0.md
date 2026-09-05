@@ -842,6 +842,20 @@ LLM 不得：
 | Tool Recovery Rate | 临时故障恢复率 |
 | Human Review Integrity | 人工意见保存和展示正确性 |
 
+### M5-A：固定业务 Eval 第一实施切片
+
+首版先建立可扩展的离线 Eval 框架和一个真实公开 Case 基线，不在同一节点内追求一次补足 5–10 个 Case：
+
+- 使用版本化 Suite Manifest 描述 Case 源目录、人工预期文件、数值容差、审核动作、禁止结论和负向搜索夹具；Manifest 中的路径必须限制在项目目录内；
+- Eval Runner 将源 Case 复制到唯一的隔离运行目录，使用独立 SQLite Checkpoint、Trace 和 Run Artifact，强制 `deterministic + mock + disabled content fetch + rules verifier`，不读取用户联网模式、不调用 Tavily/Qwen；
+- 通过正式 Durable Runtime 执行 `start → WAITING_APPROVAL → approve → COMPLETED`，不另写一套业务流水线；
+- 首个 Suite 使用 `case_byd_002594`，比较财务指标、异常标记、风险等级和风险类型，并验证 HITL 状态、人工意见、报告存在性与禁止结论；
+- 将“比亚迪查询召回华谊兄弟”和“比亚迪查询召回易华录”作为负向 Evidence Eval，要求结果停留在 `REJECTED/UNVERIFIED`，不能形成 Candidate 或 Fact；
+- 输出版本化 `eval_result.json`，记录逐项 PASS/FAIL、聚合指标、输入 Manifest 指纹和运行产物位置；任何检查失败时 CLI 返回非零退出码，但保留完整结果供审计；
+- 默认 Eval 不评价真实搜索结果随时间变化或 LLM 文风，只验证确定性业务边界。真实 Snapshot/Qwen 评分、更多公开/脱敏 Case 和统计门槛在后续 M5-A 扩展，不阻塞首版框架。
+
+M5-A 第一切片门禁：同一 Suite 连续运行互不覆盖；默认运行新增外部调用数为零；人工预期被篡改时 Eval 必须稳定失败；无关来源不得进入 Candidate/Fact；`eval_result.json` 不包含 API Key、完整网页正文或完整模型 Prompt；既有主链路回归继续通过。
+
 ## 11.3 审计包导出
 
 增加：

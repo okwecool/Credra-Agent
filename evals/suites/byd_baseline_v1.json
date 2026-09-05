@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "byd_baseline_v1",
+  "description": "比亚迪公开结构化 Case 的离线财务、风险、HITL、报告和无关证据边界验收。",
+  "calculation_tolerance": 0.000001,
+  "cases": [
+    {
+      "case_id": "case_byd_002594",
+      "source_dir": "data/case_byd_002594/source",
+      "expected_financial": "tests/fixtures/expected/case_byd_002594/expected_financial.json",
+      "expected_anomalies": "tests/fixtures/expected/case_byd_002594/expected_anomalies.json",
+      "expected_risk": "tests/fixtures/expected/case_byd_002594/expected_risk.json",
+      "approval_comment": "M5-A 固定业务 Eval 已完成人工基线复核。",
+      "prohibited_report_text": [
+        "建议批准授信",
+        "建议拒绝授信",
+        "自动批准授信",
+        "自动拒绝授信"
+      ],
+      "negative_evidence": [
+        {
+          "fixture": "tests/fixtures/search_snapshots/byd_debt_huayi_irrelevant.json",
+          "expected_filter_reason": "SUBJECT_MISMATCH"
+        },
+        {
+          "fixture": "tests/fixtures/search_snapshots/byd_debt_yihualu_irrelevant.json",
+          "expected_filter_reason": "SUBJECT_TITLE_MISMATCH"
+        }
+      ]
+    }
+  ]
+}

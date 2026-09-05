@@ -455,14 +455,26 @@ python -m tests.stdio_research_smoke
 - 五个固定 Regression Cases；
 - Chainlit 渲染边界；
 - M4-A 风险解释、M4-B Evidence Summary / Query Proposal、M4-C2 Report Draft 与 M4-C1 报告投影的 Schema、引用边界、Unsupported Claim 拦截、降级和主链路回归。
+- M5-A 固定业务 Eval 的人工财务基线、风险/HITL/报告检查、负向 Evidence 和基线漂移检测。
 
 Chainlit 的传递依赖 `traceloop` 目前可能产生 Pydantic 旧式 Config 的弃用警告，不影响测试通过或项目代码。
+
+### 固定业务 Eval
+
+M5-A 首版通过正式 Durable Runtime 执行比亚迪公开 Case，并将财务、异常、风险、HITL、报告和两条无关搜索结果与人工基线比较：
+
+```powershell
+python -m app.eval_cli run
+```
+
+默认 Suite 为 `evals/suites/byd_baseline_v1.json`。每次运行写入唯一的 `eval-results/<suite>-<execution>/eval_result.json`；该运行目录已被 Git 忽略。CLI 输出 `PASS/FAIL`、通过检查数和结果路径，业务检查失败时返回退出码 `1`，Manifest 或路径无效时返回 `2`。Eval 强制使用 `deterministic + mock + disabled content fetch + rules verifier`，不会读取 `.env` 文件，也不会调用 Tavily/Qwen；结果中的 `external_call_count` 固定为 `0`。
 
 ## 12. 入口说明
 
 | 入口 | 用途 |
 |---|---|
 | `python -m app.task_cli` | 正式 Durable CLI，推荐 |
+| `python -m app.eval_cli run` | 固定离线业务 Eval |
 | `chainlit run chainlit_app.py` | 最小审核 UI |
 | `python -m app.mcp.research_server` | 手工启动 MCP Server，通常无需使用 |
 | `python -m app.main <case_dir>` | 无 Checkpoint 的快速离线预览 |
