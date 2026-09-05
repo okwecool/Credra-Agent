@@ -456,6 +456,7 @@ python -m tests.stdio_research_smoke
 - Chainlit 渲染边界；
 - M4-A 风险解释、M4-B Evidence Summary / Query Proposal、M4-C2 Report Draft 与 M4-C1 报告投影的 Schema、引用边界、Unsupported Claim 拦截、降级和主链路回归。
 - M5-A 固定业务 Eval 的人工财务基线、风险/HITL/报告检查、负向 Evidence 和基线漂移检测。
+- M5-B 审计包的成员白名单、清单哈希、敏感信息/本地路径拦截、损坏输入和安全失败边界。
 
 Chainlit 的传递依赖 `traceloop` 目前可能产生 Pydantic 旧式 Config 的弃用警告，不影响测试通过或项目代码。
 
@@ -469,12 +470,23 @@ python -m app.eval_cli run
 
 默认 Suite 为 `evals/suites/byd_baseline_v1.json`。每次运行写入唯一的 `eval-results/<suite>-<execution>/eval_result.json`；该运行目录已被 Git 忽略。CLI 输出 `PASS/FAIL`、通过检查数和结果路径，业务检查失败时返回退出码 `1`，Manifest 或路径无效时返回 `2`。Eval 强制使用 `deterministic + mock + disabled content fetch + rules verifier`，不会读取 `.env` 文件，也不会调用 Tavily/Qwen；结果中的 `external_call_count` 固定为 `0`。
 
+### 单次任务审计包
+
+M5-B 可将一个已完成的新式 Durable Task 导出为独立 ZIP：
+
+```powershell
+python -m app.audit_cli export --thread-id <已完成的-thread-id>
+```
+
+默认输出到 Git 忽略的 `audit-exports/`，包含 Markdown/HTML 报告、来源清单、受限 Evidence 投影、版本化 Artifact、聚合 Trace、运行指标和带 SHA-256 的清单。导出不会执行搜索或模型调用，也不会写入 `.env`。运行模式只根据历史 Run Artifact 推导，不使用导出时的当前配置冒充历史配置；现有 Artifact 无法证明的正文抓取 Provider 明确标为 `NOT_RECORDED`。Checkpoint、原始 Trace、搜索/正文/核验 Snapshot 和故障状态不会入包；未完成或旧式任务、危险 Thread ID、损坏 Artifact、凭据或绝对本地路径会被拒绝。同名 ZIP 不覆盖，重复导出时应先人工处理原文件或指定新的 `--output-dir`。
+
 ## 12. 入口说明
 
 | 入口 | 用途 |
 |---|---|
 | `python -m app.task_cli` | 正式 Durable CLI，推荐 |
 | `python -m app.eval_cli run` | 固定离线业务 Eval |
+| `python -m app.audit_cli export` | 已完成任务的审计 ZIP 导出 |
 | `chainlit run chainlit_app.py` | 最小审核 UI |
 | `python -m app.mcp.research_server` | 手工启动 MCP Server，通常无需使用 |
 | `python -m app.main <case_dir>` | 无 Checkpoint 的快速离线预览 |

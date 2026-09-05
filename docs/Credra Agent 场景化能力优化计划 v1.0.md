@@ -875,6 +875,21 @@ M5-A 第一切片门禁：同一 Suite 连续运行互不覆盖；默认运行�
 
 PDF 报告可作为增强项，不阻塞第一版审计包。
 
+### M5-B：单次任务审计包第一实施切片
+
+首版审计包按以下边界实现：
+
+- 提供 `python -m app.audit_cli export --thread-id <id>`，只接受安全 Thread ID，并通过现有 SQLite Checkpoint 定位 `case_id`、`run_id` 和最终 State；第一版只导出状态为 `COMPLETED` 且具有 M2.2 新式 Run ID 的任务，旧 Case 级运行目录与未完成任务显式拒绝；
+- ZIP 文件名由安全 Case ID、Thread slug 和 Run ID 组成，默认写入 Git 忽略的 `audit-exports/`；已存在的同名包不覆盖；
+- `report.md` 使用最终确定性报告，`report.html` 复用工作台的转义渲染器；`source_manifest.json` 复制 Case 来源清单，旧夹具缺失时写入显式 `NOT_AVAILABLE` 占位而不伪造来源；
+- `evidence.json` 仅投影 Research 状态、计数、已核验 Fact 和 Evidence 的来源/阶段/过滤/核验元数据，不复制搜索摘要正文或正文快照；
+- `artifacts/` 只包含 Run 下命名与 JSON Schema 边界一致、大小受限且可解析的版本化 JSON Artifact；`artifact_manifest.json` 记录每个 Artifact 的大小和 SHA-256；
+- `trace_summary.json` 只包含节点、事件、状态计数与时间范围，不复制原始 Trace 行、输入/输出摘要；`runtime_metrics.json` 聚合总耗时、节点耗时、Search/LLM/Retry/Interrupt/Resume、可获得的 Token/尝试次数、Artifact 数和人工等待时间；无法从 Provider 得知的 API credits 明确为 `null`；历史执行模式只允许从对应 Run Artifact 推导，不得使用导出时的当前环境配置冒充，未被现有 Artifact 持久化的 Provider 明确标为不可得；
+- `manifest.json` 记录任务身份、最终状态、导出时间、包内文件大小和 SHA-256。导出前扫描当前配置的模型/搜索 Key 和常见凭据字段，发现疑似泄漏则拒绝生成；Checkpoint、`.env`、正文/搜索/核验 Snapshot、原始 Trace 和运行故障状态目录永不入包；
+- 使用临时目录组装并在全部校验通过后原子写入 ZIP；所有成员路径由程序生成，拒绝符号链接、路径穿越、异常文件名、文件数或总大小超限。
+
+M5-B 第一切片门禁：真实完成任务可导出并独立读取；每个清单哈希与 ZIP 成员一致；包内没有绝对本地路径、API Key、Checkpoint、原始 Trace 或正文快照；损坏 Artifact、危险 Thread ID、未完成任务、重复输出和越界文件必须安全失败；既有 Runtime、Eval 与全量回归继续通过。
+
 ## 11.4 运行指标
 
 记录并展示：

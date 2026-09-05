@@ -15,6 +15,7 @@ __pycache__/
 .coverage
 htmlcov/
 /eval-results/
+/audit-exports/
 
 # Virtual environments
 .venv/
