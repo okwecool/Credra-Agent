@@ -21,6 +21,31 @@ from app.workbench import (
 )
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
+_NODE_LABELS = {
+    "document": "材料解析",
+    "financial": "财务分析",
+    "research": "补充调查",
+    "risk": "风险分析",
+    "approval": "人工审核",
+    "report": "报告生成",
+}
+_NODE_DESCRIPTIONS = {
+    "document": "读取并校验企业材料",
+    "financial": "计算统一口径财务指标",
+    "research": "检索、抓取并核验外部证据",
+    "risk": "生成确定性风险项与解释",
+    "approval": "等待审核意见或继续决策",
+    "report": "生成可追溯的最终报告",
+}
+_FLOW_STATE_CODES = {
+    "待执行": "pending",
+    "执行中": "running",
+    "已完成": "done",
+    "等待操作": "waiting",
+    "本轮跳过": "skipped",
+    "无需审核": "skipped",
+    "失败": "failed",
+}
 _STATUS_LABELS = {
     "CREATED": "⚪ 已创建",
     "RUNNING": "🔵 执行中",
@@ -153,6 +178,57 @@ def _timeline_markdown(payload: dict[str, Any]) -> list[str]:
     ]
 
 
+def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build the bounded state projection consumed by the AgentFlow element."""
+
+    state = payload["state"]
+    node_states = _node_states(payload)
+    nodes = [
+        {
+            "id": node,
+            "label": _NODE_LABELS[node],
+            "description": _NODE_DESCRIPTIONS[node],
+            "status": _FLOW_STATE_CODES[node_states[node]],
+            "statusLabel": node_states[node],
+        }
+        for node in WORKFLOW_NODES
+    ]
+    processed = sum(node["status"] in {"done", "skipped"} for node in nodes)
+    workflow_status = str(state.get("status") or "UNKNOWN")
+    current_node = state.get("failed_node") or state.get("current_node")
+    return {
+        "schemaVersion": "1.0",
+        "caseId": str(state.get("case_id") or "—"),
+        "threadId": str(payload.get("thread_id") or "—"),
+        "runId": str(state.get("run_id") or "legacy"),
+        "workflowStatus": workflow_status,
+        "workflowStatusLabel": _STATUS_LABELS.get(workflow_status, workflow_status),
+        "currentNode": current_node if current_node in WORKFLOW_NODES else None,
+        "nextNodes": [
+            node for node in payload.get("next", []) if node in WORKFLOW_NODES
+        ],
+        "riskLevel": str(state.get("risk_level") or "—"),
+        "progress": {
+            "processed": processed,
+            "total": len(nodes),
+            "percent": round(processed / len(nodes) * 100),
+        },
+        "nodes": nodes,
+    }
+
+
+def _flow_element(payload: dict[str, Any]) -> cl.CustomElement:
+    """Create a snapshot element without exposing raw artifacts or trace payloads."""
+
+    return cl.CustomElement(
+        thread_id=str(payload.get("thread_id") or "workbench"),
+        name="AgentFlow",
+        display="inline",
+        size="large",
+        props=_flow_view(payload),
+    )
+
+
 def _artifact_markdown(state: dict[str, Any]) -> list[str]:
     artifacts = [
         ("Company", state.get("company_artifact")),
@@ -280,7 +356,7 @@ async def _send_payload(payload: dict[str, Any]) -> None:
     await cl.Message(
         content=content,
         actions=_task_actions(payload),
-        elements=_report_elements(payload, details),
+        elements=[_flow_element(payload), *_report_elements(payload, details)],
     ).send()
 
 

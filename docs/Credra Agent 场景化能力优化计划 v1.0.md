@@ -674,6 +674,38 @@ FACT_VERIFIER_MAX_CANDIDATES=10
 - UI 与 CLI 使用同一个 Durable Runtime；
 - 完整演示不依赖隐藏的手工文件修改。
 
+## 9.5 M3-D：对话式工作台流程可视化增强
+
+在现有 Chainlit 对话、Durable Runtime 和只读 Workbench 投影之上增加可视化层，不另建前端服务，不让 UI 复制或修改业务状态。实施拆分如下：
+
+### M3-D1：Agent 流程总览
+
+- 使用 Chainlit `CustomElement` 增加内嵌流程卡片，展示 `document → financial → research → risk → approval → report` 六个节点；
+- 由现有 State、Artifact 引用、Interrupt 和失败字段确定性投影 `pending/running/done/waiting/skipped/failed`，不得根据页面本地状态猜测流程结果；
+- 展示 Case、Thread、Run、整体状态、当前节点、下一节点、风险等级和完成进度；Research 跳过、无需审核、人工等待和失败必须可区分；
+- 启动、恢复、刷新、批准和补充调查后生成最新流程快照；第一切片不承诺节点执行中的实时动画；
+- Custom Element 只接收受限状态投影，不包含 API Key、完整 Prompt、模型原始响应、正文快照或隐藏推理；现有 Markdown 总览和 CLI 保持兼容，组件失败不得影响 Runtime。
+
+### M3-D2：公开执行步骤与审核交互
+
+- 使用 Chainlit `Step`/`TaskList` 展示可审计的节点事件、工具类型、耗时、Retry 和降级状态；
+- 只展示公开操作摘要，不把 Chain of Thought、完整模型输入输出或未受控正文当作流程可视化；
+- 将批准、补充调查和刷新操作与流程视图联动，保持 HITL 评论和已有 Action 契约。
+
+### M3-D3：业务指标图表
+
+- 使用 Plotly 展示营收、利润、经营现金流、流动比率和资产负债率趋势；
+- 增加 Evidence 来源等级、核验状态和风险类别统计；
+- 图表只消费已有 Artifact，缺失或损坏时显示明确占位，不触发搜索、模型或重新计算。
+
+### M3-D4：实时事件桥接（可选增强）
+
+- 在不改变 Checkpoint 真值来源的前提下，通过 LangGraph 流式事件或受限 Trace 订阅更新运行中节点；
+- 处理浏览器断线恢复、重复事件、终态收敛和不同 Thread/Run 隔离；
+- 只有在搜索、正文抓取或模型调用等长耗时节点能够稳定呈现开始、完成、失败和降级事件后，才宣称“实时流程可视化”。
+
+M3-D1 阶段门禁：六节点所有显示状态均有确定性测试；高风险等待审核、Research 跳过、低风险无需审核、失败和完成路径可正确投影；Custom Element 与后端 Props 契约一致；既有 Markdown、Action、CLI、Runtime 和全量离线回归继续通过；不新增模型或搜索调用。
+
 ---
 
 # 10. M4：受约束 LLM 表达层

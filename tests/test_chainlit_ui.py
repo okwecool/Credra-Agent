@@ -5,6 +5,8 @@ from pathlib import Path
 
 from app.chainlit_app import (
     _case_catalog_markdown,
+    _flow_element,
+    _flow_view,
     _node_states,
     _report_elements,
     _risk_markdown,
@@ -79,6 +81,79 @@ def test_chainlit_failed_payload_explains_terminal_state() -> None:
     assert "失败节点" in markdown
     assert "FileNotFoundError" in markdown
     assert _node_states(payload)["document"] == "失败"
+
+    flow = _flow_view(payload)
+    failed = next(node for node in flow["nodes"] if node["id"] == "document")
+    assert flow["workflowStatus"] == "FAILED"
+    assert flow["currentNode"] == "document"
+    assert failed["status"] == "failed"
+
+
+def test_chainlit_flow_element_projects_waiting_review_without_raw_data() -> None:
+    payload = {
+        "thread_id": "flow-001",
+        "state": {
+            "case_id": "case_saic_600104",
+            "run_id": "run-flow-001",
+            "status": "WAITING_APPROVAL",
+            "current_node": "risk",
+            "risk_level": "MEDIUM",
+            "company_artifact": "artifacts/company_profile_v1.json",
+            "financial_artifact": "artifacts/financial_analysis_v1.json",
+            "research_artifact": None,
+            "risk_artifact": "artifacts/risk_analysis_v1.json",
+        },
+        "next": ["approval"],
+        "interrupts": [{"value": {"risk_flags": []}}],
+        "secret": "must-not-reach-flow-props",
+    }
+
+    flow = _flow_view(payload)
+    statuses = {node["id"]: node["status"] for node in flow["nodes"]}
+    element = _flow_element(payload)
+
+    assert flow["caseId"] == "case_saic_600104"
+    assert flow["threadId"] == "flow-001"
+    assert flow["nextNodes"] == ["approval"]
+    assert flow["progress"] == {"processed": 4, "total": 6, "percent": 67}
+    assert statuses == {
+        "document": "done",
+        "financial": "done",
+        "research": "skipped",
+        "risk": "done",
+        "approval": "waiting",
+        "report": "pending",
+    }
+    assert element.name == "AgentFlow"
+    assert element.display == "inline"
+    assert element.props == flow
+    assert "must-not-reach-flow-props" not in serialize_for_debug(element.props)
+
+
+def test_chainlit_flow_view_marks_low_risk_review_as_skipped() -> None:
+    payload = {
+        "thread_id": "flow-complete",
+        "state": {
+            "case_id": "case_normal",
+            "status": "COMPLETED",
+            "current_node": "report",
+            "risk_level": "LOW",
+            "company_artifact": "artifacts/company_profile_v1.json",
+            "financial_artifact": "artifacts/financial_analysis_v1.json",
+            "risk_artifact": "artifacts/risk_analysis_v1.json",
+            "report_artifact": "artifacts/report_v1.json",
+        },
+        "next": [],
+        "interrupts": [],
+    }
+
+    flow = _flow_view(payload)
+    statuses = {node["id"]: node["status"] for node in flow["nodes"]}
+
+    assert flow["progress"] == {"processed": 6, "total": 6, "percent": 100}
+    assert statuses["research"] == "skipped"
+    assert statuses["approval"] == "skipped"
+    assert statuses["report"] == "done"
 
 
 def test_chainlit_discovers_and_preflights_cases(tmp_path: Path) -> None:
