@@ -1,0 +1,35 @@
+{
+  "currency": "CNY_1000",
+  "statements": [
+    {
+      "year": 2023,
+      "revenue": 726199110.36974,
+      "net_profit": 14106165.14298,
+      "current_assets": 619608636.77894,
+      "current_liabilities": 547440155.16803,
+      "total_assets": 1006650278.66154,
+      "total_liabilities": 663743046.20051,
+      "operating_cash_flow": 42334422.53536
+    },
+    {
+      "year": 2024,
+      "revenue": 614074061.81813,
+      "net_profit": 1666376.76107,
+      "current_assets": 602142305.53689,
+      "current_liabilities": 511929411.92936,
+      "total_assets": 957143417.73169,
+      "total_liabilities": 610408436.40066,
+      "operating_cash_flow": 69267789.56124
+    },
+    {
+      "year": 2025,
+      "revenue": 646152101.88930,
+      "net_profit": 10105800.27034,
+      "current_assets": 622953887.21472,
+      "current_liabilities": 520468610.45964,
+      "total_assets": 960207461.45069,
+      "total_liabilities": 598901900.29488,
+      "operating_cash_flow": 34306601.90598
+    }
+  ]
+}

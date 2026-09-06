@@ -1,0 +1,12 @@
+{
+  "case_id": "case_saic_600104",
+  "currency": "CNY_1000",
+  "calculation_precision": 6,
+  "metrics": {
+    "revenue_growth": {"years": [2024, 2025], "values": [-0.1544, 0.052238]},
+    "net_profit_margin": {"years": [2023, 2024, 2025], "values": [0.019425, 0.002714, 0.01564]},
+    "current_ratio": {"years": [2023, 2024, 2025], "values": [1.131829, 1.176221, 1.19691]},
+    "debt_ratio": {"years": [2023, 2024, 2025], "values": [0.659358, 0.63774, 0.623721]},
+    "operating_cash_flow_trend": {"years": [2023, 2024, 2025], "values": [42334422.53536, 69267789.56124, 34306601.90598]}
+  }
+}

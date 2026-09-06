@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--suite",
         type=Path,
-        default=Path("evals/suites/byd_baseline_v1.json"),
+        default=Path("evals/suites/auto_manufacturers_v1.json"),
     )
     run.add_argument("--output-dir", type=Path, default=Path("eval-results"))
     return parser

@@ -462,13 +462,13 @@ Chainlit 的传递依赖 `traceloop` 目前可能产生 Pydantic 旧式 Config �
 
 ### 固定业务 Eval
 
-M5-A 首版通过正式 Durable Runtime 执行比亚迪公开 Case，并将财务、异常、风险、HITL、报告和两条无关搜索结果与人工基线比较：
+M5-A 通过正式 Durable Runtime 执行比亚迪与上汽集团两套公开 Case，并将财务、异常、风险、HITL、报告、来源兼容性和已固化的无关搜索结果与人工基线比较：
 
 ```powershell
 python -m app.eval_cli run
 ```
 
-默认 Suite 为 `evals/suites/byd_baseline_v1.json`。每次运行写入唯一的 `eval-results/<suite>-<execution>/eval_result.json`；该运行目录已被 Git 忽略。CLI 输出 `PASS/FAIL`、通过检查数和结果路径，业务检查失败时返回退出码 `1`，Manifest 或路径无效时返回 `2`。Eval 强制使用 `deterministic + mock + disabled content fetch + rules verifier`，不会读取 `.env` 文件，也不会调用 Tavily/Qwen；结果中的 `external_call_count` 固定为 `0`。
+默认 Suite 为 `evals/suites/auto_manufacturers_v1.json`，包含深交所比亚迪和上交所上汽集团，共 32 项检查；原单 Case `evals/suites/byd_baseline_v1.json` 仍可通过 `python -m app.eval_cli run --suite evals/suites/byd_baseline_v1.json` 独立运行。每次运行写入唯一的 `eval-results/<suite>-<execution>/eval_result.json`；该运行目录已被 Git 忽略。CLI 输出 `PASS/FAIL`、通过检查数和结果路径，业务检查失败时返回退出码 `1`，Manifest 或路径无效时返回 `2`。Eval 强制使用 `deterministic + mock + disabled content fetch + rules verifier`，不会读取 `.env` 文件，也不会调用 Tavily/Qwen；结果中的 `external_call_count` 固定为 `0`。
 
 ### 单次任务审计包
 

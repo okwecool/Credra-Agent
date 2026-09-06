@@ -6,10 +6,18 @@ from pathlib import Path
 
 import pytest
 
+from app.eval_cli import build_parser
 from app.evals.runner import load_eval_manifest, run_eval_suite
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SUITE = Path("evals/suites/byd_baseline_v1.json")
+MULTI_CASE_SUITE = Path("evals/suites/auto_manufacturers_v1.json")
+
+
+def test_eval_cli_defaults_to_multi_case_suite() -> None:
+    args = build_parser().parse_args(["run"])
+
+    assert args.suite == MULTI_CASE_SUITE
 
 
 def _copy_file(project_root: Path, reference: Path) -> None:
@@ -31,6 +39,22 @@ def _prepare_eval_project(tmp_path: Path) -> Path:
         Path("tests/fixtures/search_snapshots/byd_debt_huayi_irrelevant.json"),
         Path("tests/fixtures/search_snapshots/byd_debt_yihualu_irrelevant.json"),
         SUITE,
+    ):
+        _copy_file(project_root, reference)
+    return project_root
+
+
+def _prepare_multi_case_eval_project(tmp_path: Path) -> Path:
+    project_root = _prepare_eval_project(tmp_path)
+    shutil.copytree(
+        PROJECT_ROOT / "data/case_saic_600104/source",
+        project_root / "data/case_saic_600104/source",
+    )
+    for reference in (
+        Path("tests/fixtures/expected/case_saic_600104/expected_financial.json"),
+        Path("tests/fixtures/expected/case_saic_600104/expected_anomalies.json"),
+        Path("tests/fixtures/expected/case_saic_600104/expected_risk.json"),
+        MULTI_CASE_SUITE,
     ):
         _copy_file(project_root, reference)
     return project_root
@@ -99,3 +123,36 @@ def test_eval_manifest_rejects_project_path_traversal(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="project-relative"):
         load_eval_manifest(manifest_path, project_root=project_root)
+
+
+def test_auto_manufacturer_eval_runs_byd_and_saic_with_shared_source_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = _prepare_multi_case_eval_project(tmp_path)
+    monkeypatch.setenv("MODEL_API_KEY", "multi-case-model-sentinel")
+    monkeypatch.setenv("TAVILY_API_KEY", "multi-case-search-sentinel")
+
+    result, result_path = run_eval_suite(
+        project_root / MULTI_CASE_SUITE,
+        project_root=project_root,
+        output_dir=Path("eval-results"),
+    )
+
+    assert result.status == "PASS"
+    assert result.external_call_count == 0
+    assert result.check_count == 32
+    assert result.passed_check_count == 32
+    assert [case.case_id for case in result.cases] == [
+        "case_byd_002594",
+        "case_saic_600104",
+    ]
+    assert all(value == 1.0 for value in result.metrics.values())
+    for case in result.cases:
+        source_check = next(
+            check for check in case.checks if check.check_id == "source.case_contract"
+        )
+        assert source_check.status == "PASS"
+    serialized = result_path.read_text(encoding="utf-8")
+    assert "multi-case-model-sentinel" not in serialized
+    assert "multi-case-search-sentinel" not in serialized

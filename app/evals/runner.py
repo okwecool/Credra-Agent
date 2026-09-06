@@ -9,9 +9,11 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
+from app.cases import validate_case
 from app.config import Settings
 from app.evals.models import (
     BusinessEvalCase,
@@ -186,6 +188,61 @@ def _negative_evidence_checks(
     return checks, rate
 
 
+def _source_contract_check(
+    case: BusinessEvalCase,
+    *,
+    runtime_data: Path,
+    runtime_source: Path,
+) -> EvalCheck | None:
+    if case.expected_market is None or case.expected_primary_source_host is None:
+        return None
+    expected = {
+        "case_valid": True,
+        "market": case.expected_market,
+        "primary_source_host": case.expected_primary_source_host,
+    }
+    try:
+        validation = validate_case(case.case_id, runtime_data)
+        manifest = _read_json(runtime_source / "source_manifest.json")
+        sources = manifest.get("sources", [])
+        source_hosts = sorted(
+            {
+                host
+                for item in sources
+                if isinstance(item, dict)
+                and isinstance(item.get("url"), str)
+                and (host := urlparse(item["url"]).hostname)
+            }
+        )
+        market = manifest.get("company", {}).get("market")
+        actual = {
+            "case_valid": validation.valid,
+            "market": market,
+            "primary_source_host": (
+                case.expected_primary_source_host
+                if case.expected_primary_source_host in source_hosts
+                else None
+            ),
+            "source_hosts": source_hosts,
+        }
+        passed = (
+            validation.valid
+            and market == case.expected_market
+            and case.expected_primary_source_host in source_hosts
+        )
+    except (OSError, TypeError, ValueError) as exc:
+        actual = {"error": type(exc).__name__}
+        passed = False
+    return _check(
+        "source.case_contract",
+        "source",
+        expected=expected,
+        actual=actual,
+        passed=passed,
+        message="public source and market metadata satisfy the shared Case contract",
+    )
+
+
 def _run_case(
     case: BusinessEvalCase,
     *,
@@ -220,9 +277,17 @@ def _run_case(
         cashflow_threshold=threshold_settings["cashflow_threshold"],
         debt_ratio_threshold=threshold_settings["debt_ratio_threshold"],
     )
+    checks: list[EvalCheck] = []
+    source_check = _source_contract_check(
+        case,
+        runtime_data=runtime_data,
+        runtime_source=runtime_case / "source",
+    )
+    if source_check is not None:
+        checks.append(source_check)
     started = start_task(thread_id=thread_id, case_id=case.case_id, settings=settings)
     start_state = started["state"]
-    checks = [
+    checks.append(
         _check(
             "hitl.waiting_approval",
             "hitl",
@@ -235,7 +300,7 @@ def _run_case(
             ),
             message="real durable runtime reaches the expected human review point",
         )
-    ]
+    )
     allowed_decisions = (
         started["interrupts"][0]["value"].get("allowed_decisions", [])
         if started["interrupts"]

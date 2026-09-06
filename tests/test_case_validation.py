@@ -9,6 +9,7 @@ from app.cases import create_case_template, validate_case
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BYD_CASE_ID = "case_byd_002594"
+SAIC_CASE_ID = "case_saic_600104"
 
 
 def copy_case(tmp_path: Path, case_id: str) -> Path:
@@ -48,6 +49,39 @@ def test_real_byd_case_validates_and_normalizes_to_internal_unit(
     assert result.normalization_factor == 1.0
     assert result.errors == []
     assert result.warnings == []
+
+
+def test_real_saic_case_validates_with_auditable_sse_lineage(tmp_path: Path) -> None:
+    data_dir = copy_case(tmp_path, SAIC_CASE_ID)
+
+    result = validate_case(SAIC_CASE_ID, data_dir)
+    source_dir = data_dir / SAIC_CASE_ID / "source"
+    manifest = read_json(source_dir / "source_manifest.json")
+    financial = read_json(source_dir / "financial_statement.json")
+
+    assert result.valid is True
+    assert result.status == "VALID"
+    assert result.normalized_currency == "CNY_1000"
+    assert result.normalization_factor == 1.0
+    assert result.errors == []
+    assert result.warnings == []
+    assert result.confirmations == []
+    assert manifest["company"] == {
+        "legal_name": "上海汽车集团股份有限公司",
+        "a_share_code": "600104",
+        "market": "上海证券交易所",
+        "reporting_years": [2023, 2024, 2025],
+    }
+    assert financial["currency"] == "CNY_1000"
+    assert [item["year"] for item in financial["statements"]] == [2023, 2024, 2025]
+    assert {item["source_id"] for item in manifest["field_lineage"]} <= {
+        item["source_id"] for item in manifest["sources"]
+    }
+    assert any(
+        item["source_id"] == "sse-saic-2025-annual-report"
+        and item["url"].startswith("https://big5.sse.com.cn/")
+        for item in manifest["sources"]
+    )
 
 
 def test_legacy_cases_remain_valid_with_migration_warning(tmp_path: Path) -> None:

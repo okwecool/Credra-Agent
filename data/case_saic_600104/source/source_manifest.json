@@ -1,0 +1,185 @@
+{
+  "schema_version": "source_manifest_v2",
+  "case_id": "case_saic_600104",
+  "company": {
+    "legal_name": "上海汽车集团股份有限公司",
+    "a_share_code": "600104",
+    "market": "上海证券交易所",
+    "reporting_years": [2023, 2024, 2025]
+  },
+  "scope": {
+    "data_authorization": "用户授权从公开来源获取资料并保存必要的结构化信息、来源链接、页码和摘要；不保存完整年报 PDF。",
+    "sensitive_data": "不包含个人征信、非公开客户名单、非公开供应商名单或其他内部敏感资料。",
+    "accessed_at": "2026-09-05"
+  },
+  "sources": [
+    {
+      "source_id": "sse-saic-2025-annual-report",
+      "source_tier": "A",
+      "source_type": "证券交易所年度报告",
+      "publisher": "上海证券交易所",
+      "title": "上海汽车集团股份有限公司2025年年度报告",
+      "url": "https://big5.sse.com.cn/site/cht/www.sse.com.cn/disclosure/listedinfo/announcement/c/new/2026-04-02/600104_20260402_OXOS.pdf",
+      "publication_date": "2026-04-02",
+      "reporting_period": "2025-01-01至2025-12-31",
+      "used_for": ["公司与股票信息", "2023至2025年主要会计数据", "2024至2025年资产负债表", "2025年经营现金流变动说明", "报告期末股东情况"]
+    },
+    {
+      "source_id": "saic-ir-2024-annual-report",
+      "source_tier": "A",
+      "source_type": "上市公司投资者关系官网年度报告",
+      "publisher": "上海汽车集团股份有限公司",
+      "title": "上海汽车集团股份有限公司2024年年度报告",
+      "url": "https://www.saicmotor.com/chinese/images/tzzgx/ggb/dqgg/2024ndqgg/2025/4/29/685D33923ABE4D109BBE39F92BFBF945.pdf",
+      "publication_date": "2025-04-30",
+      "reporting_period": "2024-01-01至2024-12-31",
+      "used_for": ["2023年比较数资产负债表字段", "2023至2024年主要会计数据交叉核验"]
+    },
+    {
+      "source_id": "saic-ir-2023-annual-report",
+      "source_tier": "A",
+      "source_type": "上市公司投资者关系官网年度报告",
+      "publisher": "上海汽车集团股份有限公司",
+      "title": "上海汽车集团股份有限公司2023年年度报告",
+      "url": "https://www.saicmotor.com/chinese/images/tzzgx/ggb/dqgg/2023ndqgg/2024/3/29/C5303F0A7F774009828802E9562F73FB.pdf",
+      "publication_date": "2024-03-30",
+      "reporting_period": "2023-01-01至2023-12-31",
+      "used_for": ["2023年主要会计数据和财务报表交叉核验"]
+    },
+    {
+      "source_id": "saic-current-articles-of-association",
+      "source_tier": "A",
+      "source_type": "上市公司投资者关系官网公司章程",
+      "publisher": "上海汽车集团股份有限公司",
+      "title": "上海汽车集团股份有限公司章程",
+      "url": "https://www.saicmotor.com/chinese/images/tzzgx/gsglzd/2025/12/10/7A32E0E563E248A6B49DCDC867FE2E6C.pdf",
+      "publication_date": "2025-12-10",
+      "reporting_period": null,
+      "used_for": ["法定名称", "注册资本", "设立与上市沿革"]
+    },
+    {
+      "source_id": "saic-2002-annual-report",
+      "source_tier": "A",
+      "source_type": "上市公司投资者关系官网历史年度报告",
+      "publisher": "上海汽车集团股份有限公司",
+      "title": "上海汽车股份有限公司2002年年度报告",
+      "url": "https://www.saicmotor.com/chinese/images/tzzgx/ggb/dqgg/2007nqdqgg/1283.pdf",
+      "publication_date": null,
+      "reporting_period": "2002-01-01至2002-12-31",
+      "used_for": ["首次工商注册日期历史沿革核验"]
+    }
+  ],
+  "field_lineage": [
+    {
+      "fields": ["company_profile.company_name"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第4页，公司信息；第5页，公司股票简况",
+      "document_page": 4,
+      "printed_page": 4,
+      "table_name": "公司信息",
+      "accounting_basis": "法定披露名称"
+    },
+    {
+      "fields": ["company_profile.registered_capital"],
+      "source_id": "saic-current-articles-of-association",
+      "location": "PDF第3页，第六条",
+      "document_page": 3,
+      "printed_page": 3,
+      "table_name": "公司章程第六条",
+      "accounting_basis": "现行公司章程口径"
+    },
+    {
+      "fields": ["company_profile.established_date"],
+      "source_id": "saic-2002-annual-report",
+      "location": "PDF第5页，公司其他基本情况；公司于2007年更名但法人主体延续",
+      "document_page": 5,
+      "printed_page": 5,
+      "table_name": "公司其他基本情况",
+      "accounting_basis": "工商注册历史沿革口径"
+    },
+    {
+      "fields": ["company_profile.shareholders"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第56页，前十名股东持股情况",
+      "document_page": 56,
+      "printed_page": 56,
+      "table_name": "前十名股东持股情况",
+      "accounting_basis": "2025年12月31日报告期末口径"
+    },
+    {
+      "fields": ["company_profile.industry", "company_profile.business_scope"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第81页，公司概况与经营范围；主营业务构成见PDF第155页",
+      "document_page": 81,
+      "printed_page": 81,
+      "table_name": "公司概况",
+      "accounting_basis": "合并主体经营范围与主营业务摘要"
+    },
+    {
+      "fields": ["financial_statement.statements[2023].revenue", "financial_statement.statements[2023].net_profit", "financial_statement.statements[2023].operating_cash_flow"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第5页，近三年主要会计数据和财务指标",
+      "document_page": 5,
+      "printed_page": 5,
+      "table_name": "主要会计数据",
+      "source_unit": "CNY",
+      "normalized_unit": "CNY_1000",
+      "accounting_basis": "合并口径；2025年年度报告披露的2023年比较数；净利润为归属于上市公司股东的净利润；源表数值除以1000"
+    },
+    {
+      "fields": ["financial_statement.statements[2023].current_assets"],
+      "source_id": "saic-ir-2024-annual-report",
+      "location": "PDF第68页，合并资产负债表",
+      "document_page": 68,
+      "printed_page": 68,
+      "table_name": "合并资产负债表",
+      "source_unit": "CNY",
+      "normalized_unit": "CNY_1000",
+      "accounting_basis": "合并口径；2023年12月31日比较数；源表数值除以1000"
+    },
+    {
+      "fields": ["financial_statement.statements[2023].current_liabilities", "financial_statement.statements[2023].total_assets", "financial_statement.statements[2023].total_liabilities"],
+      "source_id": "saic-ir-2024-annual-report",
+      "location": "PDF第69页，合并资产负债表",
+      "document_page": 69,
+      "printed_page": 69,
+      "table_name": "合并资产负债表",
+      "source_unit": "CNY",
+      "normalized_unit": "CNY_1000",
+      "accounting_basis": "合并口径；2023年12月31日比较数；源表数值除以1000"
+    },
+    {
+      "fields": ["financial_statement.statements[2024].revenue", "financial_statement.statements[2024].net_profit", "financial_statement.statements[2024].operating_cash_flow", "financial_statement.statements[2025].revenue", "financial_statement.statements[2025].net_profit", "financial_statement.statements[2025].operating_cash_flow"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第5页，近三年主要会计数据和财务指标",
+      "document_page": 5,
+      "printed_page": 5,
+      "table_name": "主要会计数据",
+      "source_unit": "CNY",
+      "normalized_unit": "CNY_1000",
+      "accounting_basis": "合并口径；2024年比较数与2025年本期数；净利润为归属于上市公司股东的净利润；源表数值除以1000"
+    },
+    {
+      "fields": ["financial_statement.statements[2024].current_assets", "financial_statement.statements[2025].current_assets"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第65页，合并资产负债表",
+      "document_page": 65,
+      "printed_page": 65,
+      "table_name": "合并资产负债表",
+      "source_unit": "CNY",
+      "normalized_unit": "CNY_1000",
+      "accounting_basis": "合并口径；2024年与2025年12月31日；源表数值除以1000"
+    },
+    {
+      "fields": ["financial_statement.statements[2024].current_liabilities", "financial_statement.statements[2024].total_assets", "financial_statement.statements[2024].total_liabilities", "financial_statement.statements[2025].current_liabilities", "financial_statement.statements[2025].total_assets", "financial_statement.statements[2025].total_liabilities"],
+      "source_id": "sse-saic-2025-annual-report",
+      "location": "PDF第66页，合并资产负债表",
+      "document_page": 66,
+      "printed_page": 66,
+      "table_name": "合并资产负债表",
+      "source_unit": "CNY",
+      "normalized_unit": "CNY_1000",
+      "accounting_basis": "合并口径；2024年与2025年12月31日；源表数值除以1000"
+    }
+  ]
+}

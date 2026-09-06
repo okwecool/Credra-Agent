@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "auto_manufacturers_v1",
+  "description": "比亚迪与上汽集团两套公开汽车上市公司 Case 的离线财务、来源兼容性、风险、HITL、报告及证据边界验收。",
+  "calculation_tolerance": 0.000001,
+  "cases": [
+    {
+      "case_id": "case_byd_002594",
+      "source_dir": "data/case_byd_002594/source",
+      "expected_financial": "tests/fixtures/expected/case_byd_002594/expected_financial.json",
+      "expected_anomalies": "tests/fixtures/expected/case_byd_002594/expected_anomalies.json",
+      "expected_risk": "tests/fixtures/expected/case_byd_002594/expected_risk.json",
+      "expected_market": "深圳证券交易所",
+      "expected_primary_source_host": "static.cninfo.com.cn",
+      "approval_comment": "M5-A 双 Case Eval 已完成比亚迪人工基线复核。",
+      "prohibited_report_text": [
+        "建议批准授信",
+        "建议拒绝授信",
+        "自动批准授信",
+        "自动拒绝授信"
+      ],
+      "negative_evidence": [
+        {
+          "fixture": "tests/fixtures/search_snapshots/byd_debt_huayi_irrelevant.json",
+          "expected_filter_reason": "SUBJECT_MISMATCH"
+        },
+        {
+          "fixture": "tests/fixtures/search_snapshots/byd_debt_yihualu_irrelevant.json",
+          "expected_filter_reason": "SUBJECT_TITLE_MISMATCH"
+        }
+      ]
+    },
+    {
+      "case_id": "case_saic_600104",
+      "source_dir": "data/case_saic_600104/source",
+      "expected_financial": "tests/fixtures/expected/case_saic_600104/expected_financial.json",
+      "expected_anomalies": "tests/fixtures/expected/case_saic_600104/expected_anomalies.json",
+      "expected_risk": "tests/fixtures/expected/case_saic_600104/expected_risk.json",
+      "expected_market": "上海证券交易所",
+      "expected_primary_source_host": "big5.sse.com.cn",
+      "approval_comment": "M5-A2 上汽集团固定业务 Eval 已完成人工基线复核。",
+      "prohibited_report_text": [
+        "建议批准授信",
+        "建议拒绝授信",
+        "自动批准授信",
+        "自动拒绝授信"
+      ],
+      "negative_evidence": []
+    }
+  ]
+}

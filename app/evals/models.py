@@ -21,11 +21,23 @@ class BusinessEvalCase(BaseModel):
     expected_financial: str = Field(min_length=1)
     expected_anomalies: str = Field(min_length=1)
     expected_risk: str = Field(min_length=1)
+    expected_market: str | None = Field(default=None, min_length=1)
+    expected_primary_source_host: str | None = Field(default=None, min_length=1)
     approval_comment: str = Field(min_length=1, max_length=500)
     prohibited_report_text: list[str] = Field(default_factory=list, max_length=30)
     negative_evidence: list[NegativeEvidenceExpectation] = Field(
         default_factory=list, max_length=20
     )
+
+    @model_validator(mode="after")
+    def source_expectations_must_be_paired(self) -> "BusinessEvalCase":
+        if (self.expected_market is None) != (
+            self.expected_primary_source_host is None
+        ):
+            raise ValueError(
+                "expected_market and expected_primary_source_host must be set together"
+            )
+        return self
 
 
 class EvalSuiteManifest(BaseModel):
@@ -57,6 +69,7 @@ class EvalCheck(BaseModel):
         "report",
         "evidence",
         "runtime",
+        "source",
     ]
     status: Literal["PASS", "FAIL"]
     expected: Any = None
