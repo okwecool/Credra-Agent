@@ -24,3 +24,5 @@ pypdf==6.16.2
 
 # Minimal demo UI; the application can fall back to CLI if UI integration blocks
 chainlit==2.11.1
+# Chainlit 2.11.1 accepts Plotly >=5.3,<7; pin the latest validated 6.x release.
+plotly==6.9.0

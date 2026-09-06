@@ -21,6 +21,11 @@ from app.workbench import (
     public_trace_summary,
     workbench_detail_markdown,
 )
+from app.workbench_charts import (
+    build_workbench_figures,
+    chart_status_markdown,
+    project_workbench_charts,
+)
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
 _NODE_LABELS = {
@@ -479,6 +484,22 @@ def _report_elements(payload: dict[str, Any], details: dict[str, Any]) -> list[c
     ]
 
 
+def _chart_elements(
+    payload: dict[str, Any], projection: dict[str, Any]
+) -> list[cl.Plotly]:
+    thread_id = str(payload.get("thread_id") or "workbench")
+    return [
+        cl.Plotly(
+            thread_id=thread_id,
+            name=name,
+            display="inline",
+            size="large",
+            figure=figure,
+        )
+        for name, figure in build_workbench_figures(projection)
+    ]
+
+
 async def _send_payload(payload: dict[str, Any]) -> None:
     cl.user_session.set("credra_thread_id", payload["thread_id"])
     details = await asyncio.to_thread(load_workbench_details, payload, get_settings())
@@ -488,10 +509,23 @@ async def _send_payload(payload: dict[str, Any]) -> None:
     detail_content = workbench_detail_markdown(details)
     if detail_content:
         content += "\n\n---\n\n" + detail_content
+    chart_projection = project_workbench_charts(details)
+    try:
+        chart_elements = _chart_elements(payload, chart_projection)
+    except (KeyError, TypeError, ValueError):
+        chart_elements = []
+        chart_projection["notices"].append(
+            "图表渲染：当前 Artifact 无法安全生成图表，其他任务状态不受影响。"
+        )
+    content += "\n\n---\n\n" + chart_status_markdown(chart_projection)
     await cl.Message(
         content=content,
         actions=_task_actions(payload),
-        elements=[_flow_element(payload), *_report_elements(payload, details)],
+        elements=[
+            _flow_element(payload),
+            *chart_elements,
+            *_report_elements(payload, details),
+        ],
     ).send()
 
 

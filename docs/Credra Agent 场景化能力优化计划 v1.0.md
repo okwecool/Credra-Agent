@@ -698,6 +698,8 @@ FACT_VERIFIER_MAX_CANDIDATES=10
 - 增加 Evidence 来源等级、核验状态和风险类别统计；
 - 图表只消费已有 Artifact，缺失或损坏时显示明确占位，不触发搜索、模型或重新计算。
 
+实施契约：现有 Financial Artifact 保存的是营收增长率、净利润率、经营现金流、流动比率和资产负债率，而不是营收/利润绝对值；因此首版按 Artifact 原义展示增长率与利润率，不回读 Source 补算新的业务指标。图表数据投影与 Plotly 渲染分离，先校验年份、数值长度、有限数和允许指标，再生成财务趋势图；Evidence 统计仅聚合当前 Research Artifact 中去重后的公开候选/证据记录，风险统计仅聚合当前 Risk Artifact 的 `risk_flags.type`。图表标题、图例、坐标轴和 Hover 必须带单位，不能把 `UNVERIFIED` 表达为已核验事实。
+
 ### M3-D4：实时事件桥接（可选增强）
 
 - 在不改变 Checkpoint 真值来源的前提下，通过 LangGraph 流式事件或受限 Trace 订阅更新运行中节点；
@@ -708,7 +710,11 @@ M3-D1 阶段门禁：六节点所有显示状态均有确定性测试；高风�
 
 M3-D2 阶段门禁：右侧 `TaskList` 必须与六节点确定性投影一致，明确区分等待、跳过、失败和完成；对话流只投影 `NODE_END`、`TOOL_CALL`、`RETRY`、`QUERY_PLAN`、`LLM_CALL`、`INTERRUPT` 和 `RESUME` 等有业务意义的公开步骤，过滤高频生命周期噪声和 Resume 期间随即完成的 Interrupt 重放；同一 Thread 刷新不得重复发送已见步骤，页面最多展示最近 12 条；步骤摘要必须限长、清理控制字符并复用凭据脱敏，不包含 Chain of Thought、完整 Prompt、模型原始响应或正文；批准、补充调查和刷新继续使用现有 HITL Action，Graph、Runtime、Checkpoint、Artifact 和 CLI 契约不得变化。
 
-M3-D2 实施状态（2026-09-07）：已完成 `TaskList`、公开操作 `Step`、Thread 级去重、噪声/重放过滤、摘要脱敏与 12 条上限；Chainlit 的思维链显示策略保持为 `tool_call`，只呈现工具式公开步骤。离线浏览器验收已覆盖上汽 Case 从等待审批到批准完成的全过程，M3-D3 业务图表和 M3-D4 实时事件桥接尚未开始。
+M3-D2 实施状态（2026-09-07）：已完成 `TaskList`、公开操作 `Step`、Thread 级去重、噪声/重放过滤、摘要脱敏与 12 条上限；Chainlit 的思维链显示策略保持为 `tool_call`，只呈现工具式公开步骤。离线浏览器验收已覆盖上汽 Case 从等待审批到批准完成的全过程，M3-D4 实时事件桥接尚未开始。
+
+M3-D3 阶段门禁：五项 Financial 指标存在时必须按原单位正确投影，年份/数值长度不一致、非数值和非有限数不得进入图表；Evidence 来源等级、核验状态和风险类别计数必须可由当前 Artifact 独立复算，不能包含标题、正文、Prompt 或模型原始响应；Research 或 Risk 缺失时仍可展示其他已就绪图表并给出明确占位；图表创建失败不得阻断任务状态、HITL 或报告下载；既有 Markdown、流程图、TaskList、Step、CLI、Runtime 和全量离线回归继续通过，验证不新增模型、搜索或正文抓取调用。
+
+M3-D3 实施状态（2026-09-07）：已完成受限图表投影、五项 Financial 年度趋势、Evidence 来源等级/核验状态和 Risk 类别统计，以及缺失/无效 Artifact 的独立降级。年度分类轴显式按升序排列；图表使用与 Chainlit 深色界面可读的固定主题。图表仍是 Runtime 操作完成后的 Artifact 快照，不宣称已经实现 M3-D4 的运行中实时更新。
 
 ---
 

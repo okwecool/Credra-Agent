@@ -15,7 +15,7 @@ Credra Agent 是一个以企业授信尽调为业务载体的长任务 Agent MVP
 - SQLite Checkpoint 与跨进程 Resume；
 - Human-in-the-loop 风险审核；
 - Tool Retry、确定性故障注入与 JSONL Trace；
-- CLI 可靠入口与 Chainlit 最小审核 UI。
+- CLI 可靠入口与包含流程、Evidence、Trace、图表和 HITL 的 Chainlit 场景化工作台。
 
 > Credra Agent 只提供授信尽调辅助分析，不自动批准、拒绝贷款或生成授信额度。
 
@@ -143,6 +143,7 @@ python -m app.mcp.research_server
 - FastMCP 3.4.7；
 - MCP 1.29.0；
 - Chainlit 2.11.1；
+- Plotly 6.9.0；
 - Pydantic 2.13.4；
 - pytest 9.1.1。
 
@@ -382,14 +383,17 @@ chainlit run chainlit_app.py
 - 查看结构化输入预检、节点进度和当前 Artifact 引用；
 - 在内嵌 Agent 流程卡片中区分已完成、执行中、等待人工、跳过、失败和待执行节点，并查看整体完成比例；
 - 在右侧任务清单中查看六节点状态，并在对话流中展开节点完成、工具调用、Retry、模型调用、Interrupt 和 Resume 的公开审计步骤；
+- 查看五项既有财务指标的年度趋势，以及当前 Research/Risk Artifact 的 Evidence 来源等级、核验状态和风险类别统计；
 - 风险任务使用“批准并继续”或“补充调查”按钮，并填写人工意见；
 - 点击“刷新状态”读取 Durable Runtime 的最新状态。
 
-`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要；M3-C 已提供安全的 Markdown/HTML 报告预览和下载；M3-D1 已增加不复制业务状态的 Agent 流程总览；M3-D2 已增加 `TaskList` 与公开操作 `Step`。M4-A/B 展示风险解释、Evidence Summary 与人工审核式 Query Proposal 的状态、引用和降级信息；任务完成后，最终报告及 Artifact 列表还会展示 M4-C2 Report Draft 与 M4-C1 二次校验审计结果。
+`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要；M3-C 已提供安全的 Markdown/HTML 报告预览和下载；M3-D1 已增加不复制业务状态的 Agent 流程总览；M3-D2 已增加 `TaskList` 与公开操作 `Step`；M3-D3 已增加业务指标图表。M4-A/B 展示风险解释、Evidence Summary 与人工审核式 Query Proposal 的状态、引用和降级信息；任务完成后，最终报告及 Artifact 列表还会展示 M4-C2 Report Draft 与 M4-C1 二次校验审计结果。
 
 Evidence 中只有通过安全检查的公开 `http/https` URL 会呈现为可点击链接；页面最多展示前 12 条 Evidence 和最近 16 个 Trace 事件，完整数据仍保留在当前 Run Artifact 与任务 Trace 中。工作台不读取或展示正文快照。
 
 Chainlit 只调用 Durable Runtime，不独立维护任务状态。UI 重启后仍能凭 `thread_id` Resume。M3-D1 流程图和 M3-D2 任务清单在启动、恢复、审核和刷新完成后生成最新状态快照；公开操作步骤按 Thread 去重并最多投影最近 12 条有业务意义的事件，`TASK_START`、`NODE_START`、`TASK_STATE` 和 `STATUS_QUERY` 等高频噪声不生成步骤。步骤只包含事件类型、状态、耗时和脱敏摘要，不展示 Chain of Thought、完整 Prompt、模型原始响应或正文。节点执行中的实时事件更新属于后续 M3-D4，不在当前版本中宣称已经实现。
+
+M3-D3 图表只消费当前 Run 已存在的受限 Artifact 投影，不会发起模型、搜索或正文抓取调用。Financial Artifact 当前保存的是营收增长率、净利润率、经营现金流、流动比率和资产负债率，因此图表不把前两项误写成营收/利润绝对值；Research 或 Risk 缺失、损坏时会显示占位，并继续展示其他可用图表。
 
 ## 10. 运行产物
 
