@@ -4,12 +4,14 @@ import shutil
 from pathlib import Path
 
 from app.chainlit_app import (
+    _audit_step_views,
     _case_catalog_markdown,
     _flow_element,
     _flow_view,
     _node_states,
     _report_elements,
     _risk_markdown,
+    _task_list,
     discover_cases,
     serialize_for_debug,
 )
@@ -129,6 +131,25 @@ def test_chainlit_flow_element_projects_waiting_review_without_raw_data() -> Non
     assert element.props == flow
     assert "must-not-reach-flow-props" not in serialize_for_debug(element.props)
 
+    task_list = _task_list(payload)
+    assert task_list.status == "等待人工审核"
+    assert [task.title for task in task_list.tasks] == [
+        "材料解析 · 已完成",
+        "财务分析 · 已完成",
+        "补充调查 · 本轮跳过",
+        "风险分析 · 已完成",
+        "人工审核 · 等待操作",
+        "报告生成 · 待执行",
+    ]
+    assert [task.status.value for task in task_list.tasks] == [
+        "done",
+        "done",
+        "done",
+        "done",
+        "running",
+        "ready",
+    ]
+
 
 def test_chainlit_flow_view_marks_low_risk_review_as_skipped() -> None:
     payload = {
@@ -154,6 +175,114 @@ def test_chainlit_flow_view_marks_low_risk_review_as_skipped() -> None:
     assert statuses["research"] == "skipped"
     assert statuses["approval"] == "skipped"
     assert statuses["report"] == "done"
+
+
+def test_chainlit_audit_steps_are_bounded_filtered_and_redacted() -> None:
+    events = [
+        {
+            "node": "runtime",
+            "event_type": "TASK_START",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:00:00Z",
+            "latency_ms": 0,
+            "output_summary": "excluded noise",
+        },
+        {
+            "node": "document",
+            "event_type": "NODE_END",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:00:01Z",
+            "latency_ms": 12,
+            "output_summary": "company artifact ready",
+        },
+        {
+            "node": "research",
+            "event_type": "RETRY",
+            "status": "RETRY",
+            "end_time": "2026-09-06T01:00:02Z",
+            "latency_ms": 50,
+            "error": "api_key=top-secret timeout",
+        },
+        {
+            "node": "approval",
+            "event_type": "INTERRUPT",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:00:03Z",
+            "latency_ms": 0,
+            "output_summary": "waiting for approve or research",
+        },
+    ]
+
+    views = _audit_step_views({"trace_events": events})
+
+    assert [view["kind"] for view in views] == ["Workflow", "Retry", "HITL"]
+    assert views[0]["name"] == "材料解析 · 节点执行"
+    assert views[0]["icon"] == "Workflow"
+    assert views[1]["defaultOpen"] is True
+    assert views[2]["defaultOpen"] is True
+    serialized = serialize_for_debug(views)
+    assert "top-secret" not in serialized
+    assert "外部服务响应超时" in serialized
+    assert "excluded noise" not in serialized
+
+    many_events = [
+        {
+            "node": "report",
+            "event_type": "NODE_END",
+            "status": "SUCCESS",
+            "end_time": f"2026-09-06T01:01:{index:02d}Z",
+            "latency_ms": index,
+        }
+        for index in range(20)
+    ]
+    bounded = _audit_step_views({"trace_events": many_events})
+    assert len(bounded) == 12
+    assert bounded[0]["latencyMs"] == 8
+
+
+def test_chainlit_audit_steps_hide_resume_time_interrupt_replay() -> None:
+    events = [
+        {
+            "node": "approval",
+            "event_type": "INTERRUPT",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:00:00Z",
+            "output_summary": "waiting for approve or research",
+        },
+        {
+            "node": "runtime",
+            "event_type": "TASK_STATE",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:00:01Z",
+            "output_summary": "status=WAITING_APPROVAL",
+        },
+        {
+            "node": "runtime",
+            "event_type": "RESUME",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:01:00Z",
+            "input_summary": "decision=approve",
+        },
+        {
+            "node": "approval",
+            "event_type": "INTERRUPT",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:01:01Z",
+            "output_summary": "waiting for approve or research",
+        },
+        {
+            "node": "approval",
+            "event_type": "NODE_END",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:01:02Z",
+            "output_summary": "keys=human_decision,status",
+        },
+    ]
+
+    views = _audit_step_views({"trace_events": events})
+
+    assert [view["kind"] for view in views] == ["HITL", "Resume", "Workflow"]
+    assert sum(view["kind"] == "HITL" for view in views) == 1
 
 
 def test_chainlit_discovers_and_preflights_cases(tmp_path: Path) -> None:

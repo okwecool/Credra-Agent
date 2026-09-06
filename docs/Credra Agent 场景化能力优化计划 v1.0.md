@@ -706,6 +706,10 @@ FACT_VERIFIER_MAX_CANDIDATES=10
 
 M3-D1 阶段门禁：六节点所有显示状态均有确定性测试；高风险等待审核、Research 跳过、低风险无需审核、失败和完成路径可正确投影；Custom Element 与后端 Props 契约一致；既有 Markdown、Action、CLI、Runtime 和全量离线回归继续通过；不新增模型或搜索调用。
 
+M3-D2 阶段门禁：右侧 `TaskList` 必须与六节点确定性投影一致，明确区分等待、跳过、失败和完成；对话流只投影 `NODE_END`、`TOOL_CALL`、`RETRY`、`QUERY_PLAN`、`LLM_CALL`、`INTERRUPT` 和 `RESUME` 等有业务意义的公开步骤，过滤高频生命周期噪声和 Resume 期间随即完成的 Interrupt 重放；同一 Thread 刷新不得重复发送已见步骤，页面最多展示最近 12 条；步骤摘要必须限长、清理控制字符并复用凭据脱敏，不包含 Chain of Thought、完整 Prompt、模型原始响应或正文；批准、补充调查和刷新继续使用现有 HITL Action，Graph、Runtime、Checkpoint、Artifact 和 CLI 契约不得变化。
+
+M3-D2 实施状态（2026-09-07）：已完成 `TaskList`、公开操作 `Step`、Thread 级去重、噪声/重放过滤、摘要脱敏与 12 条上限；Chainlit 的思维链显示策略保持为 `tool_call`，只呈现工具式公开步骤。离线浏览器验收已覆盖上汽 Case 从等待审批到批准完成的全过程，M3-D3 业务图表和 M3-D4 实时事件桥接尚未开始。
+
 ---
 
 # 10. M4：受约束 LLM 表达层

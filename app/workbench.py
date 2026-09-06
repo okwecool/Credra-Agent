@@ -15,6 +15,7 @@ from app.tools.artifacts import ArtifactStore
 
 EVIDENCE_DISPLAY_LIMIT = 12
 TRACE_DISPLAY_LIMIT = 16
+AUDIT_STEP_DISPLAY_LIMIT = 12
 TRACE_READ_LIMIT = 200
 TRACE_MAX_BYTES = 512_000
 REPORT_MAX_BYTES = 2_000_000
@@ -77,6 +78,20 @@ def friendly_error_summary(value: Any, *, limit: int = 300) -> str:
     else:
         message = raw
     return _CONTROL_CHARS.sub("", message)[:limit]
+
+
+def public_trace_summary(event: dict[str, Any], *, limit: int = 160) -> str:
+    """Return one bounded, credential-redacted summary for public UI projections."""
+
+    raw = (
+        event.get("error")
+        or event.get("output_summary")
+        or event.get("input_summary")
+        or "未提供摘要"
+    )
+    text = _CONTROL_CHARS.sub("", friendly_error_summary(raw, limit=limit * 2))
+    text = " ".join(text.split())
+    return text[:limit] or "未提供摘要"
 
 
 def _safe_http_url(value: Any) -> str | None:
@@ -798,18 +813,13 @@ def trace_markdown(details: dict[str, Any]) -> list[str]:
     ]
     shown = events[-TRACE_DISPLAY_LIMIT:]
     for event in shown:
-        summary = (
-            event.get("error")
-            or event.get("output_summary")
-            or event.get("input_summary")
-        )
         lines.append(
             f"| {_display_text(event.get('end_time'), limit=32)} | "
             f"{_display_text(event.get('node'), limit=30)} | "
             f"{_display_text(event.get('event_type'), limit=30)} | "
             f"{_display_text(event.get('status'), limit=20)} | "
             f"{int(event.get('latency_ms') or 0)} ms | "
-            f"{_display_text(summary, limit=120)} |"
+            f"{_display_text(public_trace_summary(event, limit=120), limit=120)} |"
         )
     if len(events) > TRACE_DISPLAY_LIMIT or details.get("trace_truncated"):
         lines.append("> 页面仅展示最近事件；完整 Trace 保留在任务 JSONL 文件中。")

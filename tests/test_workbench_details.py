@@ -10,6 +10,7 @@ from app.tools.artifacts import ArtifactStore
 from app.workbench import (
     friendly_error_summary,
     load_workbench_details,
+    public_trace_summary,
     workbench_detail_markdown,
 )
 
@@ -188,6 +189,20 @@ def test_workbench_trace_summarizes_retry_interrupt_and_resume(tmp_path: Path) -
     assert "Resume `1`" in markdown
     assert "Resume `1`\n\n| 时间 | 节点 | 事件 |" in markdown
     assert "bounded summary" in markdown
+
+
+def test_public_trace_summary_redacts_credentials_and_collapses_text() -> None:
+    summary = public_trace_summary(
+        {
+            "error": "request failed\nAuthorization: Bearer-secret\nretry later",
+            "output_summary": "must not win precedence",
+        }
+    )
+
+    assert "Bearer-secret" not in summary
+    assert "[REDACTED]" in summary
+    assert "\n" not in summary
+    assert "must not win precedence" not in summary
 
 
 def test_workbench_rejects_trace_path_traversal(tmp_path: Path) -> None:

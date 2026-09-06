@@ -15,8 +15,10 @@ from app.config import Settings, get_settings
 from app.mcp.research_client import ResearchServiceError
 from app.runtime.tasks import get_task_status, resume_task, start_task
 from app.workbench import (
+    AUDIT_STEP_DISPLAY_LIMIT,
     friendly_error_summary,
     load_workbench_details,
+    public_trace_summary,
     workbench_detail_markdown,
 )
 
@@ -45,6 +47,30 @@ _FLOW_STATE_CODES = {
     "本轮跳过": "skipped",
     "无需审核": "skipped",
     "失败": "failed",
+}
+_TASK_STATE_CODES = {
+    "pending": cl.TaskStatus.READY,
+    "running": cl.TaskStatus.RUNNING,
+    "done": cl.TaskStatus.DONE,
+    "waiting": cl.TaskStatus.RUNNING,
+    "skipped": cl.TaskStatus.DONE,
+    "failed": cl.TaskStatus.FAILED,
+}
+_TASK_LIST_STATUS = {
+    "CREATED": "准备中",
+    "RUNNING": "执行中",
+    "WAITING_APPROVAL": "等待人工审核",
+    "COMPLETED": "已完成",
+    "FAILED": "执行失败",
+}
+_AUDIT_EVENT_VIEW = {
+    "NODE_END": ("节点执行", "Workflow", "Workflow"),
+    "TOOL_CALL": ("工具调用", "Wrench", "Tool"),
+    "RETRY": ("工具重试", "RefreshCw", "Retry"),
+    "QUERY_PLAN": ("调查计划", "ListChecks", "Plan"),
+    "LLM_CALL": ("受约束模型表达", "Sparkles", "LLM"),
+    "INTERRUPT": ("等待人工审核", "PauseCircle", "HITL"),
+    "RESUME": ("恢复任务", "PlayCircle", "Resume"),
 }
 _STATUS_LABELS = {
     "CREATED": "⚪ 已创建",
@@ -229,6 +255,113 @@ def _flow_element(payload: dict[str, Any]) -> cl.CustomElement:
     )
 
 
+def _task_list(payload: dict[str, Any]) -> cl.TaskList:
+    """Create the compact side-panel projection for the current workflow snapshot."""
+
+    flow = _flow_view(payload)
+    tasks = [
+        cl.Task(
+            title=f"{node['label']} · {node['statusLabel']}",
+            status=_TASK_STATE_CODES[node["status"]],
+        )
+        for node in flow["nodes"]
+    ]
+    return cl.TaskList(
+        thread_id=str(payload.get("thread_id") or "workbench"),
+        status=_TASK_LIST_STATUS.get(flow["workflowStatus"], "状态未知"),
+        tasks=tasks,
+    )
+
+
+def _audit_step_views(details: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project meaningful Trace events into bounded, public operational steps."""
+
+    events = details.get("trace_events") or []
+    views: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        event_type = str(event.get("event_type") or "")
+        if event_type not in _AUDIT_EVENT_VIEW:
+            continue
+        if event_type == "INTERRUPT" and _is_replayed_interrupt(events, index):
+            continue
+        label, icon, kind = _AUDIT_EVENT_VIEW[event_type]
+        node = str(event.get("node") or "runtime")
+        status = str(event.get("status") or "UNKNOWN")
+        latency_ms = max(0, int(event.get("latency_ms") or 0))
+        end_time = str(event.get("end_time") or "")
+        key = f"{node}|{event_type}|{status}|{end_time}"
+        views.append(
+            {
+                "key": key,
+                "name": f"{_NODE_LABELS.get(node, node)} · {label}",
+                "icon": icon,
+                "kind": kind,
+                "status": status,
+                "latencyMs": latency_ms,
+                "summary": public_trace_summary(event),
+                "defaultOpen": status in {"FAILED", "RETRY"}
+                or event_type == "INTERRUPT",
+                "metadata": {
+                    "event_type": event_type,
+                    "node": node,
+                    "status": status,
+                    "latency_ms": latency_ms,
+                },
+            }
+        )
+    return views[-AUDIT_STEP_DISPLAY_LIMIT:]
+
+
+def _is_replayed_interrupt(events: list[dict[str, Any]], index: int) -> bool:
+    """Hide resume-time interrupt replay that immediately resolves in the same node."""
+
+    node = str(events[index].get("node") or "")
+    for later in events[index + 1 :]:
+        later_type = str(later.get("event_type") or "")
+        if later_type == "NODE_END" and str(later.get("node") or "") == node:
+            return True
+        if later_type in {"TASK_STATE", "RESUME"}:
+            return False
+    return False
+
+
+async def _sync_task_list(payload: dict[str, Any]) -> None:
+    task_list = _task_list(payload)
+    await task_list.send()
+
+
+async def _send_new_audit_steps(
+    payload: dict[str, Any], details: dict[str, Any]
+) -> None:
+    thread_id = str(payload.get("thread_id") or "")
+    session_thread = cl.user_session.get("credra_audit_step_thread")
+    if session_thread != thread_id:
+        seen: set[str] = set()
+    else:
+        seen = set(cl.user_session.get("credra_audit_step_keys") or [])
+    for view in _audit_step_views(details):
+        if view["key"] in seen:
+            continue
+        step = cl.Step(
+            name=view["name"],
+            type="tool",
+            icon=view["icon"],
+            default_open=view["defaultOpen"],
+            show_input=False,
+            metadata=view["metadata"],
+        )
+        step.output = (
+            f"类型：{view['kind']}\n\n"
+            f"状态：{view['status']}\n\n"
+            f"耗时：{view['latencyMs']} ms\n\n"
+            f"摘要：{view['summary']}"
+        )
+        await step.send()
+        seen.add(view["key"])
+    cl.user_session.set("credra_audit_step_thread", thread_id)
+    cl.user_session.set("credra_audit_step_keys", sorted(seen))
+
+
 def _artifact_markdown(state: dict[str, Any]) -> list[str]:
     artifacts = [
         ("Company", state.get("company_artifact")),
@@ -349,6 +482,8 @@ def _report_elements(payload: dict[str, Any], details: dict[str, Any]) -> list[c
 async def _send_payload(payload: dict[str, Any]) -> None:
     cl.user_session.set("credra_thread_id", payload["thread_id"])
     details = await asyncio.to_thread(load_workbench_details, payload, get_settings())
+    await _sync_task_list(payload)
+    await _send_new_audit_steps(payload, details)
     content = _risk_markdown(payload)
     detail_content = workbench_detail_markdown(details)
     if detail_content:
