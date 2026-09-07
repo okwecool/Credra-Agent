@@ -1,5 +1,7 @@
 # Credra Agent
 
+架构优化方向见 [自主调查架构与演进路线 v2.0（待审核提案）](docs/Credra%20Agent%20自主调查架构与演进路线%20v2.0（提案）.md)。自然语言规划、自主工具选择与复杂案例属于后续实施范围。首页隐藏 `case_normal` 和 `case_risky` 两个合成技术样例；比亚迪、上汽继续展示，原有默认 Eval 保留。隐藏样例的源资料和回归用途保留。下文架构描述仍对应当前实现。
+
 Credra Agent 是一个以企业授信尽调为业务载体的长任务 Agent MVP。项目重点不是构建银行级风控模型，而是验证一套可暂停、可恢复、可人工介入、可调用确定性工具并能追踪执行状态的 Agent Runtime。
 
 核心能力：
@@ -185,9 +187,13 @@ MODEL_API_KEY=
 ANALYSIS_MODE=deterministic
 # 留空时复用 MODEL_NAME
 ANALYSIS_MODEL=
-# DashScope Qwen 混合思考模型使用 JSON Mode 时显式设为 false；其他 Provider 可不配置
+# true：先流式思考并生成公开过程摘要，再关闭思考生成严格 JSON
 # ANALYSIS_LLM_ENABLE_THINKING=false
-ANALYSIS_LLM_TIMEOUT_SECONDS=30
+# 思考流首 Token/连续读取空闲边界，不是总运行时长
+ANALYSIS_LLM_THINKING_TTFT_SECONDS=30
+ANALYSIS_LLM_THINKING_BUDGET_TOKENS=800
+ANALYSIS_LLM_PROCESS_SUMMARY_MAX_CHARS=400
+ANALYSIS_LLM_TIMEOUT_SECONDS=60
 ANALYSIS_LLM_MAX_RETRY=1
 ANALYSIS_LLM_MAX_INPUT_CHARS=30000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
@@ -195,9 +201,9 @@ ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
 ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS=2400
 ```
 
-启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。DashScope 的 Qwen 混合思考模型在结构化 JSON Mode 下还应设置 `ANALYSIS_LLM_ENABLE_THINKING=false`；该字段未配置时不会向其他 OpenAI-compatible Provider 发送厂商扩展参数。网关关闭 OpenAI SDK 的隐式重试，只执行 `ANALYSIS_LLM_MAX_RETRY` 定义的应用级重试。M4-B 的 JSON 结构显著大于风险叙事和报告草稿，因此通过 `ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS` 使用独立的 2400-token 默认上限。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
+启用 `ANALYSIS_MODE=llm` 前，必须在用户维护的 `.env` 中配置 `MODEL_API_KEY`，以及 `ANALYSIS_MODEL` 或 `MODEL_NAME`。DashScope Qwen 可设置 `ANALYSIS_LLM_ENABLE_THINKING=true` 启用两阶段协议：第一阶段流式消费思考并生成限长公开过程摘要，第二阶段显式关闭思考生成严格 JSON；原始 `reasoning_content` 不写入 Trace、Artifact 或报告。思考流默认 30 秒未收到有效 Token或连续 30 秒无数据时重试；结构化流使用 `ANALYSIS_LLM_TIMEOUT_SECONDS=60` 作为连续读取空闲边界。只要流数据持续到达，不设置总生成时长截止。网关关闭 OpenAI SDK 的隐式重试，只执行 `ANALYSIS_LLM_MAX_RETRY` 定义的应用级重试。M4-B 的 JSON 结构显著大于风险叙事和报告草稿，因此通过 `ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS` 使用独立的 2400-token 默认上限。默认 `deterministic` 不会调用模型，仍生成可审计的确定性风险解释 Artifact。
 
-当 `FACT_VERIFIER=llm` 时，核验器默认继承 `ANALYSIS_LLM_ENABLE_THINKING`；如需独立覆盖，可配置 `FACT_VERIFIER_ENABLE_THINKING=false`。核验请求携带严格 JSON Schema，SDK 隐式重试关闭，实际尝试次数由 `FACT_VERIFIER_MAX_RETRY` 控制。
+当 `FACT_VERIFIER=llm` 时，核验器属于独立的严格 JSON 阶段，默认关闭思考，不继承主链路的两阶段开关；只有显式设置 `FACT_VERIFIER_ENABLE_THINKING` 才会覆盖。核验请求携带严格 JSON Schema，SDK 隐式重试关闭，实际尝试次数由 `FACT_VERIFIER_MAX_RETRY` 控制。
 
 运行配置：
 
@@ -383,15 +389,16 @@ chainlit run chainlit_app.py
 - 查看结构化输入预检、节点进度和当前 Artifact 引用；
 - 在内嵌 Agent 流程卡片中区分已完成、执行中、等待人工、跳过、失败和待执行节点，并查看整体完成比例；
 - 在右侧任务清单中查看六节点状态，并在对话流中展开节点完成、工具调用、Retry、模型调用、Interrupt 和 Resume 的公开审计步骤；
+- 在启动和 Resume 期间观察基于当前 Thread Trace 增量更新的实时节点进度，并在操作结束后由 SQLite Checkpoint 终态收敛；
 - 查看五项既有财务指标的年度趋势，以及当前 Research/Risk Artifact 的 Evidence 来源等级、核验状态和风险类别统计；
 - 风险任务使用“批准并继续”或“补充调查”按钮，并填写人工意见；
 - 点击“刷新状态”读取 Durable Runtime 的最新状态。
 
-`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要；M3-C 已提供安全的 Markdown/HTML 报告预览和下载；M3-D1 已增加不复制业务状态的 Agent 流程总览；M3-D2 已增加 `TaskList` 与公开操作 `Step`；M3-D3 已增加业务指标图表。M4-A/B 展示风险解释、Evidence Summary 与人工审核式 Query Proposal 的状态、引用和降级信息；任务完成后，最终报告及 Artifact 列表还会展示 M4-C2 Report Draft 与 M4-C1 二次校验审计结果。
+`cases`、`start <case_id>`、`status <thread_id>` 与 `resume ...` 文本命令继续保留为兼容入口。M3-A 已完成工作台首页与状态总览；M3-B 已增加调查计划、Evidence、正文/Verifier 状态、Artifact 版本历史和 Retry/Trace 摘要；M3-C 已提供安全的 Markdown/HTML 报告预览和下载；M3-D1 已增加不复制业务状态的 Agent 流程总览；M3-D2 已增加 `TaskList` 与公开操作 `Step`；M3-D3 已增加业务指标图表；M3-D4 已增加启动和 Resume 期间的实时 Trace 桥接。M4-A/B 展示风险解释、Evidence Summary 与人工审核式 Query Proposal 的状态、引用和降级信息；任务完成后，最终报告及 Artifact 列表还会展示 M4-C2 Report Draft 与 M4-C1 二次校验审计结果。
 
 Evidence 中只有通过安全检查的公开 `http/https` URL 会呈现为可点击链接；页面最多展示前 12 条 Evidence 和最近 16 个 Trace 事件，完整数据仍保留在当前 Run Artifact 与任务 Trace 中。工作台不读取或展示正文快照。
 
-Chainlit 只调用 Durable Runtime，不独立维护任务状态。UI 重启后仍能凭 `thread_id` Resume。M3-D1 流程图和 M3-D2 任务清单在启动、恢复、审核和刷新完成后生成最新状态快照；公开操作步骤按 Thread 去重并最多投影最近 12 条有业务意义的事件，`TASK_START`、`NODE_START`、`TASK_STATE` 和 `STATUS_QUERY` 等高频噪声不生成步骤。步骤只包含事件类型、状态、耗时和脱敏摘要，不展示 Chain of Thought、完整 Prompt、模型原始响应或正文。节点执行中的实时事件更新属于后续 M3-D4，不在当前版本中宣称已经实现。
+Chainlit 只调用 Durable Runtime，不独立维护任务状态。UI 重启后仍能凭 `thread_id` Resume。M3-D4 在启动或 Resume 时先显示受限实时进度，后台线程执行原同步 Runtime，页面约每 350 ms 检查一次当前 Thread 的追加式 Trace；右侧任务清单随 `NODE_START`、`NODE_END` 和 `INTERRUPT` 更新，公开 Step 按 Thread 去重并最多投影最近 12 条有业务意义的事件。操作返回后，实时投影必须由 SQLite Checkpoint Payload 覆盖；浏览器断开不会把页面临时状态写入业务状态。`TASK_START`、`NODE_START`、`TASK_STATE` 和 `STATUS_QUERY` 等高频噪声仍不生成公开 Step，进度消息也不展示 Trace 原始摘要、Chain of Thought、完整 Prompt、模型原始响应或正文。
 
 M3-D3 图表只消费当前 Run 已存在的受限 Artifact 投影，不会发起模型、搜索或正文抓取调用。Financial Artifact 当前保存的是营收增长率、净利润率、经营现金流、流动比率和资产负债率，因此图表不把前两项误写成营收/利润绝对值；Research 或 Risk 缺失、损坏时会显示占位，并继续展示其他可用图表。
 

@@ -11,6 +11,10 @@ from app.config import Settings
 def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ANALYSIS_MODE", raising=False)
     monkeypatch.delenv("ANALYSIS_LLM_ENABLE_THINKING", raising=False)
+    monkeypatch.delenv("ANALYSIS_LLM_THINKING_TTFT_SECONDS", raising=False)
+    monkeypatch.delenv("ANALYSIS_LLM_THINKING_BUDGET_TOKENS", raising=False)
+    monkeypatch.delenv("ANALYSIS_LLM_PROCESS_SUMMARY_MAX_CHARS", raising=False)
+    monkeypatch.delenv("ANALYSIS_LLM_TIMEOUT_SECONDS", raising=False)
     monkeypatch.delenv("ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("MODEL_BASE_URL", raising=False)
     monkeypatch.delenv("MODEL_NAME", raising=False)
@@ -25,6 +29,10 @@ def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.model_base_url == "https://api.openai.com/v1"
     assert settings.analysis_mode == "deterministic"
     assert settings.analysis_llm_enable_thinking is None
+    assert settings.analysis_llm_thinking_ttft_seconds == 30.0
+    assert settings.analysis_llm_thinking_budget_tokens == 800
+    assert settings.analysis_llm_process_summary_max_chars == 400
+    assert settings.analysis_llm_timeout_seconds == 60.0
     assert settings.analysis_llm_max_retry == 1
     assert settings.analysis_llm_max_input_chars == 30_000
     assert settings.analysis_llm_max_output_tokens == 1_200
@@ -66,6 +74,16 @@ def test_analysis_thinking_mode_can_be_disabled_from_environment(
     settings = Settings(_env_file=None)
 
     assert settings.analysis_llm_enable_thinking is False
+
+
+def test_analysis_timeout_loads_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANALYSIS_LLM_TIMEOUT_SECONDS", "75")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.analysis_llm_timeout_seconds == 75.0
 
 
 def test_fact_verifier_thinking_override_loads_from_environment(

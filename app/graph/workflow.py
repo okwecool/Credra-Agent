@@ -22,7 +22,13 @@ from app.graph.routing import (
     route_after_risk,
 )
 from app.graph.state import AgentState
-from app.llm.gateway import StructuredModel, StructuredModelError, build_analysis_model
+from app.llm.gateway import (
+    ModelProgressCallback,
+    ModelProgressEvent,
+    StructuredModel,
+    StructuredModelError,
+    build_analysis_model,
+)
 from app.llm.report_draft import build_report_draft
 from app.llm.research_analysis import build_research_analysis
 from app.llm.risk_narrative import build_risk_narrative
@@ -84,6 +90,33 @@ def build_workflow(
             analysis_initialization_error = StructuredModelError(
                 "CONFIG_ERROR", "structured analysis model configuration is invalid"
             )
+
+    def model_progress(state: AgentState, node_name: str) -> ModelProgressCallback:
+        def record(event: ModelProgressEvent) -> None:
+            summary = " ".join((event.summary or "").split())
+            summary = re.sub(
+                r"(?i)(api[_-]?key|authorization|bearer)(\s*[:=]\s*)\S+",
+                r"\1\2[REDACTED]",
+                summary,
+            )[:400]
+            details = (
+                f"purpose={event.purpose};attempt={event.attempt};"
+                f"reasoning_chars={event.reasoning_chars};"
+                f"output_chars={event.output_chars};elapsed_ms={event.elapsed_ms}"
+            )
+            if summary:
+                details += f";public_summary={summary}"
+            trace.instant(
+                task_id=state["task_id"],
+                node=node_name,
+                event_type=event.event_type,
+                status=TraceStatus(event.status),
+                input_summary=f"purpose={event.purpose}",
+                output_summary=details,
+                error=event.error_code,
+            )
+
+        return record
 
     def traced(node_name: str, node: Callable[[AgentState], dict[str, Any]]):
         def wrapped(state: AgentState) -> dict[str, Any]:
@@ -227,6 +260,7 @@ def build_workflow(
             model_name=settings.analysis_model or settings.model_name,
             max_output_tokens=settings.analysis_llm_research_max_output_tokens,
             initialization_error=analysis_initialization_error,
+            progress_callback=model_progress(state, "research"),
         )
         evidence_summary_reference = artifacts.next_version_reference(
             "evidence_summary", state.get("evidence_summary_artifact")
@@ -304,6 +338,7 @@ def build_workflow(
             model=active_analysis_model,
             model_name=settings.analysis_model or settings.model_name,
             initialization_error=analysis_initialization_error,
+            progress_callback=model_progress(state, "risk"),
         )
         narrative_reference = artifacts.next_version_reference(
             "risk_narrative", state.get("risk_narrative_artifact")
@@ -457,6 +492,7 @@ def build_workflow(
             model=active_analysis_model,
             model_name=settings.analysis_model or settings.model_name,
             initialization_error=analysis_initialization_error,
+            progress_callback=model_progress(state, "report"),
         )
         report_draft_reference = artifacts.next_version_reference(
             "report_draft", state.get("report_draft_artifact")

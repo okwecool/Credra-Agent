@@ -317,7 +317,7 @@ def build_fact_verifier(settings: Settings) -> FactVerifier | None:
             enable_thinking=(
                 settings.fact_verifier_enable_thinking
                 if settings.fact_verifier_enable_thinking is not None
-                else settings.analysis_llm_enable_thinking
+                else False
             ),
         )
     raise ValueError(f"unknown fact verifier: {provider}")

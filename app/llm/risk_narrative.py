@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.llm.gateway import StructuredModel, StructuredModelError
+from app.llm.gateway import (
+    ModelProgressCallback,
+    StructuredModel,
+    StructuredModelError,
+)
 from app.models.analysis import (
     AnalysisErrorCode,
     RiskNarrativeArtifact,
@@ -102,6 +106,7 @@ def build_risk_narrative(
     model: StructuredModel | None,
     model_name: str,
     initialization_error: StructuredModelError | None = None,
+    progress_callback: ModelProgressCallback | None = None,
 ) -> RiskNarrativeArtifact:
     if analysis_mode == "deterministic":
         return _fallback(
@@ -143,6 +148,7 @@ def build_risk_narrative(
                 "deterministic_summary": risk.summary,
                 "risk_flags": entries,
             },
+            progress_callback=progress_callback,
         )
         _validate_citations(result.output, entries)
     except (OSError, StructuredModelError) as exc:

@@ -1,20 +1,27 @@
 """Non-server checks for the Chainlit workbench rendering boundary."""
 
+import asyncio
 import shutil
 from pathlib import Path
 
+import pytest
+
 from app.chainlit_app import (
+    _BACKGROUND_OPERATIONS,
     _audit_step_views,
     _case_catalog_markdown,
     _flow_element,
     _flow_view,
+    _live_task_list,
     _node_states,
     _report_elements,
     _risk_markdown,
     _task_list,
+    _track_background_operation,
     discover_cases,
     serialize_for_debug,
 )
+from app.workbench_live import project_live_progress
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -177,6 +184,54 @@ def test_chainlit_flow_view_marks_low_risk_review_as_skipped() -> None:
     assert statuses["report"] == "done"
 
 
+def test_chainlit_live_task_list_maps_trace_projection() -> None:
+    projection = project_live_progress(
+        [
+            {
+                "node": "document",
+                "event_type": "NODE_START",
+                "status": "SUCCESS",
+                "latency_ms": 0,
+            }
+        ],
+        thread_id="live-ui-001",
+        case_id="case_normal",
+    )
+
+    task_list = _live_task_list(projection)
+
+    assert task_list.thread_id == "live-ui-001"
+    assert task_list.status == "实时执行中"
+    assert task_list.tasks[0].title == "材料解析 · 执行中"
+    assert task_list.tasks[0].status.value == "running"
+    assert task_list.tasks[1].status.value == "ready"
+
+
+@pytest.mark.asyncio
+async def test_chainlit_background_operation_survives_handler_cancellation() -> None:
+    finished = asyncio.Event()
+
+    async def operation() -> dict:
+        await asyncio.sleep(0.01)
+        finished.set()
+        return {"status": "done"}
+
+    async def browser_handler() -> None:
+        task = _track_background_operation(asyncio.create_task(operation()))
+        await asyncio.sleep(60)
+        await task
+
+    handler = asyncio.create_task(browser_handler())
+    await asyncio.sleep(0)
+    handler.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await handler
+
+    await asyncio.wait_for(finished.wait(), timeout=1)
+    await asyncio.sleep(0)
+    assert not _BACKGROUND_OPERATIONS
+
+
 def test_chainlit_audit_steps_are_bounded_filtered_and_redacted() -> None:
     events = [
         {
@@ -204,6 +259,14 @@ def test_chainlit_audit_steps_are_bounded_filtered_and_redacted() -> None:
             "error": "api_key=top-secret timeout",
         },
         {
+            "node": "risk",
+            "event_type": "LLM_PROCESS_SUMMARY",
+            "status": "SUCCESS",
+            "end_time": "2026-09-06T01:00:02.500000Z",
+            "latency_ms": 0,
+            "output_summary": "public_summary=已核对风险项与允许引用。",
+        },
+        {
             "node": "approval",
             "event_type": "INTERRUPT",
             "status": "SUCCESS",
@@ -215,15 +278,22 @@ def test_chainlit_audit_steps_are_bounded_filtered_and_redacted() -> None:
 
     views = _audit_step_views({"trace_events": events})
 
-    assert [view["kind"] for view in views] == ["Workflow", "Retry", "HITL"]
+    assert [view["kind"] for view in views] == [
+        "Workflow",
+        "Retry",
+        "LLM Process",
+        "HITL",
+    ]
     assert views[0]["name"] == "材料解析 · 节点执行"
     assert views[0]["icon"] == "Workflow"
     assert views[1]["defaultOpen"] is True
-    assert views[2]["defaultOpen"] is True
+    assert views[2]["defaultOpen"] is False
+    assert views[3]["defaultOpen"] is True
     serialized = serialize_for_debug(views)
     assert "top-secret" not in serialized
     assert "外部服务响应超时" in serialized
     assert "excluded noise" not in serialized
+    assert "已核对风险项与允许引用" in serialized
 
     many_events = [
         {
@@ -287,7 +357,7 @@ def test_chainlit_audit_steps_hide_resume_time_interrupt_replay() -> None:
 
 def test_chainlit_discovers_and_preflights_cases(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
-    for case_id in ("case_normal", "case_byd_002594"):
+    for case_id in ("case_normal", "case_risky", "case_byd_002594", "case_saic_600104"):
         shutil.copytree(
             PROJECT_ROOT / "data" / case_id / "source",
             data_dir / case_id / "source",
@@ -299,11 +369,23 @@ def test_chainlit_discovers_and_preflights_cases(tmp_path: Path) -> None:
 
     assert [item["case_id"] for item in cases] == [
         "case_byd_002594",
-        "case_normal",
+        "case_saic_600104",
     ]
     assert all(item["valid"] for item in cases)
     assert "case_byd_002594" in markdown
+    assert "case_saic_600104" in markdown
+    assert "case_normal" not in markdown
+    assert "case_risky" not in markdown
     assert "not-a-case" not in markdown
+
+    all_cases = discover_cases(data_dir, include_hidden=True)
+    assert [item["case_id"] for item in all_cases] == [
+        "case_byd_002594",
+        "case_normal",
+        "case_risky",
+        "case_saic_600104",
+    ]
+    assert all(item["valid"] for item in all_cases)
 
 
 def test_chainlit_report_elements_use_in_memory_content() -> None:

@@ -24,7 +24,10 @@ class Settings(BaseSettings):
     )
     analysis_model: str = ""
     analysis_llm_enable_thinking: bool | None = None
-    analysis_llm_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    analysis_llm_thinking_ttft_seconds: float = Field(default=30.0, gt=0, le=120)
+    analysis_llm_thinking_budget_tokens: int = Field(default=800, ge=100, le=8_000)
+    analysis_llm_process_summary_max_chars: int = Field(default=400, ge=80, le=2_000)
+    analysis_llm_timeout_seconds: float = Field(default=60.0, gt=0, le=300)
     analysis_llm_max_retry: int = Field(default=1, ge=0, le=5)
     analysis_llm_max_input_chars: int = Field(default=30_000, ge=1_000, le=200_000)
     analysis_llm_max_output_tokens: int = Field(default=1_200, ge=100, le=8_000)

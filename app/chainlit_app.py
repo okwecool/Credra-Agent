@@ -4,13 +4,14 @@ import asyncio
 import json
 import re
 import uuid
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 from typing import Any
 
 import chainlit as cl
 
-from app.cases import validate_case
+from app.cases import HIDDEN_DEMO_CASE_IDS, validate_case
 from app.config import Settings, get_settings
 from app.mcp.research_client import ResearchServiceError
 from app.runtime.tasks import get_task_status, resume_task, start_task
@@ -25,6 +26,11 @@ from app.workbench_charts import (
     build_workbench_figures,
     chart_status_markdown,
     project_workbench_charts,
+)
+from app.workbench_live import (
+    live_progress_markdown,
+    project_live_progress,
+    read_live_trace_events,
 )
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
@@ -74,6 +80,10 @@ _AUDIT_EVENT_VIEW = {
     "RETRY": ("工具重试", "RefreshCw", "Retry"),
     "QUERY_PLAN": ("调查计划", "ListChecks", "Plan"),
     "LLM_CALL": ("受约束模型表达", "Sparkles", "LLM"),
+    "LLM_PROCESS_SUMMARY": ("模型过程摘要", "Brain", "LLM Process"),
+    "LLM_PROCESS_RETRY": ("模型思考重试", "RefreshCw", "LLM Retry"),
+    "LLM_PROCESS_FAILED": ("模型思考降级", "CircleAlert", "LLM Process"),
+    "LLM_STRUCTURED_RETRY": ("结构化输出重试", "RefreshCw", "LLM Retry"),
     "INTERRUPT": ("等待人工审核", "PauseCircle", "HITL"),
     "RESUME": ("恢复任务", "PlayCircle", "Resume"),
 }
@@ -85,16 +95,21 @@ _STATUS_LABELS = {
     "FAILED": "🔴 执行失败",
 }
 _CASE_ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
+_BACKGROUND_OPERATIONS: set[asyncio.Task[dict[str, Any]]] = set()
 
 
-def discover_cases(data_dir: Path) -> list[dict[str, Any]]:
-    """List source-backed Cases with their non-mutating preflight result."""
+def discover_cases(
+    data_dir: Path, *, include_hidden: bool = False
+) -> list[dict[str, Any]]:
+    """List visible Cases; keep synthetic fixtures available for explicit audits."""
 
     if not data_dir.is_dir():
         return []
     cases: list[dict[str, Any]] = []
     for path in sorted(data_dir.iterdir(), key=lambda item: item.name):
         if not path.is_dir() or not _CASE_ID.fullmatch(path.name):
+            continue
+        if not include_hidden and path.name in HIDDEN_DEMO_CASE_IDS:
             continue
         if not (path / "source").is_dir():
             continue
@@ -330,9 +345,41 @@ def _is_replayed_interrupt(events: list[dict[str, Any]], index: int) -> bool:
     return False
 
 
-async def _sync_task_list(payload: dict[str, Any]) -> None:
-    task_list = _task_list(payload)
-    await task_list.send()
+async def _sync_task_list(
+    payload: dict[str, Any], task_list: cl.TaskList | None = None
+) -> cl.TaskList:
+    snapshot = _task_list(payload)
+    if task_list is None:
+        await snapshot.send()
+        return snapshot
+    task_list.status = snapshot.status
+    task_list.tasks = snapshot.tasks
+    await task_list.update()
+    return task_list
+
+
+def _live_task_list(projection: dict[str, Any]) -> cl.TaskList:
+    tasks = [
+        cl.Task(
+            title=f"{node['label']} · {node['statusLabel']}",
+            status=_TASK_STATE_CODES[node["status"]],
+        )
+        for node in projection["nodes"]
+    ]
+    return cl.TaskList(
+        thread_id=str(projection["threadId"]),
+        status=str(projection["workflowStatusLabel"]),
+        tasks=tasks,
+    )
+
+
+async def _update_live_task_list(
+    task_list: cl.TaskList, projection: dict[str, Any]
+) -> None:
+    snapshot = _live_task_list(projection)
+    task_list.status = snapshot.status
+    task_list.tasks = snapshot.tasks
+    await task_list.update()
 
 
 async def _send_new_audit_steps(
@@ -500,11 +547,114 @@ def _chart_elements(
     ]
 
 
-async def _send_payload(payload: dict[str, Any]) -> None:
+def _live_trace_signature(events: list[dict[str, Any]]) -> tuple[Any, ...]:
+    if not events:
+        return (0,)
+    last = events[-1]
+    return (
+        len(events),
+        last.get("node"),
+        last.get("event_type"),
+        last.get("status"),
+        last.get("end_time"),
+    )
+
+
+def _track_background_operation(
+    task: asyncio.Task[dict[str, Any]],
+) -> asyncio.Task[dict[str, Any]]:
+    """Keep Runtime work alive if a browser handler is cancelled on disconnect."""
+
+    _BACKGROUND_OPERATIONS.add(task)
+
+    def release(completed: asyncio.Task[dict[str, Any]]) -> None:
+        _BACKGROUND_OPERATIONS.discard(completed)
+        if not completed.cancelled():
+            completed.exception()
+
+    task.add_done_callback(release)
+    return task
+
+
+async def _run_with_live_updates(
+    operation: Callable[[], dict[str, Any]],
+    *,
+    thread_id: str,
+    case_id: str | None,
+    settings: Settings,
+) -> tuple[dict[str, Any], cl.TaskList, cl.Message]:
+    """Run the unchanged synchronous Runtime while projecting its append-only Trace."""
+
+    events = await asyncio.to_thread(
+        read_live_trace_events, settings.trace_dir, thread_id
+    )
+    projection = project_live_progress(events, thread_id=thread_id, case_id=case_id)
+    task_list = _live_task_list(projection)
+    await task_list.send()
+    progress_message = cl.Message(content=live_progress_markdown(projection))
+    await progress_message.send()
+    signature = _live_trace_signature(events)
+    operation_task = _track_background_operation(
+        asyncio.create_task(asyncio.to_thread(operation))
+    )
+
+    while not operation_task.done():
+        await asyncio.sleep(0.35)
+        events = await asyncio.to_thread(
+            read_live_trace_events, settings.trace_dir, thread_id
+        )
+        current_signature = _live_trace_signature(events)
+        if current_signature == signature:
+            continue
+        signature = current_signature
+        projection = project_live_progress(events, thread_id=thread_id, case_id=case_id)
+        await _update_live_task_list(task_list, projection)
+        progress_message.content = live_progress_markdown(projection)
+        await progress_message.update()
+        await _send_new_audit_steps({"thread_id": thread_id}, {"trace_events": events})
+
+    try:
+        payload = await asyncio.shield(operation_task)
+    except (OSError, ResearchServiceError, ValueError):
+        task_list.status = "操作失败"
+        await task_list.update()
+        progress_message.content = (
+            "## 实时执行进度\n\n"
+            "⚠️ Runtime 操作返回错误；受限 Trace 临时投影未被当作最终状态。\n\n"
+            "> 请查看下方安全错误摘要，并可通过 Thread ID 重新查询 Checkpoint。"
+        )
+        await progress_message.update()
+        raise
+    events = await asyncio.to_thread(
+        read_live_trace_events, settings.trace_dir, thread_id
+    )
+    projection = project_live_progress(events, thread_id=thread_id, case_id=case_id)
+    if _live_trace_signature(events) != signature:
+        await _update_live_task_list(task_list, projection)
+        progress_message.content = live_progress_markdown(projection)
+        await progress_message.update()
+        await _send_new_audit_steps({"thread_id": thread_id}, {"trace_events": events})
+    return payload, task_list, progress_message
+
+
+async def _send_payload(
+    payload: dict[str, Any],
+    *,
+    live_task_list: cl.TaskList | None = None,
+    live_message: cl.Message | None = None,
+) -> None:
     cl.user_session.set("credra_thread_id", payload["thread_id"])
     details = await asyncio.to_thread(load_workbench_details, payload, get_settings())
-    await _sync_task_list(payload)
+    await _sync_task_list(payload, live_task_list)
     await _send_new_audit_steps(payload, details)
+    if live_message is not None:
+        status = str(payload.get("state", {}).get("status") or "UNKNOWN")
+        live_message.content = (
+            "## 实时执行进度\n\n"
+            f"✅ 已按 SQLite Checkpoint 收敛，最终状态：`{status}`。\n\n"
+            "> 下方任务面板、流程图和 Artifact 为最终可信快照。"
+        )
+        await live_message.update()
     content = _risk_markdown(payload)
     detail_content = workbench_detail_markdown(details)
     if detail_content:
@@ -544,18 +694,57 @@ async def _send_case_catalog(settings: Settings) -> None:
     await cl.Message(content=_case_catalog_markdown(cases), actions=actions).send()
 
 
-def _start_validated_case(case_id: str, settings: Settings) -> dict[str, Any]:
+def _start_validated_case(
+    case_id: str, settings: Settings, thread_id: str | None = None
+) -> dict[str, Any]:
     validation = validate_case(case_id, settings.data_dir)
     if not validation.valid:
         codes = ", ".join(issue.code for issue in validation.errors)
         raise ValueError(f"Case 预检失败：{codes or 'UNKNOWN_VALIDATION_ERROR'}")
     payload = start_task(
-        thread_id=f"{case_id}-ui-{uuid.uuid4().hex[:10]}",
+        thread_id=thread_id or f"{case_id}-ui-{uuid.uuid4().hex[:10]}",
         case_id=case_id,
         settings=settings,
     )
     payload["validation"] = validation.model_dump(mode="json")
     return payload
+
+
+async def _start_case_with_live_updates(
+    case_id: str, settings: Settings
+) -> tuple[dict[str, Any], cl.TaskList, cl.Message]:
+    thread_id = f"{case_id}-ui-{uuid.uuid4().hex[:10]}"
+    return await _run_with_live_updates(
+        partial(_start_validated_case, case_id, settings, thread_id),
+        thread_id=thread_id,
+        case_id=case_id,
+        settings=settings,
+    )
+
+
+async def _resume_with_live_updates(
+    *,
+    thread_id: str,
+    decision: str,
+    comment: str | None,
+    settings: Settings,
+) -> tuple[dict[str, Any], cl.TaskList, cl.Message]:
+    snapshot = await asyncio.to_thread(
+        partial(get_task_status, thread_id=thread_id, settings=settings)
+    )
+    case_id = snapshot.get("state", {}).get("case_id")
+    return await _run_with_live_updates(
+        partial(
+            resume_task,
+            thread_id=thread_id,
+            decision=decision,
+            comment=comment,
+            settings=settings,
+        ),
+        thread_id=thread_id,
+        case_id=str(case_id) if case_id else None,
+        settings=settings,
+    )
 
 
 async def _ask_text(prompt: str) -> str | None:
@@ -588,25 +777,26 @@ async def on_chat_start() -> None:
 async def on_message(message: cl.Message) -> None:
     parts = message.content.strip().split(maxsplit=3)
     settings = get_settings()
+    live_task_list: cl.TaskList | None = None
+    live_message: cl.Message | None = None
     try:
         if len(parts) == 1 and parts[0].lower() == "cases":
             await _send_case_catalog(settings)
             return
         if len(parts) == 2 and parts[0].lower() == "start":
-            payload = await asyncio.to_thread(_start_validated_case, parts[1], settings)
+            payload, live_task_list, live_message = await _start_case_with_live_updates(
+                parts[1], settings
+            )
         elif len(parts) == 2 and parts[0].lower() == "status":
             payload = await asyncio.to_thread(
                 partial(get_task_status, thread_id=parts[1], settings=settings)
             )
         elif len(parts) >= 3 and parts[0].lower() == "resume":
-            payload = await asyncio.to_thread(
-                partial(
-                    resume_task,
-                    thread_id=parts[1],
-                    decision=parts[2],
-                    comment=parts[3] if len(parts) == 4 else None,
-                    settings=settings,
-                )
+            payload, live_task_list, live_message = await _resume_with_live_updates(
+                thread_id=parts[1],
+                decision=parts[2],
+                comment=parts[3] if len(parts) == 4 else None,
+                settings=settings,
             )
         else:
             raise ValueError(
@@ -615,21 +805,23 @@ async def on_message(message: cl.Message) -> None:
     except (OSError, ResearchServiceError, ValueError) as exc:
         await _send_error(exc)
         return
-    await _send_payload(payload)
+    await _send_payload(
+        payload, live_task_list=live_task_list, live_message=live_message
+    )
 
 
 @cl.action_callback("start_case")
 async def start_case(action: cl.Action) -> None:
     try:
-        payload = await asyncio.to_thread(
-            _start_validated_case,
-            str(action.payload["case_id"]),
-            get_settings(),
+        payload, live_task_list, live_message = await _start_case_with_live_updates(
+            str(action.payload["case_id"]), get_settings()
         )
     except (OSError, ResearchServiceError, ValueError) as exc:
         await _send_error(exc)
         return
-    await _send_payload(payload)
+    await _send_payload(
+        payload, live_task_list=live_task_list, live_message=live_message
+    )
 
 
 @cl.action_callback("restore_task")
@@ -669,19 +861,18 @@ async def approve_task(action: cl.Action) -> None:
     if comment is None:
         return
     try:
-        payload = await asyncio.to_thread(
-            partial(
-                resume_task,
-                thread_id=str(action.payload["thread_id"]),
-                decision="approve",
-                comment=comment,
-                settings=get_settings(),
-            )
+        payload, live_task_list, live_message = await _resume_with_live_updates(
+            thread_id=str(action.payload["thread_id"]),
+            decision="approve",
+            comment=comment,
+            settings=get_settings(),
         )
     except (OSError, ResearchServiceError, ValueError) as exc:
         await _send_error(exc)
         return
-    await _send_payload(payload)
+    await _send_payload(
+        payload, live_task_list=live_task_list, live_message=live_message
+    )
 
 
 @cl.action_callback("research_task")
@@ -692,19 +883,18 @@ async def research_task(action: cl.Action) -> None:
     if comment is None:
         return
     try:
-        payload = await asyncio.to_thread(
-            partial(
-                resume_task,
-                thread_id=str(action.payload["thread_id"]),
-                decision="research",
-                comment=comment,
-                settings=get_settings(),
-            )
+        payload, live_task_list, live_message = await _resume_with_live_updates(
+            thread_id=str(action.payload["thread_id"]),
+            decision="research",
+            comment=comment,
+            settings=get_settings(),
         )
     except (OSError, ResearchServiceError, ValueError) as exc:
         await _send_error(exc)
         return
-    await _send_payload(payload)
+    await _send_payload(
+        payload, live_task_list=live_task_list, live_message=live_message
+    )
 
 
 def serialize_for_debug(payload: dict[str, Any]) -> str:

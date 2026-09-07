@@ -19,6 +19,8 @@ from app.models.company import CompanyProfile
 from app.models.financial import FinancialStatement
 
 LEGACY_CASE_IDS = frozenset({"case_normal", "case_risky"})
+# Synthetic fixtures remain addressable for regression and checkpoint recovery.
+HIDDEN_DEMO_CASE_IDS = frozenset({"case_normal", "case_risky"})
 CANONICAL_CURRENCY = "CNY_1000"
 CURRENCY_FACTORS = {
     "CNY": 0.001,

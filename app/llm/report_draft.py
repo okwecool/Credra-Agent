@@ -7,7 +7,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.llm.gateway import StructuredModel, StructuredModelError
+from app.llm.gateway import (
+    ModelProgressCallback,
+    StructuredModel,
+    StructuredModelError,
+)
 from app.llm.research_analysis import build_research_evidence_index
 from app.models.analysis import (
     AnalysisErrorCode,
@@ -132,6 +136,7 @@ def build_report_draft(
     model: StructuredModel | None,
     model_name: str,
     initialization_error: StructuredModelError | None = None,
+    progress_callback: ModelProgressCallback | None = None,
 ) -> ReportDraftArtifact:
     """Generate a cited draft without granting tools or changing source Artifacts."""
 
@@ -178,6 +183,7 @@ def build_report_draft(
                     for reference_id, statement in source_index.items()
                 ],
             },
+            progress_callback=progress_callback,
         )
         _validate_references(result.output, source_index)
     except (OSError, StructuredModelError) as exc:

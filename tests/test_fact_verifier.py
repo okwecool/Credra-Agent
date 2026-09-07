@@ -594,7 +594,7 @@ def test_llm_verifier_forwards_non_thinking_and_disables_sdk_retries(
     assert completions.calls[0]["extra_body"] == {"enable_thinking": False}
 
 
-def test_fact_verifier_inherits_analysis_thinking_setting(
+def test_fact_verifier_defaults_to_non_thinking_independently(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict = {}
@@ -611,11 +611,35 @@ def test_fact_verifier_inherits_analysis_thinking_setting(
             fact_verifier="llm",
             model_name="configured-model",
             model_api_key="test-key",
-            analysis_llm_enable_thinking=False,
+            analysis_llm_enable_thinking=True,
         )
     )
 
     assert captured["enable_thinking"] is False
+
+
+def test_fact_verifier_allows_explicit_thinking_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict = {}
+
+    def build_verifier(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(name="llm", model_name=kwargs["model_name"])
+
+    monkeypatch.setattr(verifier_module, "LLMFactVerifier", build_verifier)
+
+    build_fact_verifier(
+        Settings(
+            _env_file=None,
+            fact_verifier="llm",
+            model_name="configured-model",
+            model_api_key="test-key",
+            fact_verifier_enable_thinking=True,
+        )
+    )
+
+    assert captured["enable_thinking"] is True
 
 
 class OneCandidateProvider:

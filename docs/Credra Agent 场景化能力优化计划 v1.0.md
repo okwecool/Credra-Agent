@@ -706,15 +706,21 @@ FACT_VERIFIER_MAX_CANDIDATES=10
 - 处理浏览器断线恢复、重复事件、终态收敛和不同 Thread/Run 隔离；
 - 只有在搜索、正文抓取或模型调用等长耗时节点能够稳定呈现开始、完成、失败和降级事件后，才宣称“实时流程可视化”。
 
+实施契约：Chainlit 在启动或 Resume 前生成/确认 Thread ID，把原同步 Runtime 放入后台工作线程，并按固定短间隔只读该 Thread 的 JSONL Trace。Trace 投影只用于运行中的临时视图：`NODE_START`/`NODE_END`/`INTERRUPT`/`RESUME` 推导六节点的执行中、完成、失败和等待状态，`TOOL_CALL`/`RETRY`/`QUERY_PLAN`/`LLM_CALL` 继续通过公开 Step 展示；操作返回后必须用 SQLite Checkpoint Payload 覆盖临时状态。Trace 读取限制在配置目录直属文件，忽略并发写入中的不完整尾行，限制读取字节数与事件数；不同 Thread 不共享游标或去重集合。实时消息只包含节点、事件类型、计数、进度和延迟等受限元数据，不显示 Trace 原始摘要、正文、Prompt、模型响应或凭据。浏览器连接丢失不得取消后台 Runtime；重新连接后通过“恢复已有任务”读取 Checkpoint 和持久化 Trace。服务进程被终止不属于浏览器断线恢复承诺。
+
 M3-D1 阶段门禁：六节点所有显示状态均有确定性测试；高风险等待审核、Research 跳过、低风险无需审核、失败和完成路径可正确投影；Custom Element 与后端 Props 契约一致；既有 Markdown、Action、CLI、Runtime 和全量离线回归继续通过；不新增模型或搜索调用。
 
 M3-D2 阶段门禁：右侧 `TaskList` 必须与六节点确定性投影一致，明确区分等待、跳过、失败和完成；对话流只投影 `NODE_END`、`TOOL_CALL`、`RETRY`、`QUERY_PLAN`、`LLM_CALL`、`INTERRUPT` 和 `RESUME` 等有业务意义的公开步骤，过滤高频生命周期噪声和 Resume 期间随即完成的 Interrupt 重放；同一 Thread 刷新不得重复发送已见步骤，页面最多展示最近 12 条；步骤摘要必须限长、清理控制字符并复用凭据脱敏，不包含 Chain of Thought、完整 Prompt、模型原始响应或正文；批准、补充调查和刷新继续使用现有 HITL Action，Graph、Runtime、Checkpoint、Artifact 和 CLI 契约不得变化。
 
-M3-D2 实施状态（2026-09-07）：已完成 `TaskList`、公开操作 `Step`、Thread 级去重、噪声/重放过滤、摘要脱敏与 12 条上限；Chainlit 的思维链显示策略保持为 `tool_call`，只呈现工具式公开步骤。离线浏览器验收已覆盖上汽 Case 从等待审批到批准完成的全过程，M3-D4 实时事件桥接尚未开始。
+M3-D2 实施状态（2026-09-07）：已完成 `TaskList`、公开操作 `Step`、Thread 级去重、噪声/重放过滤、摘要脱敏与 12 条上限；Chainlit 的思维链显示策略保持为 `tool_call`，只呈现工具式公开步骤。离线浏览器验收已覆盖上汽 Case 从等待审批到批准完成的全过程。
 
 M3-D3 阶段门禁：五项 Financial 指标存在时必须按原单位正确投影，年份/数值长度不一致、非数值和非有限数不得进入图表；Evidence 来源等级、核验状态和风险类别计数必须可由当前 Artifact 独立复算，不能包含标题、正文、Prompt 或模型原始响应；Research 或 Risk 缺失时仍可展示其他已就绪图表并给出明确占位；图表创建失败不得阻断任务状态、HITL 或报告下载；既有 Markdown、流程图、TaskList、Step、CLI、Runtime 和全量离线回归继续通过，验证不新增模型、搜索或正文抓取调用。
 
-M3-D3 实施状态（2026-09-07）：已完成受限图表投影、五项 Financial 年度趋势、Evidence 来源等级/核验状态和 Risk 类别统计，以及缺失/无效 Artifact 的独立降级。年度分类轴显式按升序排列；图表使用与 Chainlit 深色界面可读的固定主题。图表仍是 Runtime 操作完成后的 Artifact 快照，不宣称已经实现 M3-D4 的运行中实时更新。
+M3-D3 实施状态（2026-09-07）：已完成受限图表投影、五项 Financial 年度趋势、Evidence 来源等级/核验状态和 Risk 类别统计，以及缺失/无效 Artifact 的独立降级。年度分类轴显式按升序排列；图表使用与 Chainlit 深色界面可读的固定主题。图表本身仍是 Runtime 操作完成后的 Artifact 快照，M3-D4 只实时更新节点和公开事件，不用不完整 Artifact 绘图。
+
+M3-D4 阶段门禁：点击启动后必须先出现“实时执行中”，长耗时节点的 `NODE_START` 到 `NODE_END` 期间任务清单显示执行中，Retry/Tool/LLM/Interrupt 等公开事件到达后增量展示且同一事件不重复；Research/Approval 跳过、失败和等待必须正确投影。并发追加的不完整 Trace 行、危险 Thread 路径、超限历史和不同 Thread 文件不能污染页面或阻断 Runtime；操作返回后临时视图必须与 Checkpoint 的 `WAITING_APPROVAL`、`COMPLETED` 或 `FAILED` 终态收敛。浏览器断开后后台 Runtime 可继续，重新连接并恢复同一 Thread 时能读取最终状态。既有流程图、图表、HITL、报告、CLI 和全量离线回归继续通过，离线验收不新增模型、搜索或正文抓取调用。
+
+M3-D4 实施状态（2026-09-07）：已完成启动/Resume 后台执行、350 ms Trace 轮询、实时任务清单、实时进度消息、公开 Step 增量发送和 Checkpoint 终态覆盖。实时读取限制为当前 Trace 目录的直属 Thread 文件，容忍并发写入尾行并限制为最近 512 个合法事件；恢复已有任务继续使用原 Checkpoint/Trace，不新增 UI 状态库。浏览器联调已观察到操作返回前的“实时执行中”和返回后的 `WAITING_APPROVAL` 收敛；真实 Provider 的长耗时视觉体验留给用户按演示指南自行启用，不在离线验收中消耗额度。
 
 ---
 
@@ -812,6 +818,20 @@ M4-C 阶段门禁：未经支持的 URL、数字、Evidence/Fact/Metric/Risk 和
 
 阶段进展（2026-09-02）：首先使用隔离 `case_risky`、Mock Research 和 Rules Verifier 完成真实 `qwen3.7-plus` 的 M4-A/B 验收。随后使用比亚迪真实 Case 完成 M4-C2 首次纵向验收：Risk Narrative 两轮均为 `COMPLETE`，Report Draft 首次尝试生成 `COMPLETE` Artifact，最终报告完成且二次门禁正确剔除模型换算百分比、无引用阈值推导等 Unsupported Number，调查不完整和人工意见均被披露，密钥未进入 Trace/Artifact/报告。真实 Tavily 返回 15 条原始结果并保留 3 条候选，正文抓取 3/3 成功；其中一条实际主题为易华录的文章因弱别名命中误入候选，但保持 `UNVERIFIED`，未进入 Fact 或确定性风险。Fact Verifier 尚未继承 Qwen 的 `enable_thinking=false` Provider 参数，3 条均以 `INVALID_OUTPUT` 降级；M4-B 在 1200 Token 输出预算下两次 `INVALID_OUTPUT`，同一输入临时提高到 2400 后第二次尝试以 1631 输出 Token 成功，说明需按用途校准输出预算。Fact Verifier 兼容修复、搜索负样本增强、真实 Report Draft 的表达通过率优化，以及 401/429、空输出、Schema 漂移等完整异常矩阵和固定 Eval 样本仍待完成，因此 M4-D 尚未整体关闭。
 
+### M4-E：两阶段思考流与结构化输出
+
+将主链路模型调用从单次非流式 JSON 请求扩展为可选的两阶段协议：
+
+1. 当 `ANALYSIS_LLM_ENABLE_THINKING=true` 时，先执行开启思考的流式过程阶段。客户端消费 Provider 的 `reasoning_content` 但不保存或展示原始思维链；只投影首 Token、累计字符、阶段切换、Retry 等受限运行元数据，并接收模型在 `content` 中生成的限长公开过程摘要；
+2. 随后独立执行关闭思考的流式结构化阶段，继续要求 `response_format=json_object`，收集完整 `content` 后再进行 Pydantic Schema 校验；过程摘要是非权威辅助输入，不能覆盖原始结构化事实；
+3. 结构化 JSON 继续经过既有 Evidence/Fact/Metric/Risk 引用、数字、URL、来源指纹和授信决定门禁。思考阶段失败只降级过程展示，不阻断结构化阶段；结构化阶段失败继续使用确定性回退。
+
+超时语义改为网络空闲边界而非整个推理过程的总时长：思考阶段默认 30 秒未收到首个有效 Token 或连续 30 秒没有新数据时触发应用级重试；结构化流使用 `ANALYSIS_LLM_TIMEOUT_SECONDS` 作为每次网络读取空闲上限。只要数据块持续到达，不因总运行时间超过该值主动终止连接。SDK 隐式重试继续关闭。
+
+过程展示只允许持久化模型主动生成的公开摘要和受限计数，不得持久化 `reasoning_content`、完整 Prompt、原始响应或凭据。Chainlit 将公开摘要显示为默认折叠的 Step；高频流进度只更新运行态，不生成大量永久 Step。
+
+M4-E 阶段门禁：Mock 流覆盖 reasoning/content 分段、首 Token、连续输出超过超时总时长但不中断、空闲超时与 Retry、过程阶段失败后结构化成功、非法 JSON 降级和引用门禁；Trace 与 UI 不包含原始 reasoning、完整 Prompt、API Key 或 Authorization；deterministic 模式不产生模型流事件；真实 Provider 验收必须由用户单独授权。
+
 ## 10.4 配置基线
 
 ```dotenv
@@ -819,14 +839,18 @@ ANALYSIS_MODE=deterministic
 ANALYSIS_MODEL=
 # DashScope Qwen 混合思考模型的 JSON Mode：false；其他 Provider 可不配置
 # ANALYSIS_LLM_ENABLE_THINKING=false
-ANALYSIS_LLM_TIMEOUT_SECONDS=30
+# 可选两阶段思考流的首 Token/连续空闲边界；不是总运行时长
+ANALYSIS_LLM_THINKING_TTFT_SECONDS=30
+ANALYSIS_LLM_THINKING_BUDGET_TOKENS=800
+ANALYSIS_LLM_PROCESS_SUMMARY_MAX_CHARS=400
+ANALYSIS_LLM_TIMEOUT_SECONDS=60
 ANALYSIS_LLM_MAX_RETRY=1
 ANALYSIS_LLM_MAX_INPUT_CHARS=30000
 ANALYSIS_LLM_MAX_OUTPUT_TOKENS=1200
 ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS=2400
 ```
 
-`ANALYSIS_MODEL` 为空时复用 `MODEL_NAME`。`ANALYSIS_LLM_ENABLE_THINKING` 是可选 Provider 扩展；DashScope Qwen 混合思考模型使用 JSON Mode 时应显式设为 `false`，未配置时不得向其他 OpenAI-compatible Provider 注入该参数。OpenAI SDK 内部重试应关闭，由 `ANALYSIS_LLM_MAX_RETRY` 统一控制可审计的应用级尝试次数。上述字段只进入 `.env.example`；`.env` 仍由用户维护。
+`ANALYSIS_MODEL` 为空时复用 `MODEL_NAME`。`ANALYSIS_LLM_ENABLE_THINKING=true` 启用 M4-E 两阶段协议，并保证第二阶段显式发送 `enable_thinking=false`；显式 `false` 时跳过思考阶段并直接执行非思考 JSON，未配置时保持对其他 OpenAI-compatible Provider 的兼容，不注入厂商扩展参数。`ANALYSIS_LLM_THINKING_TTFT_SECONDS` 同时作为思考流首个有效 Token 与后续连续读取空闲边界，默认 30 秒；`ANALYSIS_LLM_TIMEOUT_SECONDS` 是结构化流的连续读取空闲边界，默认 60 秒，两者都不是整个生成过程的总时长。OpenAI SDK 内部重试应关闭，由 `ANALYSIS_LLM_MAX_RETRY` 统一控制可审计的应用级尝试次数。环境参数基线同步进入 `.env.example`；`.env` 仍由用户维护，只有当前请求得到明确授权时才可调整指定字段。
 
 ## 10.5 约束
 
@@ -1121,7 +1145,7 @@ M5：业务 Eval、审计包与可靠性收尾
 
 M4-C2 首次真实纵向验收暴露的三项问题已形成明确修复基线：
 
-- Fact Verifier 必须继承或显式覆盖 `ANALYSIS_LLM_ENABLE_THINKING`，关闭 OpenAI SDK 隐式重试，并将完整输出 JSON Schema 与固定枚举发送给模型；非法结构只执行配置允许的应用级重试。Prompt 版本升级后不得复用旧失败缓存；
+- Fact Verifier 作为独立严格 JSON 阶段默认关闭思考，不继承主链路的两阶段思考开关；只有 `FACT_VERIFIER_ENABLE_THINKING` 显式配置时才覆盖。它必须关闭 OpenAI SDK 隐式重试，并将完整输出 JSON Schema 与固定枚举发送给模型；非法结构只执行配置允许的应用级重试。Prompt 版本升级后不得复用旧失败缓存；
 - M4-B Evidence Summary / Query Proposal 使用独立的 `ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS=2400` 默认预算，不扩大 Risk Narrative 与 Report Draft 的 1200-token 默认边界；
 - 对公司查询的 C 级来源，标题必须命中目标主体或别名；只在摘要/正文偶然出现目标的弱结果以 `SUBJECT_TITLE_MISMATCH` 提前拒绝。比亚迪查询召回易华录文章是固定负向回归；A/B 级公告或权威报道仍可依靠正文主体匹配进入候选。
 

@@ -10,6 +10,7 @@ import pytest
 
 from app.config import Settings
 from app.llm.gateway import (
+    ModelProgressEvent,
     OpenAICompatibleStructuredModel,
     StructuredModelError,
     StructuredModelResult,
@@ -34,6 +35,43 @@ class _FakeCompletions:
     def create(self, **kwargs: Any) -> Any:
         self.calls.append(kwargs)
         content = self.contents.pop(0)
+        if kwargs.get("stream"):
+            enable_thinking = (kwargs.get("extra_body") or {}).get("enable_thinking")
+            chunks = []
+            if enable_thinking:
+                chunks.append(
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content=None,
+                                    reasoning_content="private reasoning must not leak",
+                                )
+                            )
+                        ],
+                        usage=None,
+                    )
+                )
+            chunks.extend(
+                [
+                    SimpleNamespace(
+                        choices=[
+                            SimpleNamespace(
+                                delta=SimpleNamespace(
+                                    content=content,
+                                    reasoning_content=None,
+                                )
+                            )
+                        ],
+                        usage=None,
+                    ),
+                    SimpleNamespace(
+                        choices=[],
+                        usage=SimpleNamespace(prompt_tokens=123, completion_tokens=45),
+                    ),
+                ]
+            )
+            return chunks
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
             usage=SimpleNamespace(prompt_tokens=123, completion_tokens=45),
@@ -44,6 +82,11 @@ class _FakeClient:
     def __init__(self, contents: list[str]) -> None:
         self.completions = _FakeCompletions(contents)
         self.chat = SimpleNamespace(completions=self.completions)
+        self.timeouts: list[float] = []
+
+    def with_options(self, *, timeout: float) -> "_FakeClient":
+        self.timeouts.append(timeout)
+        return self
 
 
 class _NarrativeModel:
@@ -144,6 +187,7 @@ def test_openai_gateway_retries_invalid_json_and_returns_validated_output() -> N
     assert result.output.overall_summary == "风险较高。"
     assert len(client.completions.calls) == 2
     assert "tools" not in client.completions.calls[0]
+    assert client.completions.calls[0]["stream"] is True
     assert "extra_body" not in client.completions.calls[0]
     assert client.completions.calls[0]["response_format"] == {"type": "json_object"}
 
@@ -188,6 +232,62 @@ def test_openai_gateway_forwards_explicit_non_thinking_json_mode() -> None:
 
     assert client.completions.calls[0]["extra_body"] == {"enable_thinking": False}
     assert client.completions.calls[0]["max_tokens"] == 777
+
+
+def test_openai_gateway_streams_private_thinking_then_strict_json() -> None:
+    valid = json.dumps(
+        {
+            "overall_summary": "风险较高。",
+            "summary_evidence_ids": ["metric:current_ratio"],
+            "explanations": [
+                {
+                    "risk_id": "risk:1:liquidity",
+                    "explanation": "流动性承压。",
+                    "evidence_ids": ["metric:current_ratio"],
+                }
+            ],
+            "limitations": [],
+        },
+        ensure_ascii=False,
+    )
+    client = _FakeClient(["已核对风险项与允许引用。", valid])
+    events: list[ModelProgressEvent] = []
+    model = OpenAICompatibleStructuredModel(
+        api_key="test-key",
+        base_url="https://llm.example.test/v1",
+        model_name="test-model",
+        timeout_seconds=60,
+        max_attempts=1,
+        max_input_chars=10_000,
+        max_output_tokens=500,
+        enable_thinking=True,
+        thinking_ttft_seconds=30,
+        thinking_budget_tokens=200,
+        process_summary_max_chars=100,
+        client=client,
+    )
+
+    result = model.generate(
+        output_schema=RiskNarrativeDraft,
+        purpose="risk_narrative",
+        prompt_version="test-v1",
+        system_prompt="Return JSON only.",
+        payload={"risk": "bounded"},
+        progress_callback=events.append,
+    )
+
+    assert result.output.overall_summary == "风险较高。"
+    assert len(client.completions.calls) == 2
+    assert client.completions.calls[0]["extra_body"]["enable_thinking"] is True
+    assert client.completions.calls[1]["extra_body"] == {"enable_thinking": False}
+    assert "response_format" not in client.completions.calls[0]
+    assert client.completions.calls[1]["response_format"] == {"type": "json_object"}
+    assert client.timeouts == [30, 60]
+    assert any(event.event_type == "LLM_PROCESS_SUMMARY" for event in events)
+    assert any(event.event_type == "LLM_STRUCTURED_FIRST_TOKEN" for event in events)
+    assert "private reasoning" not in json.dumps(
+        [event.__dict__ for event in events], ensure_ascii=False
+    )
 
 
 def test_openai_gateway_disables_sdk_retries(

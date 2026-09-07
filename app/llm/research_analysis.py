@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from app.llm.gateway import StructuredModel, StructuredModelError
+from app.llm.gateway import (
+    ModelProgressCallback,
+    StructuredModel,
+    StructuredModelError,
+)
 from app.models.analysis import (
     AnalysisErrorCode,
     EvidenceGap,
@@ -503,6 +507,7 @@ def build_research_analysis(
     model_name: str,
     max_output_tokens: int | None = None,
     initialization_error: StructuredModelError | None = None,
+    progress_callback: ModelProgressCallback | None = None,
 ) -> ResearchAnalysisArtifacts:
     """Return bounded summaries and review-only proposals without changing QueryPlan."""
 
@@ -552,6 +557,7 @@ def build_research_analysis(
             system_prompt=_PROMPT_PATH.read_text(encoding="utf-8"),
             payload=_model_payload(plan, records, gaps),
             max_output_tokens=max_output_tokens,
+            progress_callback=progress_callback,
         )
         _validate_summary_draft(result.output, records, gaps)
         return _completed_artifacts(
