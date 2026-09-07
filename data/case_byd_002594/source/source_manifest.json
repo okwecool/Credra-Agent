@@ -1,0 +1,37 @@
+{
+  "schema_version": "source_manifest_v2",
+  "case_id": "case_byd_002594",
+  "company": {
+    "legal_name": "比亚迪股份有限公司",
+    "a_share_code": "002594",
+    "market": "深圳证券交易所",
+    "reporting_years": [2023, 2024, 2025]
+  },
+  "scope": {
+    "data_authorization": "用户授权从公开来源获取资料并保存必要的结构化信息、来源链接、页码和摘要；不保存完整年报 PDF。",
+    "sensitive_data": "不包含个人征信、非公开客户名单、非公开供应商名单或其他内部敏感资料。",
+    "accessed_at": "2026-08-26"
+  },
+  "sources": [
+    {"source_id": "cninfo-byd-2025-annual-report", "source_tier": "A", "source_type": "监管指定信息披露平台年度报告", "publisher": "巨潮资讯网", "title": "比亚迪股份有限公司2025年年度报告", "url": "https://static.cninfo.com.cn/finalpage/2026-03-28/1225045351.PDF", "publication_date": "2026-03-28", "reporting_period": "2025-01-01至2025-12-31", "used_for": ["公司基本信息", "2023至2025年主要会计数据和财务指标", "2024至2025年资产负债表", "2025年经营现金流变动说明", "控股股东与实际控制人"]},
+    {"source_id": "cninfo-byd-2024-annual-report", "source_tier": "A", "source_type": "监管指定信息披露平台年度报告", "publisher": "巨潮资讯网", "title": "比亚迪股份有限公司2024年年度报告", "url": "https://static.cninfo.com.cn/finalpage/2025-03-26/1222894939.PDF", "publication_date": "2025-03-26", "reporting_period": "2024-01-01至2024-12-31", "used_for": ["2023年经重述比较数的资产负债表字段"]},
+    {"source_id": "cninfo-byd-2023-audited-financial-statements", "source_tier": "A", "source_type": "监管指定信息披露平台审计财务报表", "publisher": "巨潮资讯网", "title": "比亚迪股份有限公司2023年度审计报告及财务报表", "url": "https://static.cninfo.com.cn/finalpage/2024-03-27/1219412071.PDF", "publication_date": "2024-03-27", "reporting_period": "2023-01-01至2023-12-31", "used_for": ["2023年资产负债表字段交叉核验"]},
+    {"source_id": "byd-investor-basic-information", "source_tier": "A", "source_type": "公司投资者关系官网", "publisher": "比亚迪股份有限公司", "title": "基本资料", "url": "https://www.bydglobal.com/cn/Investor/BasicInformation.html", "publication_date": null, "reporting_period": null, "used_for": ["注册资本交叉核验"]},
+    {"source_id": "shenzhen-enterprise-credit-byd", "source_tier": "A", "source_type": "政府企业信用信息公示页面", "publisher": "深圳市企业信用信息公示系统", "title": "比亚迪股份有限公司企业信息", "url": "https://qr.szcredit.org.cn/GJQYCredit/GSZJGSPTS/QYGS.aspx?rid=AF014824ACF775CC", "publication_date": null, "reporting_period": null, "used_for": ["法定代表人、成立日期、统一社会信用代码和注册资本交叉核验"]}
+  ],
+  "field_lineage": [
+    {"fields": ["company_profile.company_name"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第8页，印刷页第9页，公司信息", "document_page": 8, "printed_page": 9, "table_name": "公司信息", "accounting_basis": "法定披露名称"},
+    {"fields": ["company_profile.registered_capital"], "source_id": "byd-investor-basic-information", "location": "基本资料页面；并由深圳市企业信用信息公示系统交叉核验", "table_name": "基本资料", "accounting_basis": "工商登记口径"},
+    {"fields": ["company_profile.established_date"], "source_id": "shenzhen-enterprise-credit-byd", "location": "企业基本信息", "table_name": "企业基本信息", "accounting_basis": "工商登记口径"},
+    {"fields": ["company_profile.shareholders"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第110页，印刷页第111页，控股股东及实际控制人", "document_page": 110, "printed_page": 111, "table_name": "控股股东及实际控制人", "accounting_basis": "报告期末披露口径"},
+    {"fields": ["financial_statement.statements[2023].revenue", "financial_statement.statements[2023].net_profit", "financial_statement.statements[2023].operating_cash_flow"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第10页，印刷页第11页，主要会计数据和财务指标", "document_page": 10, "printed_page": 11, "table_name": "主要会计数据和财务指标", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径；净利润为归属于上市公司股东的净利润"},
+    {"fields": ["financial_statement.statements[2024].revenue", "financial_statement.statements[2024].net_profit", "financial_statement.statements[2024].operating_cash_flow"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第10页，印刷页第11页，主要会计数据和财务指标", "document_page": 10, "printed_page": 11, "table_name": "主要会计数据和财务指标", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径；净利润为归属于上市公司股东的净利润"},
+    {"fields": ["financial_statement.statements[2025].revenue", "financial_statement.statements[2025].net_profit", "financial_statement.statements[2025].operating_cash_flow"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第10页，印刷页第11页，主要会计数据和财务指标", "document_page": 10, "printed_page": 11, "table_name": "主要会计数据和财务指标", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径；净利润为归属于上市公司股东的净利润"},
+    {"fields": ["financial_statement.statements[2023].current_assets", "financial_statement.statements[2023].total_assets"], "source_id": "cninfo-byd-2024-annual-report", "location": "印刷页第142页，合并资产负债表；使用2024年年度报告披露的2023年经重述比较数", "document_page": 141, "printed_page": 142, "table_name": "合并资产负债表", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径；2023年经重述比较数"},
+    {"fields": ["financial_statement.statements[2023].current_liabilities", "financial_statement.statements[2023].total_liabilities"], "source_id": "cninfo-byd-2024-annual-report", "location": "印刷页第143页，合并资产负债表；使用2024年年度报告披露的2023年经重述比较数", "document_page": 142, "printed_page": 143, "table_name": "合并资产负债表", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径；2023年经重述比较数"},
+    {"fields": ["financial_statement.statements[2024].current_assets", "financial_statement.statements[2024].total_assets"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第122页，印刷页第123页，合并资产负债表", "document_page": 122, "printed_page": 123, "table_name": "合并资产负债表", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径"},
+    {"fields": ["financial_statement.statements[2024].current_liabilities", "financial_statement.statements[2024].total_liabilities"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第123页，印刷页第124页，合并资产负债表", "document_page": 123, "printed_page": 124, "table_name": "合并资产负债表", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径"},
+    {"fields": ["financial_statement.statements[2025].current_assets", "financial_statement.statements[2025].total_assets"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第122页，印刷页第123页，合并资产负债表", "document_page": 122, "printed_page": 123, "table_name": "合并资产负债表", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径"},
+    {"fields": ["financial_statement.statements[2025].current_liabilities", "financial_statement.statements[2025].total_liabilities"], "source_id": "cninfo-byd-2025-annual-report", "location": "PDF第123页，印刷页第124页，合并资产负债表", "document_page": 123, "printed_page": 124, "table_name": "合并资产负债表", "source_unit": "CNY_1000", "normalized_unit": "CNY_1000", "accounting_basis": "合并口径"}
+  ]
+}

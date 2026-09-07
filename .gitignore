@@ -2,16 +2,20 @@
 .env
 .env.*
 !.env.example
+/-PythonExecutable
 
 # Python
 __pycache__/
 *.py[cod]
 *.pyd
 .pytest_cache/
+.test-tmp/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+/eval-results/
+/audit-exports/
 
 # Virtual environments
 .venv/
@@ -22,6 +26,14 @@ env/
 checkpoints/*.db
 checkpoints/*.db-*
 traces/*.jsonl
+traces/.fault_state/
+data/*/artifacts/
+data/*/output/
+data/*/runs/
+
+# Chainlit generated configuration and runtime uploads
+.chainlit/
+.files/
 
 # Build and packaging
 build/
@@ -34,3 +46,20 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Runtime search cache
+/data/search_snapshots/
+/data/content_snapshots/
+/data/verification_snapshots/
+
+# User-created case source data is private by default
+/data/case_*/source/
+
+# Curated repository fixtures
+!/data/case_normal/source/
+!/data/case_normal/source/**
+!/data/case_risky/source/
+!/data/case_risky/source/**
+!/data/case_byd_002594/source/
+!/data/case_byd_002594/source/**
+!/data/case_saic_600104/source/
+!/data/case_saic_600104/source/**

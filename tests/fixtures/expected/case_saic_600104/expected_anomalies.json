@@ -1,0 +1,40 @@
+{
+  "settings": {
+    "revenue_threshold": 0.2,
+    "cashflow_threshold": 0.0,
+    "debt_ratio_threshold": 0.15
+  },
+  "expected_flags": [],
+  "expected_route_after_financial": "risk",
+  "current_rule_observations": [
+    {
+      "rule": "REVENUE_CASHFLOW_DIVERGENCE",
+      "result": "not_triggered",
+      "reason": "2025年营收同比增长0.052238，未超过当前0.20阈值；2023至2025年经营现金流累计变化为-0.189629。"
+    },
+    {
+      "rule": "DEBT_RATIO_RISING",
+      "result": "not_triggered",
+      "reason": "资产负债率从2023年的0.659358下降至2025年的0.623721，未满足上升阈值。"
+    }
+  ],
+  "business_review_signals": [
+    {
+      "signal": "NET_PROFIT_DECLINE",
+      "year": 2024,
+      "year_on_year_change": -0.881869,
+      "status": "仅作为人工对照观察项，尚非当前异常检测规则"
+    },
+    {
+      "signal": "OPERATING_CASH_FLOW_DECLINE",
+      "year": 2025,
+      "year_on_year_change": -0.504725,
+      "status": "仅作为人工对照观察项，尚非当前异常检测规则"
+    }
+  ],
+  "prohibited_conclusions": [
+    "不得因当前异常标记为空而推导为低风险或推荐授信。",
+    "不得忽略汽车金融业务规模变化对合并经营现金流的影响。",
+    "不得把上汽通用等合营企业或子公司口径替代上市公司合并口径。"
+  ]
+}

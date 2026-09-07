@@ -1,0 +1,10 @@
+{
+  "expected_risk_level": "MEDIUM",
+  "expected_requires_human_review": true,
+  "expected_flag_types": ["cashflow"],
+  "explanation": [
+    "经营活动现金流净额从2023年的42,334,422.53536千元下降至2025年的34,306,601.90598千元，触发现有风险层的cashflow标记。",
+    "2025年流动比率为1.19691，高于1，不触发liquidity标记。",
+    "资产负债率从2023年的0.659358下降至2025年的0.623721，当前基线不据此生成债务率上升风险。"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "case_id": "case_byd_002594",
+  "currency": "CNY_1000",
+  "calculation_precision": 6,
+  "metrics": {
+    "revenue_growth": {"years": [2024, 2025], "values": [0.290192, 0.034568]},
+    "net_profit_margin": {"years": [2023, 2024, 2025], "values": [0.049876, 0.051801, 0.040573]},
+    "current_ratio": {"years": [2023, 2024, 2025], "values": [0.665955, 0.747144, 0.792969]},
+    "debt_ratio": {"years": [2023, 2024, 2025], "values": [0.778585, 0.746363, 0.707445]},
+    "operating_cash_flow_trend": {"years": [2023, 2024, 2025], "values": [169725025.0, 133453873.0, 59135544.0]}
+  }
+}

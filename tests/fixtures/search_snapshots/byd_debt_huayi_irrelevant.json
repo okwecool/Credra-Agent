@@ -1,0 +1,22 @@
+{
+  "provider": "tavily",
+  "request": {
+    "query_type": "company",
+    "subject": "比亚迪股份有限公司",
+    "subject_aliases": ["比亚迪", "002594"],
+    "category": "debt",
+    "query": "\"比亚迪股份有限公司\" 债务 逾期"
+  },
+  "items": [
+    {
+      "title": "华谊兄弟，8年亏光85亿",
+      "content": "华谊兄弟出现债务逾期和账户冻结，需要关注偿债压力。",
+      "url": "https://www.21jingji.com/article/20260419/herald/f5699fc0901ca19aeb0b63ddc6fdccd5.html",
+      "score": 0.9015748031496063,
+      "published_at": "2026-04-19",
+      "source_id": null,
+      "category": "debt"
+    }
+  ],
+  "retrieved_at": "2026-09-01T06:20:00Z"
+}
