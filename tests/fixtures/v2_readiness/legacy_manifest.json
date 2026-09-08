@@ -1,0 +1,31 @@
+{
+  "source_revision": "d6178c6",
+  "graph_version_present": false,
+  "external_call_count": 0,
+  "files": {
+    "completed.json": "13a227b18c91e2cd6f4817a1a06df052a18a4c1a1d272a0a51089538c877de1c",
+    "data/case_normal/runs/868083ed4976fce340ba/artifacts/company_profile_v1.json": "4a9c3b0ae407f2a5959e76178c6d79014fb023afb9be478b0a90767fe5b85a55",
+    "data/case_normal/runs/868083ed4976fce340ba/artifacts/financial_analysis_v1.json": "bf0a5a65bed3eeafe53ea8cbf2b885af20c5cd04972555e163d0d20da0a34426",
+    "data/case_normal/runs/868083ed4976fce340ba/artifacts/report_draft_v1.json": "3cbb55ed836c8e7bc421d5aa987b32591cd3d1d327e4c33a2ee3bd413440d580",
+    "data/case_normal/runs/868083ed4976fce340ba/artifacts/report_expression_v1.json": "75f390450a4abcb5c050732882ef6f2cdad5cf5226ac93118f7de3a0cf67e744",
+    "data/case_normal/runs/868083ed4976fce340ba/artifacts/risk_analysis_v1.json": "cd35592334e8739790a836156088cc87123038883100c7cc8845f36c88627d53",
+    "data/case_normal/runs/868083ed4976fce340ba/artifacts/risk_narrative_v1.json": "ad87f1b227acfc0f548157c253e635f9df2df8aefa2e84da004524e27b023024",
+    "data/case_normal/runs/868083ed4976fce340ba/output/credit_report.md": "dc10ef6a80487de9a00906bbe31804d7e7b21b5fc497068c10378c30dca58c1f",
+    "data/case_normal/source/business_info.md": "3b26424a85f3948998b9b9dd462d478faf6df9be10bb6f0443cfc6bda8d953a3",
+    "data/case_normal/source/company_profile.json": "c469c98a342f76b9e395bd5c40941b76ee5b47aa1120c593789d586a3171beac",
+    "data/case_normal/source/financial_statement.json": "1412ef0b47cc489ee70e143fed1b7bd84bf2f210929e40499b286f6470291ec9",
+    "data/case_saic_600104/runs/e5d4966b46c3bf54254c/artifacts/company_profile_v1.json": "a4637ed7b9970ecbd3b668970dc4c04f34aa204e643a05dccc56a5df606a9269",
+    "data/case_saic_600104/runs/e5d4966b46c3bf54254c/artifacts/financial_analysis_v1.json": "f9f3bab041408180d2d90effc5b6fd05b79621a1618416464ea7b6e9251dc7b9",
+    "data/case_saic_600104/runs/e5d4966b46c3bf54254c/artifacts/risk_analysis_v1.json": "25f169f7e1e9b6ec34a1817c9b8ddd7a79034c7bb217d74b4a65162263eb168f",
+    "data/case_saic_600104/runs/e5d4966b46c3bf54254c/artifacts/risk_narrative_v1.json": "fc1956dee2be8be1d263b478aedb859225587dc10d12e729eeb5019285baca4f",
+    "data/case_saic_600104/source/business_info.md": "8f6a20340dc587a0e53d7408865676d58d2f78e71e673ab64fe4cf6db0e82b23",
+    "data/case_saic_600104/source/company_profile.json": "ee3e9160d871a8fd19267a932c8eeff1b83c9d6841e072b4fbae547fe4341fa2",
+    "data/case_saic_600104/source/financial_statement.json": "f2230bfc59625138365b00433d2b8f0ae1ca92b445b370ed0fb9c097385e184d",
+    "data/case_saic_600104/source/source_manifest.json": "c2d1eaaa0417ed143ecb920147e7b8d65bae7695de0130543b44546e12362843",
+    "legacy_frozen.sqlite": "4cecf6a81d78deb8cb3e121136faf8841456168607a913592c958481fa0f7eb3",
+    "traces/v2-legacy-completed.jsonl": "b4aef89e3686da391cc73515df8c6b96776b2bbdfbe048e372708d8309b003d4",
+    "traces/v2-legacy-waiting.jsonl": "a39c90b4e454f831883ff363f471100619459b35bcaa40aba560c004ded94e75",
+    "waiting.json": "e160285270896f94749b636d32be3e7f61e1918a06ccb477bad0b8b6742e3656"
+  },
+  "archive_sha256": "de0e799fdf6641d5e0d2c51ad6371f197349dbfe2edff16a6362328a7e9f01cd"
+}

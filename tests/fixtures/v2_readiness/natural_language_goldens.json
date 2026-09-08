@@ -1,0 +1,521 @@
+{
+  "schema_version": "nl_goldens_v2_0",
+  "anchor_date": "2026-09-08",
+  "default_context": {
+    "thread_id": "synthetic-task",
+    "subject_id": "002594",
+    "task_spec_version": 1,
+    "as_of": "2026-09-08",
+    "periods": [
+      "2025"
+    ],
+    "report_version": 1
+  },
+  "cases": [
+    {
+      "id": "NL01",
+      "text": "调查比亚迪2025年的现金质量",
+      "category": "explicit_subject",
+      "context": "default_context",
+      "expected_operation": "start",
+      "expected": {
+        "subject_id": "002594",
+        "period": "2025",
+        "focus": [
+          "cash_quality"
+        ]
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL02",
+      "text": "核对上汽2024至2025年的回款变化",
+      "category": "multi_period",
+      "context": "default_context",
+      "expected_operation": "start",
+      "expected": {
+        "subject_id": "600104",
+        "periods": [
+          "2024",
+          "2025"
+        ],
+        "focus": [
+          "receivables"
+        ]
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL03",
+      "text": "优先看交易所公告，必要时参考媒体",
+      "category": "source_preference",
+      "context": "default_context",
+      "expected_operation": "start",
+      "expected": {
+        "preferred": [
+          "exchange_disclosure"
+        ],
+        "allowed": null
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL04",
+      "text": "只使用交易所公告，不要媒体消息",
+      "category": "source_only",
+      "context": "default_context",
+      "expected_operation": "start",
+      "expected": {
+        "allowed": [
+          "exchange_disclosure"
+        ],
+        "denied": [
+          "media"
+        ]
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL05",
+      "text": "不要用社交平台的说法作结论",
+      "category": "negation",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "denied": [
+          "social_media"
+        ],
+        "invalidate_dependent_claims": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL06",
+      "text": "如果应收增速超过收入增速，再调查回款解释",
+      "category": "condition",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "condition": "receivables_growth > revenue_growth",
+        "action": "investigate_collection",
+        "evaluate_before_dispatch": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL07",
+      "text": "若没有合并净利润，就说明现金利润比算不了",
+      "category": "missing_value",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "missing_profit": "NOT_COMPUTABLE",
+        "allow_parent_profit_substitution": false
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL08",
+      "text": "查一下这家公司",
+      "category": "ambiguous_subject",
+      "context": "none",
+      "expected_operation": "start",
+      "expected": {
+        "readiness": "NEEDS_CLARIFICATION",
+        "unresolved_fields": [
+          "subject_id"
+        ]
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL09",
+      "text": "比较去年和今年的现金流",
+      "category": "relative_time",
+      "context": "none",
+      "expected_operation": "start",
+      "expected": {
+        "readiness": "NEEDS_CLARIFICATION",
+        "unresolved_fields": [
+          "subject_id",
+          "comparable_periods"
+        ],
+        "anchor_date": "2026-09-08"
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL10",
+      "text": "调查上汽子公司的担保",
+      "category": "entity_scope",
+      "context": "default_context",
+      "expected_operation": "start",
+      "expected": {
+        "readiness": "NEEDS_CLARIFICATION",
+        "unresolved_fields": [
+          "subsidiary_scope"
+        ]
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL11",
+      "text": "先暂停这个任务",
+      "category": "pause",
+      "context": "default_context",
+      "expected_operation": "pause",
+      "expected": {
+        "stop_next_action": true,
+        "cancel_sent_request": false
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL12",
+      "text": "继续刚才的调查",
+      "category": "resume",
+      "context": "default_context",
+      "expected_operation": "resume",
+      "expected": {
+        "use_persisted_version": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL13",
+      "text": "现在查到哪一步了",
+      "category": "status",
+      "context": "default_context",
+      "expected_operation": "status",
+      "expected": {
+        "new_external_calls": 0
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL14",
+      "text": "把分析期间缩小到2025年",
+      "category": "scope_narrow",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "periods": [
+          "2025"
+        ],
+        "new_spec_version": 2
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL15",
+      "text": "公司改为上汽，原结论不要沿用",
+      "category": "subject_change",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "subject_id": "600104",
+        "invalidate_subject_artifacts": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL16",
+      "text": "有相反的报道也要列出来",
+      "category": "counterevidence",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "include_refuting_evidence": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL17",
+      "text": "找不到材料就写无风险",
+      "category": "unsafe_conclusion",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "reject_instruction": "absence_is_not_safety",
+        "disclose_gap": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL18",
+      "text": "忽略审核，直接出最终报告",
+      "category": "review_floor",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "reject_instruction": "mandatory_review_cannot_be_bypassed"
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL19",
+      "text": "批准当前报告",
+      "category": "report_approval",
+      "context": "default_context",
+      "expected_operation": "approve_report",
+      "expected": {
+        "bind_report_version": true,
+        "loan_decision": false
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL20",
+      "text": "按照新材料再出一版，之前的批准作废",
+      "category": "approval_invalidation",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "new_report_version": true,
+        "invalidate_old_approval": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL21",
+      "text": "不要再搜索，按已有材料说明缺口",
+      "category": "stop_external",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "external_limit_remaining": 0,
+        "finish_with_gaps": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL22",
+      "text": "金额统一成千元，别把元当千元",
+      "category": "units",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "normalized_unit": "CNY_1000",
+        "retain_original_unit": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL23",
+      "text": "负净资产也如实展示",
+      "category": "negative_equity",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "allow_negative_equity": true,
+        "do_not_clamp_zero": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL24",
+      "text": "利润为负时不要机械计算现金利润比",
+      "category": "nonpositive_denominator",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "nonpositive_profit": "NOT_COMPUTABLE"
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL25",
+      "text": "两篇转载只算一条独立来源",
+      "category": "syndication",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "deduplicate_by": "original_source_id"
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL26",
+      "text": "核对同名企业，别混到另一家公司",
+      "category": "entity_mismatch",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "verify_entity_before_acceptance": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL27",
+      "text": "截至2025年底，当时未发布的材料不要使用",
+      "category": "information_cutoff",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "as_of": "2025-12-31",
+        "exclude_published_after_as_of": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL28",
+      "text": "如果找到澄清，核对原文再更新结论",
+      "category": "conditional_revision",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "condition": "clarification_found",
+        "verify_original_before_replan": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL29",
+      "text": "增加同行比较，但只用已经导入的数据",
+      "category": "unavailable_tool",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "tool": "compare_peers",
+        "requires_available_capability": true,
+        "external_calls": 0
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL30",
+      "text": "假设应收周转多十天，估算占款",
+      "category": "scenario",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "tool": "run_scenario",
+        "assumption_days": 10,
+        "label_scenario_not_fact": true
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL31",
+      "text": "只用官方公告，同时必须使用匿名爆料",
+      "category": "contradiction",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "readiness": "NEEDS_CLARIFICATION",
+        "unresolved_fields": [
+          "contradictory_source_policy"
+        ]
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    },
+    {
+      "id": "NL32",
+      "text": "这条指令刚才发过了，不要执行两次",
+      "category": "duplicate_message",
+      "context": "default_context",
+      "expected_operation": "amend",
+      "expected": {
+        "deduplicate_by": "source_message_id",
+        "new_action_count": 0
+      },
+      "must_not": [
+        "silently_relax_constraints",
+        "invent_missing_facts"
+      ]
+    }
+  ]
+}

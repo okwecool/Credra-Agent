@@ -1,0 +1,135 @@
+{
+  "schema_version": "synthetic_ac_v2_0",
+  "source_kind": "SYNTHETIC",
+  "subject_id": "SYNTHETIC-CONTROL",
+  "notice": "全部企业、材料、数值和消息均为虚构控制流样本，不代表比亚迪或上汽",
+  "as_of": "2026-09-08",
+  "unit": "CNY_1000",
+  "basis": "CONSOLIDATED",
+  "inputs": {
+    "2024": {
+      "receivables": "100",
+      "revenue": "1000"
+    },
+    "2025": {
+      "receivables": "140",
+      "revenue": "1100",
+      "operating_cash_flow": "80",
+      "net_profit_group_total": "100",
+      "net_profit_owners_of_parent": "90"
+    }
+  },
+  "materials": [
+    {
+      "id": "annual",
+      "original_source_id": "annual",
+      "kind": "report",
+      "content": "2025年应收140、收入1100、经营现金流80、合并净利润100，单位千元。"
+    },
+    {
+      "id": "news",
+      "original_source_id": "news",
+      "kind": "media",
+      "content": "声称公司所有应收都已逾期；未提供账龄表。"
+    },
+    {
+      "id": "reprint",
+      "original_source_id": "news",
+      "kind": "media",
+      "content": "转载 news，同一原始来源。"
+    },
+    {
+      "id": "clarification",
+      "original_source_id": "clarification",
+      "kind": "issuer_statement",
+      "content": "公司表示应收增加与销售结算时点有关；这是一方声明，缺独立核验。"
+    },
+    {
+      "id": "wrong-entity",
+      "original_source_id": "other",
+      "kind": "regulatory",
+      "subject_id": "SYNTHETIC-OTHER",
+      "content": "同名其他企业的处罚，不能归于调查主体。"
+    }
+  ],
+  "questions": [
+    {
+      "id": "Q1",
+      "text": "应收是否较收入增长更快，现金转化如何？",
+      "expected": {
+        "receivables_growth": "0.4",
+        "revenue_growth": "0.1",
+        "growth_gap": "0.3",
+        "cash_profit_ratio": "0.8"
+      },
+      "required_refs": [
+        "annual"
+      ],
+      "criterion": "使用合并净利润100，不使用归母90；增速差为30个百分点。"
+    },
+    {
+      "id": "Q2",
+      "text": "所有应收均逾期的消息是否获支持？",
+      "expected": "UNRESOLVED",
+      "required_refs": [
+        "news",
+        "clarification"
+      ],
+      "criterion": "应收增长不等于逾期；声明不能独立证明无风险；披露缺账龄。"
+    }
+  ],
+  "allowed_action_precedence": [
+    [
+      "read_document:annual",
+      "compute_metrics"
+    ],
+    [
+      "read_document:news",
+      "verify_claim"
+    ],
+    [
+      "read_document:clarification",
+      "assess_conflict"
+    ],
+    [
+      "verify_claim",
+      "finish"
+    ]
+  ],
+  "reject_claims": [
+    "应收增长证明所有款项逾期",
+    "转载形成独立印证",
+    "把另一主体处罚归本主体",
+    "企业澄清已被独立证实"
+  ],
+  "variants": [
+    {
+      "id": "missing_profit",
+      "patch": {
+        "net_profit_group_total": null
+      },
+      "expected": "NOT_COMPUTABLE"
+    },
+    {
+      "id": "nonpositive_profit",
+      "patch": {
+        "net_profit_group_total": "0"
+      },
+      "expected": "NOT_COMPUTABLE"
+    },
+    {
+      "id": "period_mismatch",
+      "patch": {
+        "cfo_period": "2024"
+      },
+      "expected": "NOT_COMPUTABLE"
+    },
+    {
+      "id": "source_unavailable",
+      "patch": {
+        "clarification": "UNAVAILABLE"
+      },
+      "expected": "disclose_gap_and_review"
+    }
+  ]
+}

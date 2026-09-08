@@ -1,0 +1,193 @@
+{
+  "TaskSpec": {
+    "version": 1,
+    "source_message_id": "m-001",
+    "operation": "start",
+    "subject_id": "002594",
+    "subject_name": "比亚迪",
+    "as_of": "2026-09-08",
+    "periods": [
+      {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      }
+    ],
+    "source_policy": {
+      "preferred": [
+        "exchange_disclosure"
+      ],
+      "allowed": null,
+      "denied": [
+        "social_media"
+      ]
+    },
+    "questions": [
+      {
+        "question_id": "q1",
+        "text": "核对现金质量",
+        "priority": "REQUIRED",
+        "completion_criteria": "同口径计算或披露缺口，并引用原文"
+      }
+    ],
+    "readiness": "READY"
+  },
+  "Hypothesis": {
+    "hypothesis_id": "h1",
+    "question_id": "q1",
+    "statement": "现金转化变化可能由回款时点解释",
+    "alternatives": [
+      "合并范围变化"
+    ],
+    "status": "OPEN"
+  },
+  "Plan": {
+    "plan_id": "p1",
+    "version": 1,
+    "task_spec_version": 1,
+    "question_ids": [
+      "q1"
+    ],
+    "hypothesis_ids": [
+      "h1"
+    ],
+    "pending_action_ids": [
+      "a1"
+    ],
+    "reason_summary": "先取得原始报表，核对口径"
+  },
+  "Action": {
+    "action_id": "a1",
+    "task_spec_version": 1,
+    "plan_version": 1,
+    "tool": "search_evidence",
+    "arguments": {
+      "query": "比亚迪 2025 年报 应收账款 现金流",
+      "subject_id": "002594",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "source_policy": {
+        "preferred": [
+          "exchange_disclosure"
+        ],
+        "allowed": null,
+        "denied": [
+          "social_media"
+        ]
+      }
+    },
+    "hypothesis_ids": [
+      "h1"
+    ],
+    "evidence_refs": [],
+    "expected_observation": "定位原始报表及注释",
+    "reason_summary": "核对可采信材料"
+  },
+  "Observation": {
+    "observation_id": "o1",
+    "action_id": "a1",
+    "attempt": 1,
+    "status": "MISSING_DATA",
+    "artifact_refs": [],
+    "error_code": "MISSING_CONSOLIDATED_PROFIT"
+  },
+  "Coverage": {
+    "required_question_ids": [
+      "q1"
+    ],
+    "answered_question_ids": [],
+    "gap_question_ids": [
+      "q1"
+    ],
+    "unresolved_conflicts": [],
+    "review_required": false
+  },
+  "BudgetLedger": {
+    "approval": "UNCONFIRMED",
+    "external_spent": 0,
+    "external_reserved": 0,
+    "tokens_spent": 0,
+    "tokens_reserved": 0,
+    "usage_uncertain": false
+  },
+  "Evidence": {
+    "evidence_id": "e1",
+    "subject_id": "SYNTHETIC-CONTROL",
+    "original_source_id": "synthetic-primary",
+    "publisher": "合成发布者",
+    "published_at": "2026-03-01",
+    "retrieved_at": "2026-09-08T00:00:00Z",
+    "event_date": "2025-12-31",
+    "document_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "location": "合成财报 表1",
+    "excerpt": "这是合成控制流材料，不对应真实企业",
+    "source_kind": "SYNTHETIC",
+    "reliability": "PRIMARY",
+    "relation": "INSUFFICIENT",
+    "verification_status": "PENDING",
+    "verifier_version": null
+  },
+  "Claim": {
+    "claim_id": "c1",
+    "subject_id": "SYNTHETIC-CONTROL",
+    "statement": "合成消息所称逾期是否成立",
+    "status": "CONFLICTING",
+    "supporting_evidence_ids": [
+      "e-media"
+    ],
+    "refuting_evidence_ids": [
+      "e-clarification"
+    ]
+  },
+  "Assessment": {
+    "rule_risk_level": "MEDIUM",
+    "analysis_summary": "尚有口径与证据冲突，提交人工复核",
+    "claim_ids": [
+      "c1"
+    ],
+    "metric_refs": [],
+    "limitations": [
+      "材料不足"
+    ],
+    "review_required": true
+  },
+  "FinancialDatum": {
+    "metric": "net_profit",
+    "period": {
+      "start": "2025-01-01",
+      "end": "2025-12-31"
+    },
+    "accounting_basis": "CONSOLIDATED",
+    "profit_attribution": "GROUP_TOTAL",
+    "currency": "CNY",
+    "source_unit": "CNY_1000",
+    "normalized_unit": "CNY_1000",
+    "revision": "original",
+    "value": null,
+    "missing_reason": "旧材料仅披露归母净利润",
+    "source_refs": []
+  },
+  "MetricResult": {
+    "metric_id": "cash_profit_ratio",
+    "status": "NOT_COMPUTABLE",
+    "value": null,
+    "reason": "MISSING_CONSOLIDATED_PROFIT",
+    "formula_version": "cash_profit_ratio_v2",
+    "input_refs": []
+  },
+  "GraphVersion": {
+    "graph_version": "agentic_v2",
+    "execution_mode": "shadow"
+  },
+  "ExecutionRecord": {
+    "action_id": "a1",
+    "task_spec_version": 1,
+    "plan_version": 1,
+    "budget_reservation_id": "b1",
+    "attempt": 1,
+    "status": "UNCERTAIN",
+    "observation_ref": null,
+    "usage_uncertain": true
+  }
+}
