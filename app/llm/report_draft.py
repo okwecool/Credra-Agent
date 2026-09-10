@@ -22,6 +22,8 @@ from app.models.company import CompanyProfile
 from app.models.financial import FinancialAnalysis
 from app.models.research import ResearchResult
 from app.models.risk import RiskAnalysis
+from credra_agent.observability.events import log_context
+from credra_agent.observability.instrumentation import validation
 
 PROMPT_VERSION = "m4c2-report-draft-v1"
 _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "report_draft.md"
@@ -109,6 +111,7 @@ def _fallback(
     )
 
 
+@validation("citation")
 def _validate_references(draft: ReportDraft, source_index: dict[str, str]) -> None:
     allowed = set(source_index)
     reference_groups = [
@@ -185,7 +188,8 @@ def build_report_draft(
             },
             progress_callback=progress_callback,
         )
-        _validate_references(result.output, source_index)
+        with log_context(call_id=result.call_id):
+            _validate_references(result.output, source_index)
     except (OSError, StructuredModelError) as exc:
         error = (
             exc

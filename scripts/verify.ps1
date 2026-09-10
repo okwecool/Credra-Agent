@@ -110,12 +110,12 @@ try {
 
     Write-Host "[1/5] Ruff check"
     Invoke-Checked -Command $pythonExe -Arguments @(
-        "-m", "ruff", "check", "app", "spikes", "tests", "chainlit_app.py"
+        "-m", "ruff", "check", "app", "credra_agent", "spikes", "tests", "chainlit_app.py"
     )
 
     Write-Host "[2/5] Ruff format check"
     Invoke-Checked -Command $pythonExe -Arguments @(
-        "-m", "ruff", "format", "--check", "app", "spikes", "tests", "chainlit_app.py"
+        "-m", "ruff", "format", "--check", "app", "credra_agent", "spikes", "tests", "chainlit_app.py"
     )
 
     Write-Host "[3/5] Pytest"

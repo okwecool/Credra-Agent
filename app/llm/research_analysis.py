@@ -28,6 +28,8 @@ from app.models.investigation import QueryPlan
 from app.models.research import ResearchFact, ResearchResult
 from app.models.search import ResearchEvidence
 from app.tools.investigation import canonical_research_category
+from credra_agent.observability.events import log_context
+from credra_agent.observability.instrumentation import validation
 
 PROMPT_VERSION = "m4b-evidence-summary-query-proposal-v1"
 _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "research_analysis.md"
@@ -291,6 +293,7 @@ def _model_payload(
     }
 
 
+@validation("citation")
 def _validate_summary_draft(
     draft: ResearchAnalysisDraft,
     records: list[dict[str, Any]],
@@ -355,6 +358,7 @@ def _proposal_id(plan: QueryPlan, index: int, proposal: QueryProposalDraft) -> s
     )
 
 
+@validation("business")
 def _validate_proposals(
     drafts: list[QueryProposalDraft],
     plan: QueryPlan,
@@ -559,7 +563,8 @@ def build_research_analysis(
             max_output_tokens=max_output_tokens,
             progress_callback=progress_callback,
         )
-        _validate_summary_draft(result.output, records, gaps)
+        with log_context(call_id=result.call_id):
+            _validate_summary_draft(result.output, records, gaps)
         return _completed_artifacts(
             research,
             plan,

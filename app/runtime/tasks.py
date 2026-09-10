@@ -18,6 +18,8 @@ from app.graph.workflow import build_workflow
 from app.llm.gateway import StructuredModel
 from app.runtime.fault import ResearchFaultInjector
 from app.runtime.tracing import TraceWriter
+from credra_agent.observability.checkpoint import ObservedSqliteSaver
+from credra_agent.observability.runtime import emit, logged_operation
 
 
 def _runtime_services(settings: Settings) -> tuple[TraceWriter, ResearchFaultInjector]:
@@ -42,20 +44,36 @@ def _serialize_interrupts(snapshot: Any) -> list[dict[str, Any]]:
 
 def snapshot_payload(snapshot: Any, thread_id: str) -> dict[str, Any]:
     values = dict(snapshot.values) if snapshot.values else {}
-    return {
+    payload = {
         "thread_id": thread_id,
         "exists": bool(values),
         "state": values,
         "next": list(snapshot.next),
         "interrupts": _serialize_interrupts(snapshot),
     }
+    if any(
+        "LoggingUnavailable('LOGGING_UNAVAILABLE_BEFORE_NODE')" in str(task.error)
+        for task in snapshot.tasks
+    ):
+        payload["execution_blocked"] = {
+            "reason": "LOGGING_UNAVAILABLE",
+            "resume_safe": True,
+        }
+    return payload
 
 
 @contextmanager
 def open_checkpointer(db_path: Path) -> Iterator[SqliteSaver]:
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with SqliteSaver.from_conn_string(str(db_path.resolve())) as checkpointer:
-        yield checkpointer
+    with ObservedSqliteSaver.from_conn_string(str(db_path.resolve())) as checkpointer:
+        emit("CHECKPOINT_OPEN", status="SUCCESS")
+        try:
+            yield checkpointer
+        except Exception as exc:
+            emit("CHECKPOINT_ERROR", status="FAILED", exception=exc)
+            raise
+        finally:
+            emit("CHECKPOINT_CLOSE", status="SUCCESS")
 
 
 def _case_id_from_checkpoint(checkpointer: SqliteSaver, thread_id: str) -> str:
@@ -93,6 +111,7 @@ def _case_dir(settings: Settings, case_id: str) -> Path:
     return case_dir
 
 
+@logged_operation
 def start_task(
     *,
     thread_id: str,
@@ -135,6 +154,7 @@ def start_task(
         return payload
 
 
+@logged_operation
 def get_task_status(
     *,
     thread_id: str,
@@ -164,6 +184,7 @@ def get_task_status(
         return snapshot_payload(graph.get_state(graph_config(thread_id)), thread_id)
 
 
+@logged_operation
 def resume_task(
     *,
     thread_id: str,
@@ -173,7 +194,7 @@ def resume_task(
     research_client: Any | None = None,
     analysis_model: StructuredModel | None = None,
 ) -> dict[str, Any]:
-    if decision not in ("approve", "research"):
+    if decision not in ("approve", "research", "resume_logging"):
         raise ValueError("decision must be approve or research")
     trace, fault = _runtime_services(settings)
     trace.instant(
@@ -197,6 +218,12 @@ def resume_task(
             analysis_model=analysis_model,
         )
         snapshot = graph.get_state(config)
+        if decision == "resume_logging":
+            if not snapshot_payload(snapshot, thread_id).get("execution_blocked"):
+                raise ValueError("task is not paused at a safe logging boundary")
+            emit("LOG_RECOVERY", status="STARTED")
+            graph.invoke(None, config=config)
+            return snapshot_payload(graph.get_state(config), thread_id)
         if not any(task.interrupts for task in snapshot.tasks):
             raise ValueError(f"thread is not waiting for approval: {thread_id}")
         graph.invoke(

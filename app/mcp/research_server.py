@@ -28,6 +28,8 @@ from app.search.verifier import (
     verification_counts,
     verify_candidate_evidence,
 )
+from credra_agent.observability.events import log_context
+from credra_agent.observability.runtime import current, emit
 
 mcp = FastMCP("Credra Research MCP")
 
@@ -135,23 +137,56 @@ def _search(
 
 @mcp.tool
 def search_company(
-    company_name: str, categories: list[str] | None = None
+    company_name: str,
+    categories: list[str] | None = None,
+    diagnostic_context: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Search auditable external evidence for a company."""
 
-    return _search("company", company_name, categories=categories).model_dump(
-        mode="json"
-    )
+    with log_context(**(diagnostic_context or {})):
+        return _logged_search("company", company_name, categories)
 
 
 @mcp.tool
 def search_industry(
-    industry: str, categories: list[str] | None = None
+    industry: str,
+    categories: list[str] | None = None,
+    diagnostic_context: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Search auditable external evidence for an industry."""
 
-    return _search("industry", industry, categories=categories).model_dump(mode="json")
+    with log_context(**(diagnostic_context or {})):
+        return _logged_search("industry", industry, categories)
+
+
+def _logged_search(kind, query, categories):
+    emit("TOOL_START", tool=f"search_{kind}", status="STARTED")
+    try:
+        result = _search(kind, query, categories=categories)
+    except Exception as exc:
+        emit("TOOL_END", tool=f"search_{kind}", status="FAILED", exception=exc)
+        raise
+    emit(
+        "SOURCE_RESULT",
+        tool=f"search_{kind}",
+        status="SUCCESS" if result.found else "NO_RESULT",
+        result_count=len(result.facts),
+    )
+    emit("TOOL_END", tool=f"search_{kind}", status="SUCCESS")
+    payload = result.model_dump(mode="json")
+    if current():
+        payload["_service_log_available"] = current().healthy
+    return payload
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio", show_banner=False)
+    from credra_agent.observability.runtime import (
+        config_from_settings,
+        start_process_service,
+    )
+
+    instance = start_process_service("research_mcp", config_from_settings(Settings()))
+    try:
+        mcp.run(transport="stdio", show_banner=False)
+    finally:
+        instance.stop_process()

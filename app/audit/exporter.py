@@ -23,6 +23,7 @@ from app.models.research import ResearchResult
 from app.models.trace import TraceEvent
 from app.runtime.tasks import get_task_status
 from app.workbench import report_markdown_to_html
+from credra_agent.observability.runtime import emit
 
 _THREAD_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _CASE_ID = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
@@ -615,6 +616,9 @@ def export_audit_bundle(
             if temporary_archive.exists():
                 temporary_archive.unlink()
 
+    emit(
+        "AUDIT_EXPORT", thread_id=thread_id, artifact_ref=archive.name, status="SUCCESS"
+    )
     archive_payload = archive.read_bytes()
     return AuditExportResult(
         case_id=case_id,

@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     revenue_threshold: float = Field(default=0.20, ge=-1, le=10)
     data_dir: Path = Path("data")
     trace_dir: Path = Path("traces")
+    service_log_dir: Path = Path("logs")
+    service_log_max_bytes: int = Field(default=10_000_000, ge=1024)
+    service_log_queue_capacity: int = Field(default=1024, ge=1, le=100_000)
+    service_log_enqueue_timeout: float = Field(default=2.0, gt=0, le=60)
+    service_log_ack_timeout: float = Field(default=5.0, gt=0, le=60)
+    service_log_shutdown_timeout: float = Field(default=10.0, gt=0, le=120)
 
 
 def get_settings() -> Settings:

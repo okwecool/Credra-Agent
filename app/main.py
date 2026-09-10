@@ -4,8 +4,10 @@ import argparse
 from pathlib import Path
 
 from app.service import run_case
+from credra_agent.observability.runtime import entrypoint
 
 
+@entrypoint("main")
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("case_dir", type=Path)

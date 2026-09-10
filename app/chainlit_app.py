@@ -488,6 +488,16 @@ def _task_actions(payload: dict[str, Any]) -> list[cl.Action]:
             payload={"thread_id": thread_id},
         )
     ]
+    if payload.get("execution_blocked"):
+        actions.insert(
+            0,
+            cl.Action(
+                name="resume_logging",
+                label="日志恢复后继续",
+                payload={"thread_id": thread_id},
+            ),
+        )
+        return actions
     if payload.get("interrupts"):
         actions[:0] = [
             cl.Action(
@@ -656,6 +666,11 @@ async def _send_payload(
         )
         await live_message.update()
     content = _risk_markdown(payload)
+    if payload.get("execution_blocked"):
+        content = (
+            "日志不可用，任务已在下一节点执行前暂停。恢复日志服务（必要时重启应用）后，点击“日志恢复后继续”。已保存的结果会保留。\n\n"
+            + content
+        )
     detail_content = workbench_detail_markdown(details)
     if detail_content:
         content += "\n\n---\n\n" + detail_content
@@ -853,6 +868,23 @@ async def refresh_task(action: cl.Action) -> None:
         await _send_error(exc)
         return
     await _send_payload(payload)
+
+
+@cl.action_callback("resume_logging")
+async def resume_logging(action: cl.Action) -> None:
+    try:
+        payload, live_task_list, live_message = await _resume_with_live_updates(
+            thread_id=str(action.payload["thread_id"]),
+            decision="resume_logging",
+            comment=None,
+            settings=get_settings(),
+        )
+    except (OSError, ResearchServiceError, ValueError) as exc:
+        await _send_error(exc)
+        return
+    await _send_payload(
+        payload, live_task_list=live_task_list, live_message=live_message
+    )
 
 
 @cl.action_callback("approve_task")

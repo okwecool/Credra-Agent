@@ -24,6 +24,7 @@ from app.models.verification import (
     VerifierInput,
 )
 from app.search.content import ContentFetchError, ContentSnapshotStore
+from credra_agent.observability.instrumentation import source_call
 
 PROMPT_VERSION = "m2.1c-v3-explicit-schema"
 _HARD_ERROR_CODES = {
@@ -82,6 +83,7 @@ class RulesFactVerifier:
     name = "rules"
     model_name = "deterministic-rules-v1"
 
+    @source_call
     def verify(self, request: VerifierInput) -> VerifierOutcome:
         searchable = "\n".join(segment.text for segment in request.segments).casefold()
         subject_match = "NONE"
@@ -135,6 +137,7 @@ class MockFactVerifier:
     def __init__(self, decisions: dict[str, VerifierDecision]) -> None:
         self._decisions = decisions
 
+    @source_call
     def verify(self, request: VerifierInput) -> VerifierOutcome:
         try:
             decision = self._decisions[request.source_id]
@@ -178,6 +181,7 @@ class LLMFactVerifier:
             max_retries=0,
         )
 
+    @source_call
     def verify(self, request: VerifierInput) -> VerifierOutcome:
         payload = {
             "claim": request.claim.model_dump(mode="json"),

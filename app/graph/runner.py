@@ -7,6 +7,7 @@ from typing import Any
 from app.config import Settings
 from app.graph.state import AgentState, initial_state
 from app.graph.workflow import build_workflow
+from credra_agent.observability.runtime import logged_operation
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class WorkflowResult:
     execution_path: list[str]
 
 
+@logged_operation
 def run_workflow(
     case_dir: Path,
     *,

@@ -10,6 +10,7 @@ import httpx
 
 from app.config import Settings
 from app.models.search import SearchItem, SearchRequest, SearchResponse
+from credra_agent.observability.instrumentation import source_call
 
 
 class SearchProviderError(RuntimeError):
@@ -109,6 +110,7 @@ class MockSearchProvider:
     def __init__(self, dataset_path: Path) -> None:
         self.dataset_path = dataset_path
 
+    @source_call
     def search(self, request: SearchRequest) -> SearchResponse:
         with self.dataset_path.open(encoding="utf-8") as file:
             dataset = json.load(file)
@@ -133,6 +135,7 @@ class SnapshotSearchProvider:
     def __init__(self, store: SnapshotStore) -> None:
         self.store = store
 
+    @source_call
     def search(self, request: SearchRequest) -> SearchResponse:
         response = self.store.read(request)
         return response.model_copy(update={"provider": self.name, "request": request})
@@ -165,6 +168,7 @@ class TavilySearchProvider:
         self._snapshot_store = snapshot_store
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
+    @source_call
     def search(self, request: SearchRequest) -> SearchResponse:
         payload: dict[str, object] = {
             "query": request.query,

@@ -14,6 +14,13 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
 from app.models.analysis import AnalysisErrorCode
+from credra_agent.observability.events import CONTEXT
+from credra_agent.observability.instrumentation import (
+    model_attempt,
+    model_call,
+    transport_metadata,
+)
+from credra_agent.observability.runtime import emit
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -62,6 +69,7 @@ class StructuredModelResult(Generic[OutputT]):
     latency_ms: int
     input_tokens: int | None = None
     output_tokens: int | None = None
+    call_id: str | None = None
 
 
 @runtime_checkable
@@ -130,6 +138,22 @@ class OpenAICompatibleStructuredModel:
     def _emit(
         callback: ModelProgressCallback | None, event: ModelProgressEvent
     ) -> None:
+        if event.event_type.endswith("RETRY"):
+            emit(
+                "RETRY",
+                purpose=event.purpose,
+                attempt=event.attempt,
+                status="RETRY",
+                error_code=event.error_code,
+            )
+        elif event.event_type.endswith("FAILED"):
+            emit(
+                "DEGRADED",
+                purpose=event.purpose,
+                attempt=event.attempt,
+                status="DEGRADED",
+                error_code=event.error_code,
+            )
         if callback is not None:
             callback(event)
 
@@ -140,6 +164,7 @@ class OpenAICompatibleStructuredModel:
             with_options(timeout=timeout_seconds) if callable(with_options) else client
         )
 
+    @model_attempt
     def _stream_completion(
         self,
         *,
@@ -157,6 +182,12 @@ class OpenAICompatibleStructuredModel:
             stream=True,
             stream_options={"include_usage": True},
         )
+        response = getattr(stream, "response", None)
+        headers = getattr(response, "headers", {})
+        transport_metadata(
+            http_status=getattr(response, "status_code", None),
+            request_id=headers.get("x-request-id"),
+        )
         first_token_seen = False
         reasoning_chars = 0
         emitted_reasoning_chars = 0
@@ -167,6 +198,8 @@ class OpenAICompatibleStructuredModel:
             if chunk_usage is not None:
                 usage = chunk_usage
             choices = getattr(chunk, "choices", None)
+            if choices and getattr(choices[0], "finish_reason", None):
+                transport_metadata(finish_reason=choices[0].finish_reason)
             if not choices:
                 continue
             delta = choices[0].delta
@@ -181,6 +214,14 @@ class OpenAICompatibleStructuredModel:
                 if elapsed_ms > round(timeout_seconds * 1000):
                     raise TimeoutError("model first token timeout")
                 first_token_seen = True
+                emit(
+                    "LLM_FIRST_TOKEN",
+                    purpose=purpose,
+                    attempt=attempt,
+                    phase=phase,
+                    status="SUCCESS",
+                    duration_ms=elapsed_ms,
+                )
                 self._emit(
                     progress_callback,
                     ModelProgressEvent(
@@ -295,6 +336,7 @@ class OpenAICompatibleStructuredModel:
                 )
         return None
 
+    @model_call
     def generate(
         self,
         *,
@@ -368,13 +410,56 @@ class OpenAICompatibleStructuredModel:
                     progress_callback=progress_callback,
                 )
                 if not isinstance(content, str) or not content.strip():
+                    emit(
+                        "LLM_VALIDATION",
+                        validation_stage="json",
+                        status="INVALID_JSON",
+                        purpose=purpose,
+                        attempt=attempt,
+                    )
                     raise ValueError("model returned empty content")
-                output = output_schema.model_validate_json(content)
+                try:
+                    json.loads(content)
+                except (ValueError, TypeError):
+                    emit(
+                        "LLM_VALIDATION",
+                        validation_stage="json",
+                        status="INVALID_JSON",
+                        purpose=purpose,
+                        attempt=attempt,
+                    )
+                    raise
+                emit(
+                    "LLM_VALIDATION",
+                    validation_stage="json",
+                    status="SUCCESS",
+                    purpose=purpose,
+                    attempt=attempt,
+                )
+                try:
+                    output = output_schema.model_validate_json(content)
+                except ValidationError:
+                    emit(
+                        "LLM_VALIDATION",
+                        validation_stage="schema",
+                        status="INVALID_SCHEMA",
+                        purpose=purpose,
+                        attempt=attempt,
+                    )
+                    raise
+                emit(
+                    "LLM_VALIDATION",
+                    validation_stage="schema",
+                    status="SUCCESS",
+                    purpose=purpose,
+                    attempt=attempt,
+                )
                 return StructuredModelResult(
                     output=output,
                     model_name=self.model_name,
                     attempts=attempt,
                     latency_ms=max(0, round((perf_counter() - started) * 1000)),
+                    call_id=(CONTEXT.get() or {}).get("call_id"),
                     input_tokens=getattr(usage, "prompt_tokens", None),
                     output_tokens=getattr(usage, "completion_tokens", None),
                 )

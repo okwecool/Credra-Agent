@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.audit import export_audit_bundle
 from app.config import Settings
+from credra_agent.observability.runtime import entrypoint
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@entrypoint("audit_cli")
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     overrides: dict[str, object] = {}
