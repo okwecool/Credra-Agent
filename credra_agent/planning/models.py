@@ -16,6 +16,39 @@ class CoordinatorLimits(PlanningModel):
     no_progress_limit: int = Field(ge=1)
     model_attempt_reservation: int = Field(ge=1)
     decision_token_reservation: int = Field(ge=1)
+    decision_max_output_tokens: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def output_fits_token_reservation(self) -> "CoordinatorLimits":
+        if self.decision_max_output_tokens > self.decision_token_reservation:
+            raise ValueError("output token limit exceeds total model token reservation")
+        return self
+
+
+class RunAuthorization(PlanningModel):
+    """Trusted runtime input that binds approval, caps and limits to one TaskSpec."""
+
+    schema_version: Literal["coordinator_run_authorization_v1"] = (
+        "coordinator_run_authorization_v1"
+    )
+    authorization_id: str = Field(min_length=1, max_length=200)
+    authorized_by: Literal["USER", "RUNTIME_POLICY", "OFFLINE_TEST"]
+    task_spec_version: int = Field(ge=1)
+    approval: Literal["UNCONFIRMED", "APPROVED"]
+    external_request_limit: int | None = Field(default=None, ge=1)
+    token_limit: int | None = Field(default=None, ge=1)
+    active_seconds_limit: float | None = Field(default=None, gt=0)
+    limits: CoordinatorLimits
+
+    @model_validator(mode="after")
+    def complete_caps_when_approved(self) -> "RunAuthorization":
+        if self.approval == "APPROVED" and (
+            self.external_request_limit is None
+            or self.token_limit is None
+            or self.active_seconds_limit is None
+        ):
+            raise ValueError("approved run authorization requires all budget caps")
+        return self
 
 
 class HypothesisState(PlanningModel):
@@ -117,5 +150,6 @@ class CoordinatorResult(PlanningModel):
     hypotheses: list[HypothesisState] = Field(default_factory=list)
     coverage: Coverage
     artifact_refs: list[str] = Field(default_factory=list)
+    authorization_id: str
     budget: dict
     limitations: list[str] = Field(default_factory=list)

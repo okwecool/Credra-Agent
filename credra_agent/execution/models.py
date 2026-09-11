@@ -80,6 +80,7 @@ class Action(ExecutionModel):
     evidence_refs: list[str] = Field(default_factory=list)
     expected_observation: str = Field(min_length=1)
     reason_summary: str = Field(min_length=1)
+    budget_ref: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def typed_arguments(self) -> "Action":

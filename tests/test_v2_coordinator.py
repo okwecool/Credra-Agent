@@ -13,7 +13,11 @@ from credra_agent.execution.policy import ActionPolicy, PolicyViolation
 from credra_agent.execution.registry import default_registry
 from credra_agent.intent.models import Period, Question, SourcePolicy, TaskSpec
 from credra_agent.planning.coordinator import Coordinator
-from credra_agent.planning.models import CoordinatorLimits, DecisionDraft
+from credra_agent.planning.models import (
+    CoordinatorLimits,
+    DecisionDraft,
+    RunAuthorization,
+)
 
 
 def task_spec(*, allowed=None) -> TaskSpec:
@@ -74,9 +78,10 @@ def finish_decision(reason="ANSWERED") -> DecisionDraft:
 class FixedModel:
     model_name = "fixed-offline"
 
-    def __init__(self, outputs):
+    def __init__(self, outputs, *, accounting_complete=True):
         self.outputs = list(outputs)
         self.payloads = []
+        self.accounting_complete = accounting_complete
 
     def generate(self, **kwargs):
         self.payloads.append(kwargs["payload"])
@@ -90,6 +95,7 @@ class FixedModel:
             latency_ms=1,
             input_tokens=8,
             output_tokens=12,
+            accounting_complete=self.accounting_complete,
         )
 
 
@@ -110,8 +116,27 @@ def coordinator(
     budget=None,
     decisions=5,
     no_progress=2,
+    model_attempts=2,
     fallback=None,
 ):
+    budget = budget or approved_budget()
+    snapshot = budget.snapshot()
+    authorization = RunAuthorization(
+        authorization_id="offline-authorization",
+        authorized_by="OFFLINE_TEST",
+        task_spec_version=1,
+        approval=snapshot.approval,
+        external_request_limit=snapshot.external_limit,
+        token_limit=snapshot.token_limit,
+        active_seconds_limit=snapshot.active_seconds_limit,
+        limits=CoordinatorLimits(
+            max_decisions=decisions,
+            no_progress_limit=no_progress,
+            model_attempt_reservation=model_attempts,
+            decision_token_reservation=100,
+            decision_max_output_tokens=50,
+        ),
+    )
     return Coordinator(
         model=model,
         executor=ActionExecutor(
@@ -121,13 +146,7 @@ def coordinator(
                 )
             }
         ),
-        budget=budget or approved_budget(),
-        limits=CoordinatorLimits(
-            max_decisions=decisions,
-            no_progress_limit=no_progress,
-            model_attempt_reservation=2,
-            decision_token_reservation=100,
-        ),
+        authorization=authorization,
         run_dir=tmp_path,
         fallback=fallback,
     )
@@ -176,6 +195,8 @@ def test_coordinator_investigates_explicit_message_and_adapts_after_gap(tmp_path
     assert result.coverage.complete
     assert any("agent_action" in ref for ref in result.artifact_refs)
     assert any("agent_tool_result" in ref for ref in result.artifact_refs)
+    assert any("agent_model_budget" in ref for ref in result.artifact_refs)
+    assert result.actions[0]["budget_ref"] in result.artifact_refs
 
 
 @pytest.mark.parametrize(
@@ -232,15 +253,13 @@ def test_duplicate_action_is_not_dispatched_or_charged_as_tool_call(tmp_path):
 
     same = search_decision("比亚迪 新增监管消息")
     model = FixedModel([same, same.model_copy(deep=True), finish_decision()])
-    budget = approved_budget()
-    result = coordinator(tmp_path, model, handler, budget=budget).run(
-        task_spec(allowed=["exchange", "regulator"])
-    )
+    runner = coordinator(tmp_path, model, handler, budget=approved_budget())
+    result = runner.run(task_spec(allowed=["exchange", "regulator"]))
 
     assert result.status == "LIMITED"
     assert result.stop_reason == "FINISH_GATE_REJECTED"
     assert len(calls) == 1
-    assert budget.snapshot().external_spent == 4  # 3 model attempts + 1 tool call
+    assert runner.budget.snapshot().external_spent == 4  # 3 model + 1 tool
 
 
 def test_no_result_cannot_pass_answered_finish_gate(tmp_path):
@@ -271,13 +290,17 @@ def test_budget_is_reserved_before_tool_dispatch(tmp_path):
         calls.append(arguments)
         raise AssertionError("must not dispatch")
 
-    result = coordinator(tmp_path, model, handler, budget=budget).run(
+    result = coordinator(tmp_path, model, handler, budget=budget, model_attempts=1).run(
         task_spec(allowed=["exchange", "regulator"])
     )
     assert result.status == "LIMITED"
     assert result.stop_reason == "EXTERNAL_REQUEST_BUDGET_EXHAUSTED"
     assert calls == []
     assert any("agent_coverage" in ref for ref in result.artifact_refs)
+    budget_ref = result.actions[0]["budget_ref"]
+    audit = (tmp_path / budget_ref).read_text(encoding="utf-8")
+    assert '"status": "REJECTED"' in audit
+    assert "EXTERNAL_REQUEST_BUDGET_EXHAUSTED" in audit
 
 
 def test_unconfirmed_budget_blocks_model_and_model_failure_is_limited(tmp_path):
@@ -340,3 +363,49 @@ def test_unknown_usage_is_charged_conservatively():
 
     with pytest.raises(BudgetUnavailable):
         BudgetLedger(approval="UNCONFIRMED").reserve(external=1)
+
+
+def test_run_authorization_has_no_implicit_approved_caps_and_binds_task_version(
+    tmp_path,
+):
+    with pytest.raises(ValueError, match="requires all budget caps"):
+        RunAuthorization(
+            authorization_id="invalid-authorization",
+            authorized_by="RUNTIME_POLICY",
+            task_spec_version=1,
+            approval="APPROVED",
+            limits=CoordinatorLimits(
+                max_decisions=1,
+                no_progress_limit=1,
+                model_attempt_reservation=1,
+                decision_token_reservation=100,
+                decision_max_output_tokens=50,
+            ),
+        )
+
+    model = FixedModel([finish_decision()])
+    runner = coordinator(tmp_path, model, lambda _: None)
+    mismatched = task_spec(allowed=["exchange", "regulator"]).model_copy(
+        update={"version": 2}
+    )
+    result = runner.run(mismatched)
+    assert result.status == "FAILED"
+    assert result.stop_reason == "AUTHORIZATION_SCOPE_MISMATCH"
+    assert result.authorization_id == "offline-authorization"
+    assert model.payloads == []
+    assert any("agent_run_authorization" in ref for ref in result.artifact_refs)
+
+
+def test_incomplete_model_accounting_uses_the_full_reservation(tmp_path):
+    model = FixedModel([finish_decision()], accounting_complete=False)
+    runner = coordinator(tmp_path, model, lambda _: None)
+    result = runner.run(task_spec(allowed=["exchange", "regulator"]))
+    assert result.budget["external_spent"] == 2
+    assert result.budget["token_spent"] == 100
+    assert result.budget["usage_uncertain"] is True
+    model_audit_ref = next(
+        ref for ref in result.artifact_refs if "agent_model_budget" in ref
+    )
+    audit = (tmp_path / model_audit_ref).read_text(encoding="utf-8")
+    assert '"status": "SETTLED_UNCERTAIN"' in audit
+    assert '"actual_tokens": null' in audit

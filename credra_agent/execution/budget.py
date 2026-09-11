@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BudgetError(RuntimeError):
@@ -37,6 +37,23 @@ class BudgetSnapshot(BaseModel):
     remaining_tokens: int | None
     active_seconds: float
     usage_uncertain: bool
+
+
+class BudgetAuditRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    schema_version: Literal["budget_audit_v1"] = "budget_audit_v1"
+    authorization_id: str = Field(min_length=1)
+    phase: Literal["MODEL", "TOOL"]
+    decision_number: int = Field(ge=1)
+    action_id: str | None = None
+    status: Literal["SETTLED", "SETTLED_UNCERTAIN", "REJECTED"]
+    requested_external: int = Field(ge=0)
+    requested_tokens: int = Field(ge=0)
+    actual_external: int | None = Field(default=None, ge=0)
+    actual_tokens: int | None = Field(default=None, ge=0)
+    error_code: str | None = None
+    before: BudgetSnapshot
+    after: BudgetSnapshot
 
 
 @dataclass(frozen=True)

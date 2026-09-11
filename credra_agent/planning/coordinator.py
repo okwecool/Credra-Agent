@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.llm.gateway import StructuredModel, StructuredModelError
 from app.tools.artifacts import ArtifactStore
 from credra_agent.execution.budget import (
+    BudgetAuditRecord,
     BudgetError,
     BudgetExhausted,
     BudgetLedger,
@@ -30,6 +31,7 @@ from credra_agent.planning.models import (
     HypothesisState,
     Observation,
     ObservationIndexItem,
+    RunAuthorization,
 )
 
 PROMPT_VERSION = "coordinator-v2-p12"
@@ -47,16 +49,21 @@ class Coordinator:
         *,
         model: StructuredModel,
         executor: ActionExecutor,
-        budget: BudgetLedger,
-        limits: CoordinatorLimits,
+        authorization: RunAuthorization,
         run_dir: Path,
         registry: ActionRegistry | None = None,
         fallback: DecisionFallback | None = None,
     ) -> None:
         self.model = model
         self.executor = executor
-        self.budget = budget
-        self.limits = limits
+        self.authorization = authorization
+        self.budget = BudgetLedger(
+            approval=authorization.approval,
+            external_limit=authorization.external_request_limit,
+            token_limit=authorization.token_limit,
+            active_seconds_limit=authorization.active_seconds_limit,
+        )
+        self.limits: CoordinatorLimits = authorization.limits
         self.registry = registry or default_registry()
         self.fallback = fallback
         self.policy = ActionPolicy(self.registry)
@@ -89,9 +96,31 @@ class Coordinator:
         actions: list[dict] = []
         observations: list[Observation] = []
         observation_index: list[ObservationIndexItem] = []
-        artifact_refs: list[str] = []
+        authorization_ref = self._write_versioned(
+            "agent_run_authorization",
+            None,
+            self.authorization.model_dump(mode="json"),
+        )
+        artifact_refs: list[str] = [authorization_ref]
         rejections: list[dict[str, str]] = []
         no_progress_count = 0
+
+        if self.authorization.task_spec_version != task_spec.version:
+            coverage = Coverage(
+                required_question_ids=required,
+                gap_question_ids=required,
+                review_required=True,
+            )
+            return self._result(
+                status="FAILED",
+                stop_reason="AUTHORIZATION_SCOPE_MISMATCH",
+                actions=actions,
+                observations=observations,
+                hypotheses=list(hypothesis_map.values()),
+                coverage=coverage,
+                artifact_refs=artifact_refs,
+                limitations=["授权绑定的 TaskSpec 版本与运行输入不一致"],
+            )
 
         if task_spec.readiness != "READY":
             coverage = Coverage(
@@ -136,6 +165,7 @@ class Coordinator:
                 >= self.limits.no_progress_limit,
             }
             draft: DecisionDraft | None = None
+            model_before = self.budget.snapshot()
             try:
                 require_logging()
                 reservation = self.budget.reserve(
@@ -143,6 +173,21 @@ class Coordinator:
                     tokens=self.limits.decision_token_reservation,
                 )
             except (BudgetUnavailable, BudgetExhausted) as exc:
+                artifact_refs.append(
+                    self._write_budget_audit(
+                        phase="MODEL",
+                        decision_number=decision_number,
+                        action_id=None,
+                        status="REJECTED",
+                        requested_external=self.limits.model_attempt_reservation,
+                        requested_tokens=self.limits.decision_token_reservation,
+                        actual_external=None,
+                        actual_tokens=None,
+                        error_code=str(exc),
+                        before=model_before,
+                        after=self.budget.snapshot(),
+                    )
+                )
                 return self._limited(
                     str(exc),
                     required,
@@ -159,13 +204,29 @@ class Coordinator:
                     prompt_version=PROMPT_VERSION,
                     system_prompt=self.system_prompt,
                     payload=payload,
-                    max_output_tokens=self.limits.decision_token_reservation,
+                    max_output_tokens=self.limits.decision_max_output_tokens,
                 )
             except StructuredModelError as exc:
+                actual_attempts = exc.attempts or None
                 self.budget.settle(
                     reservation,
-                    actual_external=exc.attempts or None,
+                    actual_external=actual_attempts,
                     actual_tokens=None,
+                )
+                artifact_refs.append(
+                    self._write_budget_audit(
+                        phase="MODEL",
+                        decision_number=decision_number,
+                        action_id=None,
+                        status="SETTLED_UNCERTAIN",
+                        requested_external=self.limits.model_attempt_reservation,
+                        requested_tokens=self.limits.decision_token_reservation,
+                        actual_external=actual_attempts,
+                        actual_tokens=None,
+                        error_code=exc.code,
+                        before=model_before,
+                        after=self.budget.snapshot(),
+                    )
                 )
                 emit("DEGRADED", status="DEGRADED", error_code=exc.code)
                 draft = self._fallback(payload, exc)
@@ -182,6 +243,21 @@ class Coordinator:
                 self.budget.settle(
                     reservation, actual_external=None, actual_tokens=None
                 )
+                artifact_refs.append(
+                    self._write_budget_audit(
+                        phase="MODEL",
+                        decision_number=decision_number,
+                        action_id=None,
+                        status="SETTLED_UNCERTAIN",
+                        requested_external=self.limits.model_attempt_reservation,
+                        requested_tokens=self.limits.decision_token_reservation,
+                        actual_external=None,
+                        actual_tokens=None,
+                        error_code=type(exc).__name__,
+                        before=model_before,
+                        after=self.budget.snapshot(),
+                    )
+                )
                 emit("DEGRADED", status="DEGRADED", error_code=type(exc).__name__)
                 draft = self._fallback(payload, exc)
                 if draft is None:
@@ -194,16 +270,39 @@ class Coordinator:
                         artifact_refs,
                     )
             else:
-                token_usage = (
+                reported_token_usage = (
                     model_result.input_tokens + model_result.output_tokens
                     if model_result.input_tokens is not None
                     and model_result.output_tokens is not None
                     else None
                 )
+                accounting_complete = (
+                    model_result.accounting_complete
+                    and reported_token_usage is not None
+                )
+                actual_external = model_result.attempts if accounting_complete else None
+                actual_tokens = reported_token_usage if accounting_complete else None
                 self.budget.settle(
                     reservation,
-                    actual_external=model_result.attempts,
-                    actual_tokens=token_usage,
+                    actual_external=actual_external,
+                    actual_tokens=actual_tokens,
+                )
+                artifact_refs.append(
+                    self._write_budget_audit(
+                        phase="MODEL",
+                        decision_number=decision_number,
+                        action_id=None,
+                        status=(
+                            "SETTLED" if accounting_complete else "SETTLED_UNCERTAIN"
+                        ),
+                        requested_external=self.limits.model_attempt_reservation,
+                        requested_tokens=self.limits.decision_token_reservation,
+                        actual_external=actual_external,
+                        actual_tokens=actual_tokens,
+                        error_code=None,
+                        before=model_before,
+                        after=self.budget.snapshot(),
+                    )
                 )
                 draft = model_result.output
 
@@ -275,6 +374,7 @@ class Coordinator:
                 continue
 
             action_id = f"action-{decision_number}-{uuid4().hex[:12]}"
+            action_budget_ref = f"artifacts/agent_action_budget_v{decision_number}.json"
             action = Action(
                 action_id=action_id,
                 task_spec_version=task_spec.version,
@@ -285,6 +385,7 @@ class Coordinator:
                 evidence_refs=draft.evidence_refs,
                 expected_observation=draft.expected_observation,
                 reason_summary=draft.reason_summary,
+                budget_ref=action_budget_ref,
             )
             action_ref = self._write_versioned(
                 "agent_action",
@@ -299,6 +400,7 @@ class Coordinator:
 
             with log_context(action_id=action_id):
                 emit("ACTION_STATE", status="ACCEPTED", tool=action.tool)
+                tool_before = self.budget.snapshot()
                 if action.tool == "ask_user":
                     emit("ACTION_STATE", status="STARTED", tool=action.tool)
                     ask = authorized.arguments
@@ -310,13 +412,44 @@ class Coordinator:
                         error_code="USER_INPUT_REQUIRED",
                         actual_external_requests=0,
                     )
+                    artifact_refs.append(
+                        self._write_budget_audit(
+                            phase="TOOL",
+                            decision_number=decision_number,
+                            action_id=action_id,
+                            status="SETTLED",
+                            requested_external=0,
+                            requested_tokens=0,
+                            actual_external=0,
+                            actual_tokens=0,
+                            error_code=None,
+                            before=tool_before,
+                            after=self.budget.snapshot(),
+                        )
+                    )
                 else:
+                    requested_external = self.executor.reservation_for(action.tool)
                     try:
                         require_logging()
                         tool_reservation = self.budget.reserve(
-                            external=self.executor.reservation_for(action.tool)
+                            external=requested_external
                         )
                     except (BudgetUnavailable, BudgetExhausted) as exc:
+                        artifact_refs.append(
+                            self._write_budget_audit(
+                                phase="TOOL",
+                                decision_number=decision_number,
+                                action_id=action_id,
+                                status="REJECTED",
+                                requested_external=requested_external,
+                                requested_tokens=0,
+                                actual_external=None,
+                                actual_tokens=None,
+                                error_code=str(exc),
+                                before=tool_before,
+                                after=self.budget.snapshot(),
+                            )
+                        )
                         return self._limited(
                             str(exc),
                             required,
@@ -331,6 +464,25 @@ class Coordinator:
                         tool_reservation,
                         actual_external=outcome.actual_external_requests,
                         actual_tokens=0,
+                    )
+                    artifact_refs.append(
+                        self._write_budget_audit(
+                            phase="TOOL",
+                            decision_number=decision_number,
+                            action_id=action_id,
+                            status=(
+                                "SETTLED"
+                                if outcome.actual_external_requests is not None
+                                else "SETTLED_UNCERTAIN"
+                            ),
+                            requested_external=requested_external,
+                            requested_tokens=0,
+                            actual_external=outcome.actual_external_requests,
+                            actual_tokens=0,
+                            error_code=outcome.error_code,
+                            before=tool_before,
+                            after=self.budget.snapshot(),
+                        )
                     )
 
                 observation = self._record_observation(
@@ -474,6 +626,56 @@ class Coordinator:
         )
         return self.artifacts.write_json(reference, value)
 
+    def _write_budget_audit(
+        self,
+        *,
+        phase: str,
+        decision_number: int,
+        action_id: str | None,
+        status: str,
+        requested_external: int,
+        requested_tokens: int,
+        actual_external: int | None,
+        actual_tokens: int | None,
+        error_code: str | None,
+        before,
+        after,
+    ) -> str:
+        record = BudgetAuditRecord(
+            authorization_id=self.authorization.authorization_id,
+            phase=phase,
+            decision_number=decision_number,
+            action_id=action_id,
+            status=status,
+            requested_external=requested_external,
+            requested_tokens=requested_tokens,
+            actual_external=actual_external,
+            actual_tokens=actual_tokens,
+            error_code=error_code,
+            before=before,
+            after=after,
+        )
+        emit(
+            "BUDGET_STATE",
+            phase=phase.lower(),
+            status="REJECTED" if status == "REJECTED" else "SUCCESS",
+            action_id=action_id,
+            external_requests=actual_external
+            if actual_external is not None
+            else requested_external,
+            token_units=actual_tokens
+            if actual_tokens is not None
+            else requested_tokens,
+            error_code=error_code,
+        )
+        base = "agent_model_budget" if phase == "MODEL" else "agent_action_budget"
+        return self._write_versioned(
+            base,
+            None,
+            record.model_dump(mode="json"),
+            suffix=decision_number,
+        )
+
     def _fallback(
         self, payload: dict[str, Any], error: BaseException
     ) -> DecisionDraft | None:
@@ -519,4 +721,8 @@ class Coordinator:
             budget = self.budget.snapshot().model_dump(mode="json")
         except BudgetError:
             budget = {"approval": "UNAVAILABLE"}
-        return CoordinatorResult(budget=budget, **kwargs)
+        return CoordinatorResult(
+            authorization_id=self.authorization.authorization_id,
+            budget=budget,
+            **kwargs,
+        )

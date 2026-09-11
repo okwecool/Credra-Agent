@@ -8,6 +8,7 @@ from .models import (
     DecisionDraft,
     HypothesisState,
     Observation,
+    RunAuthorization,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "DecisionDraft",
     "HypothesisState",
     "Observation",
+    "RunAuthorization",
 ]

@@ -22,6 +22,13 @@ from credra_agent.observability.checkpoint import ObservedSqliteSaver
 from credra_agent.observability.runtime import emit, logged_operation
 
 
+def _checkpoint_values(checkpointer: SqliteSaver, thread_id: str) -> dict[str, Any]:
+    checkpoint = checkpointer.get_tuple(graph_config(thread_id))
+    if checkpoint is None:
+        raise ValueError(f"thread does not exist: {thread_id}")
+    return dict(checkpoint.checkpoint.get("channel_values", {}))
+
+
 def _runtime_services(settings: Settings) -> tuple[TraceWriter, ResearchFaultInjector]:
     trace = TraceWriter(settings.trace_dir)
     fault = ResearchFaultInjector(
@@ -77,10 +84,7 @@ def open_checkpointer(db_path: Path) -> Iterator[SqliteSaver]:
 
 
 def _case_id_from_checkpoint(checkpointer: SqliteSaver, thread_id: str) -> str:
-    checkpoint = checkpointer.get_tuple(graph_config(thread_id))
-    if checkpoint is None:
-        raise ValueError(f"thread does not exist: {thread_id}")
-    case_id = checkpoint.checkpoint.get("channel_values", {}).get("case_id")
+    case_id = _checkpoint_values(checkpointer, thread_id).get("case_id")
     if not isinstance(case_id, str) or not case_id:
         raise ValueError(f"thread has no persisted case_id: {thread_id}")
     return case_id
@@ -161,6 +165,8 @@ def get_task_status(
     settings: Settings,
     research_client: Any | None = None,
     analysis_model: StructuredModel | None = None,
+    agentic_model: StructuredModel | None = None,
+    agentic_executor: Any | None = None,
 ) -> dict[str, Any]:
     trace, fault = _runtime_services(settings)
     trace.instant(
@@ -169,8 +175,31 @@ def get_task_status(
         event_type="STATUS_QUERY",
     )
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
+        values = _checkpoint_values(checkpointer, thread_id)
+        from credra_agent.graph.versioning import resolve_graph_identity
+
+        identity = resolve_graph_identity(values)
         case_id = _case_id_from_checkpoint(checkpointer, thread_id)
         case_dir = _case_dir(settings, case_id)
+        if identity.graph_version == "agentic_v2":
+            from credra_agent.execution.executor import ActionExecutor
+            from credra_agent.execution.ledger import ActionLedger
+            from credra_agent.graph.workflow import build_agentic_workflow
+
+            class StatusOnlyModel:
+                model_name = "status-only"
+
+                def generate(self, **kwargs):
+                    raise RuntimeError("status-only graph cannot execute")
+
+            graph = build_agentic_workflow(
+                run_dir=_run_dir_from_checkpoint(checkpointer, case_dir, thread_id),
+                ledger=ActionLedger(settings.checkpoint_db_path),
+                model=agentic_model or StatusOnlyModel(),
+                executor=agentic_executor or ActionExecutor(),
+                checkpointer=checkpointer,
+            )
+            return snapshot_payload(graph.get_state(graph_config(thread_id)), thread_id)
         graph = build_workflow(
             case_dir,
             settings,
@@ -182,6 +211,136 @@ def get_task_status(
             analysis_model=analysis_model,
         )
         return snapshot_payload(graph.get_state(graph_config(thread_id)), thread_id)
+
+
+@logged_operation
+def start_agentic_task(
+    *,
+    thread_id: str,
+    task_spec: Any,
+    authorization: Any,
+    settings: Settings,
+    model: StructuredModel,
+    executor: Any,
+    execution_mode: str = "agentic",
+    fallback: Any | None = None,
+    fault_hook: Any | None = None,
+) -> dict[str, Any]:
+    """Start agentic_v2 explicitly; baseline remains the default start entry."""
+
+    from app.tools.artifacts import ArtifactStore
+    from credra_agent.execution.ledger import ActionLedger
+    from credra_agent.graph.state import initial_agentic_state
+    from credra_agent.graph.workflow import build_agentic_workflow
+    from credra_agent.intent.models import TaskSpec
+    from credra_agent.planning.models import HypothesisState, RunAuthorization
+
+    spec = TaskSpec.model_validate(task_spec)
+    approved = RunAuthorization.model_validate(authorization)
+    if execution_mode != "agentic":
+        raise ValueError("P14 runtime only starts explicit agentic execution")
+    if spec.case_id is None:
+        raise ValueError("agentic task requires a bound case_id")
+    case_dir = _case_dir(settings, spec.case_id)
+    run_id = run_id_for_thread(thread_id)
+    run_dir = case_dir / "runs" / run_id
+    # Reject the common duplicate-start path before touching immutable run artifacts.
+    # The second check below remains the authoritative race guard.
+    with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
+        if checkpointer.get_tuple(graph_config(thread_id)) is not None:
+            raise ValueError(f"thread already exists: {thread_id}")
+    artifacts = ArtifactStore(run_dir)
+    task_ref = artifacts.write_json("artifacts/agent_task_spec_v1.json", spec)
+    authorization_ref = artifacts.write_json(
+        "artifacts/agent_run_authorization_v1.json", approved
+    )
+    hypotheses = [
+        HypothesisState(
+            hypothesis_id=f"hyp-{question.question_id}",
+            question_id=question.question_id,
+            statement=f"需要核验：{question.text}",
+        )
+        for question in spec.questions
+    ]
+    hypotheses_ref = artifacts.write_json(
+        "artifacts/agent_hypotheses_v1.json",
+        {"items": [item.model_dump(mode="json") for item in hypotheses]},
+    )
+    index_ref = artifacts.write_json(
+        "artifacts/agent_observation_index_v1.json", {"items": []}
+    )
+    ledger = ActionLedger(settings.checkpoint_db_path)
+    budget_ref = artifacts.write_json(
+        "artifacts/agent_budget_ledger_v1.json",
+        ledger.budget_snapshot(thread_id, approved),
+    )
+    refs = [task_ref, authorization_ref, hypotheses_ref, index_ref, budget_ref]
+    with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
+        config = graph_config(thread_id)
+        if checkpointer.get_tuple(config) is not None:
+            raise ValueError(f"thread already exists: {thread_id}")
+        graph = build_agentic_workflow(
+            run_dir=run_dir,
+            ledger=ledger,
+            model=model,
+            executor=executor,
+            checkpointer=checkpointer,
+            fallback=fallback,
+            fault_hook=fault_hook,
+        )
+        state = initial_agentic_state(
+            task_id=thread_id,
+            case_id=spec.case_id,
+            run_id=run_id,
+            execution_mode=execution_mode,
+            task_spec_ref=task_ref,
+            authorization_ref=authorization_ref,
+            hypotheses_ref=hypotheses_ref,
+            observation_index_ref=index_ref,
+            budget_ledger_ref=budget_ref,
+            artifact_refs=refs,
+        )
+        graph.invoke(state, config=config)
+        return snapshot_payload(graph.get_state(config), thread_id)
+
+
+@logged_operation
+def resume_agentic_task(
+    *,
+    thread_id: str,
+    settings: Settings,
+    model: StructuredModel,
+    executor: Any,
+    fallback: Any | None = None,
+    fault_hook: Any | None = None,
+) -> dict[str, Any]:
+    """Resume the exact persisted agentic graph version after a node interruption."""
+
+    from credra_agent.execution.ledger import ActionLedger
+    from credra_agent.graph.versioning import resolve_graph_identity
+    from credra_agent.graph.workflow import build_agentic_workflow
+
+    with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
+        identity = resolve_graph_identity(_checkpoint_values(checkpointer, thread_id))
+        if identity.graph_version != "agentic_v2":
+            raise ValueError("thread is not an agentic_v2 task")
+        case_id = _case_id_from_checkpoint(checkpointer, thread_id)
+        case_dir = _case_dir(settings, case_id)
+        graph = build_agentic_workflow(
+            run_dir=_run_dir_from_checkpoint(checkpointer, case_dir, thread_id),
+            ledger=ActionLedger(settings.checkpoint_db_path),
+            model=model,
+            executor=executor,
+            checkpointer=checkpointer,
+            fallback=fallback,
+            fault_hook=fault_hook,
+        )
+        config = graph_config(thread_id)
+        snapshot = graph.get_state(config)
+        if not snapshot.next:
+            return snapshot_payload(snapshot, thread_id)
+        graph.invoke(None, config=config)
+        return snapshot_payload(graph.get_state(config), thread_id)
 
 
 @logged_operation

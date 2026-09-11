@@ -184,6 +184,7 @@ def test_openai_gateway_retries_invalid_json_and_returns_validated_output() -> N
 
     assert result.attempts == 2
     assert result.input_tokens == 123
+    assert result.accounting_complete is False
     assert result.output.overall_summary == "风险较高。"
     assert len(client.completions.calls) == 2
     assert "tools" not in client.completions.calls[0]
@@ -221,7 +222,7 @@ def test_openai_gateway_forwards_explicit_non_thinking_json_mode() -> None:
         client=client,
     )
 
-    model.generate(
+    result = model.generate(
         output_schema=RiskNarrativeDraft,
         purpose="risk_narrative",
         prompt_version="test-v1",
@@ -232,6 +233,7 @@ def test_openai_gateway_forwards_explicit_non_thinking_json_mode() -> None:
 
     assert client.completions.calls[0]["extra_body"] == {"enable_thinking": False}
     assert client.completions.calls[0]["max_tokens"] == 777
+    assert result.accounting_complete is True
 
 
 def test_openai_gateway_streams_private_thinking_then_strict_json() -> None:
@@ -277,6 +279,7 @@ def test_openai_gateway_streams_private_thinking_then_strict_json() -> None:
     )
 
     assert result.output.overall_summary == "风险较高。"
+    assert result.accounting_complete is False
     assert len(client.completions.calls) == 2
     assert client.completions.calls[0]["extra_body"]["enable_thinking"] is True
     assert client.completions.calls[1]["extra_body"] == {"enable_thinking": False}

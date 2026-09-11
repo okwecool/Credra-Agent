@@ -41,6 +41,7 @@ EVENTS = frozenset(
         "ROUTE",
         "PLAN_CHANGED",
         "ACTION_STATE",
+        "BUDGET_STATE",
         "STOP",
         "RETRY",
         "DEGRADED",
@@ -101,6 +102,7 @@ STATES = frozenset(
         "COMPLETED",
         "FAILED",
         "WAITING_CLARIFICATION",
+        "LIMITED",
         "PAUSED_LOGGING",
         "NOT_STARTED",
     }
@@ -115,6 +117,8 @@ NUMBERS = {
     "trace_line",
     "plan_version",
     "task_spec_version",
+    "external_requests",
+    "token_units",
 }
 TECHNICAL = {
     "node",
