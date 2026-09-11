@@ -70,6 +70,7 @@ class StructuredModelResult(Generic[OutputT]):
     input_tokens: int | None = None
     output_tokens: int | None = None
     call_id: str | None = None
+    accounting_complete: bool = False
 
 
 @runtime_checkable
@@ -462,6 +463,8 @@ class OpenAICompatibleStructuredModel:
                     call_id=(CONTEXT.get() or {}).get("call_id"),
                     input_tokens=getattr(usage, "prompt_tokens", None),
                     output_tokens=getattr(usage, "completion_tokens", None),
+                    accounting_complete=self._enable_thinking is not True
+                    and attempt == 1,
                 )
             except (ValidationError, ValueError, IndexError, AttributeError) as exc:
                 last_error = exc

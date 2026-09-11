@@ -137,6 +137,10 @@ def normalize_public_url(url: str, resolver: HostResolver = _default_resolver) -
         raise ContentFetchError("INVALID_URL", "only HTTP and HTTPS URLs are allowed")
     if not parsed.hostname or parsed.username or parsed.password:
         raise ContentFetchError("INVALID_URL", "URL must contain a public hostname")
+    try:
+        parsed_port = parsed.port
+    except ValueError as exc:
+        raise ContentFetchError("INVALID_URL", "URL port is invalid") from exc
     hostname = parsed.hostname.rstrip(".").lower()
     if hostname == "localhost" or hostname.endswith(".local"):
         raise ContentFetchError("PRIVATE_ADDRESS", "local hostnames are not allowed")
@@ -161,10 +165,6 @@ def normalize_public_url(url: str, resolver: HostResolver = _default_resolver) -
             raise ContentFetchError(
                 "PRIVATE_ADDRESS", "URL hostname resolves to a non-public address"
             )
-    try:
-        parsed_port = parsed.port
-    except ValueError as exc:
-        raise ContentFetchError("INVALID_URL", "URL port is invalid") from exc
     port = f":{parsed_port}" if parsed_port else ""
     host_for_netloc = f"[{hostname}]" if ":" in hostname else hostname
     netloc = f"{host_for_netloc}{port}"
