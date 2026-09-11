@@ -106,7 +106,7 @@ def interpret_message(
                 bound_task_spec_version=current.version,
                 parser_mode=parser_mode,
                 execution_status="CONTROL_PENDING",
-                warnings=[*warnings, "CONTROL_EXECUTION_DEFERRED_TO_P14"],
+                warnings=[*warnings, "CONTROL_REQUIRES_AGENT_RUNTIME"],
                 rejected_instructions=draft.rejected_instructions,
             )
         stored = store.save(result)

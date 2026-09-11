@@ -2,7 +2,7 @@
 
 全服务日志、启动归档、10 MB 轮转和日志故障后的安全恢复，见[日志使用说明](docs/全服务日志使用说明.md)。当前开发进度与验证记录见 [V2-1 实施记录](docs/V2-1%20实施与验证记录.md)。
 
-架构优化方向见 [自主调查架构与演进路线 v2.0（待审核提案）](docs/Credra%20Agent%20自主调查架构与演进路线%20v2.0（提案）.md)。自然语言 TaskSpec 和完整 MCP 查询参数通道已进入 V2-1；自主 Coordinator、预算/执行账本和复杂案例仍属于后续实施范围。首页隐藏 `case_normal` 和 `case_risky` 两个合成技术样例；比亚迪、上汽继续展示，原有默认 Eval 保留。隐藏样例的源资料和回归用途保留。下文 baseline 架构描述仍对应当前默认实现。
+架构优化方向见 [自主调查架构与演进路线 v2.0](docs/Credra%20Agent%20自主调查架构与演进路线%20v2.0（提案）.md)。V2-1 已实现自然语言 TaskSpec、完整 MCP 查询参数、LLM Coordinator、预算/执行账本、版本化恢复和 shadow 对照链路；baseline 仍是默认路径，复杂案例深化属于 V2-2。首页隐藏 `case_normal` 和 `case_risky` 两个合成技术样例；比亚迪、上汽继续展示，隐藏样例的源资料和回归用途保留。
 
 Credra Agent 是一个以企业授信尽调为业务载体的长任务 Agent MVP。项目重点不是构建银行级风控模型，而是验证一套可暂停、可恢复、可人工介入、可调用确定性工具并能追踪执行状态的 Agent Runtime。
 
@@ -226,7 +226,7 @@ TRACE_DIR=traces
 
 正式 Durable Demo 使用 `app.task_cli`。
 
-自然语言入口会先生成并持久化 TaskSpec，不会在 P12–P14 接入前自动发起外部调用：
+`parse` 只生成并持久化 TaskSpec，不发起模型决策或外部调查：
 
 ```powershell
 python -m app.task_cli parse `
@@ -236,7 +236,21 @@ python -m app.task_cli parse `
   --text "调查比亚迪2025年的现金质量，只使用交易所公告"
 ```
 
-Chainlit 也接受同类自然语言。`INTENT_MODE=llm` 可启用受约束的结构化模型解析；默认 `deterministic`，模型不可用时只执行规则 fallback，并在结果中显示 `LLM_INTENT_FALLBACK`。真正的 LLM/搜索试跑仍受项目预算门禁约束。
+Chainlit 也接受同类自然语言并展示 TaskSpec 或待澄清项。`INTENT_MODE=llm` 可启用受约束的结构化模型解析；默认 `deterministic`，模型不可用时执行规则 fallback，并在结果中显示 `LLM_INTENT_FALLBACK`。
+
+`agent` 把自然语言接入版本化 Runtime。agentic 和 shadow 均要求显式传入与当前 TaskSpec 版本绑定的 `RunAuthorization` JSON；缺少授权时返回 `AUTHORIZATION_REQUIRED`，不会调用模型或搜索服务：
+
+```powershell
+python -m app.task_cli agent `
+  --thread-id agent-demo-001 `
+  --message-id agent-demo-001-message-1 `
+  --as-of 2026-09-11 `
+  --execution-mode agentic `
+  --authorization .\run-authorization.json `
+  --text "调查比亚迪2025年的回款质量，只使用交易所公告"
+```
+
+`shadow` 记录通过策略校验的模型计划，但不执行模型选择的工具；实际业务结果由独立的 baseline 任务产生。真实模型或搜索试跑仍受 D05 单次预算授权约束，程序不会生成隐式批准或默认额度。
 
 也可以使用封装好的演示脚本自动生成不冲突的 `thread_id`：
 

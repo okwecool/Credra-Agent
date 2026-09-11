@@ -638,7 +638,16 @@ class AgenticGraphRuntime:
                     state, record.error_code or "ACTION_FAILED", budget_ref
                 )
 
-            if action.tool == "ask_user":
+            is_shadow = state["execution_mode"] == "shadow"
+            if is_shadow:
+                emit("ACTION_STATE", status="SKIPPED", tool=action.tool)
+                outcome = ExecutionOutcome(
+                    status="UNAVAILABLE",
+                    summary="shadow 模式仅记录已通过策略校验的计划，不执行模型选择的工具。",
+                    error_code="SHADOW_ACTION_NOT_EXECUTED",
+                    actual_external_requests=0,
+                )
+            elif action.tool == "ask_user":
                 ask = self.registry.validate(action.tool, action.arguments)
                 assert isinstance(ask, AskUserArgs)
                 outcome = ExecutionOutcome(
@@ -715,7 +724,7 @@ class AgenticGraphRuntime:
                 observation_ref=observation_ref,
                 result_fingerprint=result_fingerprint,
             )
-            if action.tool != "ask_user":
+            if action.tool != "ask_user" and not is_shadow:
                 self.ledger.settle_budget(
                     state["task_id"],
                     record.budget_operation_id,
@@ -737,7 +746,16 @@ class AgenticGraphRuntime:
             }
             if self.fault_hook is not None:
                 self.fault_hook("after_result_stored", action)
-            return self._project_observation(state, record, observation, replayed=False)
+            projected = self._project_observation(
+                state, record, observation, replayed=False
+            )
+            if is_shadow:
+                projected.update(
+                    status="COMPLETED",
+                    stop_reason="SHADOW_PLAN_RECORDED",
+                    pending_instruction_version=None,
+                )
+            return projected
 
 
 def _route_after_decision(state: AgenticState) -> str:

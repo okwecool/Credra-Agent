@@ -10,7 +10,9 @@ import pytest
 
 from app.config import Settings
 from app.llm.gateway import StructuredModelError, StructuredModelResult
+from app.models.research import ResearchFact, ResearchQueryResult
 from app.runtime.tasks import (
+    amend_agentic_task,
     get_task_status,
     resume_agentic_task,
     start_agentic_task,
@@ -32,6 +34,8 @@ from credra_agent.planning.models import (
     DecisionDraft,
     RunAuthorization,
 )
+from credra_agent.runtime.executors import build_agentic_executor
+from credra_agent.runtime.service import interpret_and_execute
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -140,6 +144,19 @@ def finish_decision() -> DecisionDraft:
         decision="FINISH",
         finish_reason="ANSWERED",
         reason_summary="必答问题已经由观察覆盖。",
+    )
+
+
+def ask_decision() -> DecisionDraft:
+    return DecisionDraft(
+        decision="ACTION",
+        tool="ask_user",
+        arguments={
+            "question": "请补充是否继续核验监管材料。",
+            "unresolved_fields": ["investigation_confirmation"],
+        },
+        expected_observation="取得用户补充指令",
+        reason_summary="继续前需要用户澄清。",
     )
 
 
@@ -364,18 +381,232 @@ def test_agentic_model_failure_uses_gated_clarification_fallback(tmp_path):
     assert result["state"]["stop_reason"] == "USER_INPUT_REQUIRED"
 
 
-def test_shadow_start_is_rejected_until_baseline_bridge_exists(tmp_path):
+def test_shadow_records_legal_plan_without_executing_selected_tool(tmp_path):
     config = settings(tmp_path)
-    with pytest.raises(ValueError, match="only starts explicit agentic"):
-        start_agentic_task(
-            thread_id="shadow-not-connected",
-            task_spec=task_spec(),
-            authorization=authorization(),
-            settings=config,
-            model=FixedModel([search_decision()]),
-            executor=ActionExecutor(),
-            execution_mode="shadow",
+    calls: list[str] = []
+    result = start_agentic_task(
+        thread_id="shadow-plan",
+        task_spec=task_spec(),
+        authorization=authorization(),
+        settings=config,
+        model=FixedModel([search_decision()]),
+        executor=executor(calls),
+        execution_mode="shadow",
+    )
+    assert result["state"]["status"] == "COMPLETED"
+    assert result["state"]["stop_reason"] == "SHADOW_PLAN_RECORDED"
+    assert calls == []
+    records = ActionLedger(config.checkpoint_db_path).dump_actions("shadow-plan")
+    assert records[0]["status"] == "RESULT_STORED"
+    observation = Path(config.data_dir / "case_byd_002594" / "runs")
+    observation_path = next(observation.rglob("agent_observation_v1.json"))
+    assert "SHADOW_ACTION_NOT_EXECUTED" in observation_path.read_text(encoding="utf-8")
+
+
+def test_waiting_agentic_task_accepts_next_task_spec_version_and_continues(tmp_path):
+    config = settings(tmp_path)
+    model = FixedModel([ask_decision(), search_decision(), finish_decision()])
+    calls: list[str] = []
+    tools = executor(calls)
+    waiting = start_agentic_task(
+        thread_id="agentic-clarification",
+        task_spec=task_spec(),
+        authorization=authorization(),
+        settings=config,
+        model=model,
+        executor=tools,
+    )
+    assert waiting["state"]["status"] == "WAITING_CLARIFICATION"
+
+    amended_spec = task_spec().model_copy(
+        update={
+            "version": 2,
+            "operation": "amend",
+            "source_message_id": "message-agentic-2",
+        }
+    )
+    amended_authorization = authorization().model_copy(
+        update={
+            "authorization_id": "offline-agentic-authorization-v2",
+            "task_spec_version": 2,
+        }
+    )
+    completed = amend_agentic_task(
+        thread_id="agentic-clarification",
+        task_spec=amended_spec,
+        authorization=amended_authorization,
+        settings=config,
+        model=model,
+        executor=tools,
+    )
+    assert completed["state"]["status"] == "COMPLETED"
+    assert completed["state"]["pending_instruction_version"] is None
+    assert calls == ["比亚迪 新增监管消息"]
+
+
+def test_natural_language_requires_authorization_before_agentic_execution(
+    tmp_path, monkeypatch
+):
+    config = settings(tmp_path)
+    parsed_spec = task_spec()
+
+    def fake_interpret(**kwargs):
+        from credra_agent.intent.models import IntentResult
+
+        return IntentResult(
+            source_message_id=kwargs["source_message_id"],
+            thread_id=kwargs["thread_id"],
+            operation="start",
+            task_spec=parsed_spec,
+            bound_task_spec_version=1,
+            parser_mode="RULE_FALLBACK",
         )
+
+    monkeypatch.setattr(
+        "credra_agent.runtime.service.interpret_message", fake_interpret
+    )
+    model = FixedModel([search_decision()])
+    result = interpret_and_execute(
+        thread_id="natural-authorization",
+        source_message_id="natural-message-1",
+        text="调查比亚迪监管消息",
+        as_of=date(2025, 12, 31),
+        settings=config,
+        coordinator_model=model,
+        executor_factory=lambda spec: executor([]),
+    )
+    assert result.outcome == "AUTHORIZATION_REQUIRED"
+    assert result.task is None
+    assert model.calls == 0
+
+
+def test_authorized_natural_language_runs_the_agentic_vertical_slice(
+    tmp_path, monkeypatch
+):
+    config = settings(tmp_path)
+    parsed_spec = task_spec()
+    calls: list[str] = []
+
+    def fake_interpret(**kwargs):
+        from credra_agent.intent.models import IntentResult
+
+        return IntentResult(
+            source_message_id=kwargs["source_message_id"],
+            thread_id=kwargs["thread_id"],
+            operation="start",
+            task_spec=parsed_spec,
+            bound_task_spec_version=1,
+            parser_mode="RULE_FALLBACK",
+        )
+
+    monkeypatch.setattr(
+        "credra_agent.runtime.service.interpret_message", fake_interpret
+    )
+    model = FixedModel([search_decision(), finish_decision()])
+    result = interpret_and_execute(
+        thread_id="natural-agentic",
+        source_message_id="natural-agentic-message",
+        text="调查比亚迪近期新增监管消息",
+        as_of=date(2025, 12, 31),
+        settings=config,
+        execution_mode="agentic",
+        authorization=authorization(),
+        coordinator_model=model,
+        executor_factory=lambda spec: executor(calls),
+    )
+
+    assert result.outcome == "TASK_STATE"
+    assert result.task["state"]["status"] == "COMPLETED"
+    assert result.task["state"]["graph_version"] == "agentic_v2"
+    assert calls == ["比亚迪 新增监管消息"]
+    assert model.calls == 2
+
+
+def test_research_executor_maps_verified_service_result_to_question_coverage():
+    captured = []
+
+    class FakeResearchClient:
+        async def search_evidence(self, arguments):
+            captured.append(arguments)
+            return ResearchQueryResult(
+                query_type="company",
+                query=arguments.query,
+                found=True,
+                facts=[
+                    ResearchFact(
+                        fact_id=f"fact:{'a' * 64}",
+                        category="regulatory",
+                        statement="监管材料已经核验。",
+                        source_id="exchange-notice-1",
+                        verification_status="SUPPORTED",
+                    )
+                ],
+                verification_status="SUPPORTED",
+                source="fake-research-service",
+            )
+
+    action = search_decision()
+    arguments = action.arguments
+    runtime_executor = build_agentic_executor(
+        task_spec(), research_client=FakeResearchClient()
+    )
+    from credra_agent.execution.models import SearchEvidenceArgs
+
+    outcome = runtime_executor.execute(
+        "search_evidence", SearchEvidenceArgs.model_validate(arguments)
+    )
+
+    assert captured[0].model_dump(mode="json") == arguments
+    assert outcome.status == "SUCCESS"
+    assert outcome.answered_question_ids == ["q-regulatory"]
+    assert outcome.gap_question_ids == []
+    assert outcome.novelty_keys == [f"fact:{'a' * 64}"]
+
+
+def test_natural_language_shadow_runs_baseline_and_never_dispatches_plan(
+    tmp_path, monkeypatch
+):
+    config = settings(tmp_path)
+    parsed_spec = task_spec()
+    baseline_calls: list[tuple[str, str]] = []
+    tool_calls: list[str] = []
+
+    def fake_interpret(**kwargs):
+        from credra_agent.intent.models import IntentResult
+
+        return IntentResult(
+            source_message_id=kwargs["source_message_id"],
+            thread_id=kwargs["thread_id"],
+            operation="start",
+            task_spec=parsed_spec,
+            bound_task_spec_version=1,
+            parser_mode="RULE_FALLBACK",
+        )
+
+    def fake_start_task(*, thread_id, case_id, settings):
+        baseline_calls.append((thread_id, case_id))
+        return {"thread_id": thread_id, "state": {"status": "COMPLETED"}}
+
+    monkeypatch.setattr(
+        "credra_agent.runtime.service.interpret_message", fake_interpret
+    )
+    monkeypatch.setattr("credra_agent.runtime.service.start_task", fake_start_task)
+    result = interpret_and_execute(
+        thread_id="natural-shadow",
+        source_message_id="natural-shadow-message",
+        text="以影子模式调查比亚迪监管消息",
+        as_of=date(2025, 12, 31),
+        settings=config,
+        execution_mode="shadow",
+        authorization=authorization(),
+        coordinator_model=FixedModel([search_decision()]),
+        executor_factory=lambda spec: executor(tool_calls),
+    )
+    assert result.task["state"]["stop_reason"] == "SHADOW_PLAN_RECORDED"
+    assert result.baseline_task["state"]["status"] == "COMPLETED"
+    assert result.baseline_thread_id == "natural-shadow-baseline"
+    assert baseline_calls == [("natural-shadow-baseline", "case_byd_002594")]
+    assert tool_calls == []
 
 
 def test_agentic_nodes_actions_tools_budgets_and_states_are_logged(tmp_path):

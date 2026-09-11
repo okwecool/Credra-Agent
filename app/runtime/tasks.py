@@ -237,8 +237,8 @@ def start_agentic_task(
 
     spec = TaskSpec.model_validate(task_spec)
     approved = RunAuthorization.model_validate(authorization)
-    if execution_mode != "agentic":
-        raise ValueError("P14 runtime only starts explicit agentic execution")
+    if execution_mode not in {"agentic", "shadow"}:
+        raise ValueError("execution_mode must be agentic or shadow")
     if spec.case_id is None:
         raise ValueError("agentic task requires a bound case_id")
     case_dir = _case_dir(settings, spec.case_id)
@@ -301,6 +301,92 @@ def start_agentic_task(
             artifact_refs=refs,
         )
         graph.invoke(state, config=config)
+        return snapshot_payload(graph.get_state(config), thread_id)
+
+
+@logged_operation
+def amend_agentic_task(
+    *,
+    thread_id: str,
+    task_spec: Any,
+    authorization: Any,
+    settings: Settings,
+    model: StructuredModel,
+    executor: Any,
+    fallback: Any | None = None,
+) -> dict[str, Any]:
+    """Bind a new TaskSpec version to a waiting agentic task and continue it."""
+
+    from app.tools.artifacts import ArtifactStore
+    from credra_agent.execution.ledger import ActionLedger
+    from credra_agent.graph.versioning import resolve_graph_identity
+    from credra_agent.graph.workflow import build_agentic_workflow
+    from credra_agent.intent.models import TaskSpec
+    from credra_agent.planning.models import RunAuthorization
+
+    spec = TaskSpec.model_validate(task_spec)
+    approved = RunAuthorization.model_validate(authorization)
+    if approved.task_spec_version != spec.version:
+        raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
+    with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
+        config = graph_config(thread_id)
+        values = _checkpoint_values(checkpointer, thread_id)
+        identity = resolve_graph_identity(values)
+        if identity.graph_version != "agentic_v2":
+            raise ValueError("thread is not an agentic_v2 task")
+        if values.get("status") != "WAITING_CLARIFICATION":
+            raise ValueError("agentic task is not waiting for clarification")
+        case_id = _case_id_from_checkpoint(checkpointer, thread_id)
+        if spec.case_id != case_id:
+            raise ValueError("CASE_SCOPE_CHANGE_REQUIRES_NEW_TASK")
+        case_dir = _case_dir(settings, case_id)
+        run_dir = _run_dir_from_checkpoint(checkpointer, case_dir, thread_id)
+        artifacts = ArtifactStore(run_dir)
+        previous_spec = TaskSpec.model_validate(
+            artifacts.read_json(values["task_spec_ref"])
+        )
+        if spec.version != previous_spec.version + 1:
+            raise ValueError("TASK_SPEC_VERSION_CONFLICT")
+        if spec.subject_id != previous_spec.subject_id:
+            raise ValueError("SUBJECT_SCOPE_CHANGE_REQUIRES_NEW_TASK")
+        task_ref = artifacts.write_json(
+            artifacts.next_version_reference(
+                "agent_task_spec", values["task_spec_ref"]
+            ),
+            spec,
+        )
+        authorization_ref = artifacts.write_json(
+            artifacts.next_version_reference(
+                "agent_run_authorization", values["authorization_ref"]
+            ),
+            approved,
+        )
+        graph = build_agentic_workflow(
+            run_dir=run_dir,
+            ledger=ActionLedger(settings.checkpoint_db_path),
+            model=model,
+            executor=executor,
+            checkpointer=checkpointer,
+            fallback=fallback,
+        )
+        graph.update_state(
+            config,
+            {
+                "task_spec_ref": task_ref,
+                "authorization_ref": authorization_ref,
+                "status": "RUNNING",
+                "stop_reason": None,
+                "pending_instruction_version": None,
+                "limitations": [],
+                "artifact_refs": [
+                    *values.get("artifact_refs", []),
+                    task_ref,
+                    authorization_ref,
+                ],
+            },
+            as_node="execute",
+        )
+        graph.invoke(None, config=config)
         return snapshot_payload(graph.get_state(config), thread_id)
 
 

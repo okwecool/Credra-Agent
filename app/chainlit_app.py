@@ -38,6 +38,7 @@ from credra_agent.intent.models import IntentResult
 from credra_agent.intent.service import build_intent_model, interpret_message
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
+AGENTIC_WORKFLOW_NODES = ("decide", "execute")
 _NODE_LABELS = {
     "document": "材料解析",
     "financial": "财务分析",
@@ -45,6 +46,8 @@ _NODE_LABELS = {
     "risk": "风险分析",
     "approval": "人工审核",
     "report": "报告生成",
+    "decide": "模型决策",
+    "execute": "受控执行",
 }
 _NODE_DESCRIPTIONS = {
     "document": "读取并校验企业材料",
@@ -53,6 +56,8 @@ _NODE_DESCRIPTIONS = {
     "risk": "生成确定性风险项与解释",
     "approval": "等待审核意见或继续决策",
     "report": "生成可追溯的最终报告",
+    "decide": "依据任务、证据索引和预算选择下一步",
+    "execute": "校验并持久化 Action，执行已授权工具",
 }
 _FLOW_STATE_CODES = {
     "待执行": "pending",
@@ -75,6 +80,9 @@ _TASK_LIST_STATUS = {
     "CREATED": "准备中",
     "RUNNING": "执行中",
     "WAITING_APPROVAL": "等待人工审核",
+    "WAITING_CLARIFICATION": "等待用户澄清",
+    "LIMITED": "受限结束",
+    "PAUSED_LOGGING": "日志恢复后继续",
     "COMPLETED": "已完成",
     "FAILED": "执行失败",
 }
@@ -95,6 +103,9 @@ _STATUS_LABELS = {
     "CREATED": "⚪ 已创建",
     "RUNNING": "🔵 执行中",
     "WAITING_APPROVAL": "🟠 等待人工审核",
+    "WAITING_CLARIFICATION": "🟠 等待用户澄清",
+    "LIMITED": "🟡 受限结束",
+    "PAUSED_LOGGING": "🟠 日志暂停",
     "COMPLETED": "🟢 已完成",
     "FAILED": "🔴 执行失败",
 }
@@ -181,6 +192,8 @@ def _validation_markdown(validation: dict[str, Any] | None) -> list[str]:
 
 def _node_states(payload: dict[str, Any]) -> dict[str, str]:
     state = payload["state"]
+    if state.get("graph_version") == "agentic_v2":
+        return _agentic_node_states(payload)
     node_states = {node: "待执行" for node in WORKFLOW_NODES}
     references = {
         "document": state.get("company_artifact"),
@@ -208,6 +221,37 @@ def _node_states(payload: dict[str, Any]) -> dict[str, str]:
     return node_states
 
 
+def _agentic_node_states(payload: dict[str, Any]) -> dict[str, str]:
+    state = payload["state"]
+    status = state.get("status")
+    current = state.get("current_node")
+    node_states = {node: "待执行" for node in AGENTIC_WORKFLOW_NODES}
+    if state.get("iteration", 0) > 0 or current in AGENTIC_WORKFLOW_NODES:
+        node_states["decide"] = "已完成"
+    if state.get("observation_index_ref") and state.get("coverage_ref"):
+        node_states["execute"] = "已完成"
+    if status in {"COMPLETED", "LIMITED"}:
+        return {node: "已完成" for node in AGENTIC_WORKFLOW_NODES}
+    if status in {"WAITING_CLARIFICATION", "PAUSED_LOGGING"}:
+        node_states[current if current in node_states else "execute"] = "等待操作"
+        return node_states
+    if status == "FAILED":
+        node_states[current if current in node_states else "decide"] = "失败"
+        return node_states
+    if status == "RUNNING":
+        next_node = next(
+            (node for node in payload.get("next", []) if node in node_states), None
+        )
+        node_states[next_node or current or "decide"] = "执行中"
+    return node_states
+
+
+def _workflow_nodes(payload: dict[str, Any]) -> tuple[str, ...]:
+    if payload["state"].get("graph_version") == "agentic_v2":
+        return AGENTIC_WORKFLOW_NODES
+    return WORKFLOW_NODES
+
+
 def _timeline_markdown(payload: dict[str, Any]) -> list[str]:
     symbols = {
         "已完成": "✅",
@@ -219,11 +263,12 @@ def _timeline_markdown(payload: dict[str, Any]) -> list[str]:
         "待执行": "⚪",
     }
     states = _node_states(payload)
+    workflow_nodes = _workflow_nodes(payload)
     return [
         "## 执行进度",
         " → ".join(
             f"{symbols[states[node]]} `{node}`（{states[node]}）"
-            for node in WORKFLOW_NODES
+            for node in workflow_nodes
         ),
     ]
 
@@ -233,6 +278,7 @@ def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
 
     state = payload["state"]
     node_states = _node_states(payload)
+    workflow_nodes = _workflow_nodes(payload)
     nodes = [
         {
             "id": node,
@@ -241,7 +287,7 @@ def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
             "status": _FLOW_STATE_CODES[node_states[node]],
             "statusLabel": node_states[node],
         }
-        for node in WORKFLOW_NODES
+        for node in workflow_nodes
     ]
     processed = sum(node["status"] in {"done", "skipped"} for node in nodes)
     workflow_status = str(state.get("status") or "UNKNOWN")
@@ -253,9 +299,9 @@ def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
         "runId": str(state.get("run_id") or "legacy"),
         "workflowStatus": workflow_status,
         "workflowStatusLabel": _STATUS_LABELS.get(workflow_status, workflow_status),
-        "currentNode": current_node if current_node in WORKFLOW_NODES else None,
+        "currentNode": current_node if current_node in workflow_nodes else None,
         "nextNodes": [
-            node for node in payload.get("next", []) if node in WORKFLOW_NODES
+            node for node in payload.get("next", []) if node in workflow_nodes
         ],
         "riskLevel": str(state.get("risk_level") or "—"),
         "progress": {
@@ -419,20 +465,32 @@ async def _send_new_audit_steps(
 
 
 def _artifact_markdown(state: dict[str, Any]) -> list[str]:
-    artifacts = [
-        ("Company", state.get("company_artifact")),
-        ("Financial", state.get("financial_artifact")),
-        ("Intent", state.get("investigation_intent_artifact")),
-        ("Query Plan", state.get("query_plan_artifact")),
-        ("Research", state.get("research_artifact")),
-        ("Evidence Summary", state.get("evidence_summary_artifact")),
-        ("Query Proposal", state.get("query_proposal_artifact")),
-        ("Risk", state.get("risk_artifact")),
-        ("LLM Narrative", state.get("risk_narrative_artifact")),
-        ("Report Draft", state.get("report_draft_artifact")),
-        ("Report Expression", state.get("report_expression_artifact")),
-        ("Report", state.get("report_artifact")),
-    ]
+    if state.get("graph_version") == "agentic_v2":
+        artifacts = [
+            ("TaskSpec", state.get("task_spec_ref")),
+            ("Run Authorization", state.get("authorization_ref")),
+            ("Hypotheses", state.get("hypotheses_ref")),
+            ("Observation Index", state.get("observation_index_ref")),
+            ("Coverage", state.get("coverage_ref")),
+            ("Budget Ledger", state.get("budget_ledger_ref")),
+            ("Active Decision", state.get("active_decision_ref")),
+            ("Active Action", state.get("active_action_ref")),
+        ]
+    else:
+        artifacts = [
+            ("Company", state.get("company_artifact")),
+            ("Financial", state.get("financial_artifact")),
+            ("Intent", state.get("investigation_intent_artifact")),
+            ("Query Plan", state.get("query_plan_artifact")),
+            ("Research", state.get("research_artifact")),
+            ("Evidence Summary", state.get("evidence_summary_artifact")),
+            ("Query Proposal", state.get("query_proposal_artifact")),
+            ("Risk", state.get("risk_artifact")),
+            ("LLM Narrative", state.get("risk_narrative_artifact")),
+            ("Report Draft", state.get("report_draft_artifact")),
+            ("Report Expression", state.get("report_expression_artifact")),
+            ("Report", state.get("report_artifact")),
+        ]
     lines = ["## Artifact 引用", "| 类型 | 当前版本 |", "|---|---|"]
     lines.extend(f"| {name} | `{reference or '—'}` |" for name, reference in artifacts)
     return lines
@@ -825,7 +883,7 @@ def _intent_markdown(result: IntentResult) -> str:
     lines.extend(
         [
             "",
-            "> 解析结果已持久化。自主 Coordinator 与动作执行将在 P12–P14 接入；当前不会因这条消息自动发起外部调用。",
+            "> 解析结果已持久化。可通过受控 Agent Runtime 或 `app.task_cli agent` 执行；当前界面不会自行创建运行授权或发起付费调用。",
         ]
     )
     return "\n".join(lines)
