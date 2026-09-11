@@ -5,6 +5,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ import chainlit as cl
 
 from app.cases import HIDDEN_DEMO_CASE_IDS, validate_case
 from app.config import Settings, get_settings
+from app.llm.gateway import StructuredModelError
 from app.mcp.research_client import ResearchServiceError
 from app.runtime.tasks import get_task_status, resume_task, start_task
 from app.workbench import (
@@ -32,6 +34,8 @@ from app.workbench_live import (
     project_live_progress,
     read_live_trace_events,
 )
+from credra_agent.intent.models import IntentResult
+from credra_agent.intent.service import build_intent_model, interpret_message
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
 _NODE_LABELS = {
@@ -783,6 +787,71 @@ async def _send_error(exc: Exception) -> None:
     await cl.Message(content=f"## 操作失败\n\n`{_safe_error(exc)}`").send()
 
 
+def _intent_markdown(result: IntentResult) -> str:
+    lines = [
+        "## 自然语言任务已解析",
+        "",
+        f"- 操作：`{result.operation}`",
+        f"- 解析方式：`{result.parser_mode}`",
+        f"- 消息去重：`{'是' if result.duplicate else '否'}`",
+    ]
+    spec = result.task_spec
+    if spec is not None:
+        periods = (
+            "、".join(
+                f"{item.start.isoformat()} 至 {item.end.isoformat()}"
+                for item in spec.periods
+            )
+            or "待澄清"
+        )
+        focuses = "、".join(question.focus for question in spec.questions)
+        lines.extend(
+            [
+                f"- 主体：`{spec.subject_name or '待澄清'}`（`{spec.subject_id or '—'}`）",
+                f"- 截止日：`{spec.as_of.isoformat()}`",
+                f"- 期间：{periods}",
+                f"- 调查重点：{focuses}",
+                f"- TaskSpec：`v{spec.version}` / `{spec.readiness}`",
+            ]
+        )
+        if spec.unresolved_fields:
+            lines.append("- 待澄清：" + "、".join(spec.unresolved_fields))
+    else:
+        lines.append(f"- 绑定 TaskSpec：`v{result.bound_task_spec_version}`")
+    if result.rejected_instructions:
+        lines.append("- 已拒绝指令：" + "、".join(result.rejected_instructions))
+    if result.warnings:
+        lines.append("- 限制：" + "、".join(result.warnings))
+    lines.extend(
+        [
+            "",
+            "> 解析结果已持久化。自主 Coordinator 与动作执行将在 P12–P14 接入；当前不会因这条消息自动发起外部调用。",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def _interpret_natural_language(message: cl.Message, settings: Settings) -> None:
+    thread_id = cl.user_session.get("intent_thread_id")
+    if not thread_id:
+        thread_id = f"agentic-ui-{uuid.uuid4().hex[:16]}"
+        cl.user_session.set("intent_thread_id", thread_id)
+    source_message_id = str(getattr(message, "id", None) or uuid.uuid4().hex)
+    result = await asyncio.to_thread(
+        partial(
+            interpret_message,
+            thread_id=str(thread_id),
+            source_message_id=source_message_id,
+            text=message.content,
+            as_of=datetime.now(UTC).date(),
+            data_dir=settings.data_dir,
+            database_path=settings.checkpoint_db_path,
+            model=build_intent_model(settings),
+        )
+    )
+    await cl.Message(content=_intent_markdown(result)).send()
+
+
 @cl.on_chat_start
 async def on_chat_start() -> None:
     await _send_case_catalog(get_settings())
@@ -814,10 +883,9 @@ async def on_message(message: cl.Message) -> None:
                 settings=settings,
             )
         else:
-            raise ValueError(
-                "无法识别输入；可使用页面按钮，或输入 cases、start、status、resume。"
-            )
-    except (OSError, ResearchServiceError, ValueError) as exc:
+            await _interpret_natural_language(message, settings)
+            return
+    except (OSError, ResearchServiceError, StructuredModelError, ValueError) as exc:
         await _send_error(exc)
         return
     await _send_payload(

@@ -3,10 +3,13 @@
 import argparse
 import json
 from collections.abc import Sequence
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from app.config import Settings
+from app.llm.gateway import StructuredModelError
 from app.runtime.tasks import get_task_status, resume_task, start_task
+from credra_agent.intent.service import build_intent_model, interpret_message
 from credra_agent.observability.runtime import entrypoint
 
 
@@ -29,6 +32,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--decision", choices=("approve", "research", "resume_logging"), required=True
     )
     resume.add_argument("--comment")
+
+    parse = subparsers.add_parser("parse")
+    parse.add_argument("--thread-id", required=True)
+    parse.add_argument("--message-id", required=True)
+    parse.add_argument("--text", required=True)
+    parse.add_argument("--as-of", type=date.fromisoformat)
     return parser
 
 
@@ -51,14 +60,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "status":
             payload = get_task_status(thread_id=args.thread_id, settings=settings)
-        else:
+        elif args.command == "resume":
             payload = resume_task(
                 thread_id=args.thread_id,
                 decision=args.decision,
                 comment=args.comment,
                 settings=settings,
             )
-    except ValueError as exc:
+        else:
+            payload = interpret_message(
+                thread_id=args.thread_id,
+                source_message_id=args.message_id,
+                text=args.text,
+                as_of=args.as_of or datetime.now(UTC).date(),
+                data_dir=settings.data_dir,
+                database_path=settings.checkpoint_db_path,
+                model=build_intent_model(settings),
+            ).model_dump(mode="json")
+    except (StructuredModelError, ValueError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 2
 

@@ -82,7 +82,11 @@ class SnapshotStore:
 
     @staticmethod
     def key(request: SearchRequest) -> str:
-        canonical = request.model_dump_json(exclude={"subject_aliases"})
+        # exclude_none preserves the key of legacy requests while allowing the
+        # V2 period and source policy to distinguish custom Action snapshots.
+        canonical = request.model_dump_json(
+            exclude={"subject_aliases"}, exclude_none=True
+        )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def path_for(self, request: SearchRequest) -> Path:

@@ -10,6 +10,7 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 
 from app.models.research import ResearchQueryResult
+from credra_agent.execution.models import SearchEvidenceArgs
 from credra_agent.observability.events import CONTEXT
 from credra_agent.observability.instrumentation import tool_call
 from credra_agent.observability.runtime import child_environment, current
@@ -64,6 +65,25 @@ class ResearchMCPClient:
                 log_file=self.transport.log_file,
             )
         return self.transport
+
+    @tool_call
+    async def search_evidence(
+        self, arguments: SearchEvidenceArgs | dict[str, Any]
+    ) -> ResearchQueryResult:
+        """Send one validated custom query without rebuilding its text or scope."""
+
+        request = SearchEvidenceArgs.model_validate(arguments)
+        try:
+            async with Client(self._session_transport()) as client:
+                result = await client.call_tool(
+                    "search_evidence",
+                    {"request": request.model_dump(mode="json"), **_diagnostics()},
+                )
+            return self._parse_result(result)
+        except ResearchServiceError:
+            raise
+        except Exception as exc:
+            raise ResearchServiceError(f"evidence search failed: {exc}") from exc
 
     @tool_call
     async def search_company(
