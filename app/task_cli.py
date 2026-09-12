@@ -3,10 +3,17 @@
 import argparse
 import json
 from collections.abc import Sequence
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from app.config import Settings
+from app.llm.gateway import StructuredModelError, build_analysis_model
 from app.runtime.tasks import get_task_status, resume_task, start_task
+from credra_agent.intent.service import build_intent_model, interpret_message
+from credra_agent.observability.runtime import entrypoint
+from credra_agent.planning.models import RunAuthorization
+from credra_agent.runtime.executors import build_agentic_executor
+from credra_agent.runtime.service import interpret_and_execute
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,11 +31,34 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume = subparsers.add_parser("resume")
     resume.add_argument("--thread-id", required=True)
-    resume.add_argument("--decision", choices=("approve", "research"), required=True)
+    resume.add_argument(
+        "--decision", choices=("approve", "research", "resume_logging"), required=True
+    )
     resume.add_argument("--comment")
+
+    parse = subparsers.add_parser("parse")
+    parse.add_argument("--thread-id", required=True)
+    parse.add_argument("--message-id", required=True)
+    parse.add_argument("--text", required=True)
+    parse.add_argument("--as-of", type=date.fromisoformat)
+
+    agent = subparsers.add_parser("agent")
+    agent.add_argument("--thread-id", required=True)
+    agent.add_argument("--message-id", required=True)
+    agent.add_argument("--text", required=True)
+    agent.add_argument("--as-of", type=date.fromisoformat)
+    agent.add_argument(
+        "--execution-mode", choices=("baseline", "shadow", "agentic"), default="agentic"
+    )
+    agent.add_argument(
+        "--authorization",
+        type=Path,
+        help="RunAuthorization JSON; required before agentic or shadow calls",
+    )
     return parser
 
 
+@entrypoint("task_cli")
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     overrides: dict[str, object] = {}
@@ -47,14 +77,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         elif args.command == "status":
             payload = get_task_status(thread_id=args.thread_id, settings=settings)
-        else:
+        elif args.command == "resume":
             payload = resume_task(
                 thread_id=args.thread_id,
                 decision=args.decision,
                 comment=args.comment,
                 settings=settings,
             )
-    except ValueError as exc:
+        elif args.command == "parse":
+            payload = interpret_message(
+                thread_id=args.thread_id,
+                source_message_id=args.message_id,
+                text=args.text,
+                as_of=args.as_of or datetime.now(UTC).date(),
+                data_dir=settings.data_dir,
+                database_path=settings.checkpoint_db_path,
+                model=build_intent_model(settings),
+            ).model_dump(mode="json")
+        else:
+            authorization = None
+            if args.authorization is not None:
+                authorization = RunAuthorization.model_validate_json(
+                    args.authorization.read_text(encoding="utf-8")
+                )
+            payload = interpret_and_execute(
+                thread_id=args.thread_id,
+                source_message_id=args.message_id,
+                text=args.text,
+                as_of=args.as_of or datetime.now(UTC).date(),
+                settings=settings,
+                execution_mode=args.execution_mode,
+                authorization=authorization,
+                intent_model=build_intent_model(settings),
+                coordinator_model=build_analysis_model(settings),
+                executor_factory=build_agentic_executor,
+            ).model_dump(mode="json")
+    except (OSError, StructuredModelError, ValueError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 2
 

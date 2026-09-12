@@ -1,0 +1,32 @@
+{
+  "thread_id": "v2-legacy-completed",
+  "exists": true,
+  "state": {
+    "task_id": "v2-legacy-completed",
+    "case_id": "case_normal",
+    "run_id": "868083ed4976fce340ba",
+    "status": "COMPLETED",
+    "current_node": "report",
+    "company_artifact": "artifacts/company_profile_v1.json",
+    "financial_artifact": "artifacts/financial_analysis_v1.json",
+    "research_artifact": null,
+    "risk_artifact": "artifacts/risk_analysis_v1.json",
+    "investigation_intent_artifact": null,
+    "query_plan_artifact": null,
+    "evidence_summary_artifact": null,
+    "query_proposal_artifact": null,
+    "risk_narrative_artifact": "artifacts/risk_narrative_v1.json",
+    "report_draft_artifact": "artifacts/report_draft_v1.json",
+    "report_expression_artifact": "artifacts/report_expression_v1.json",
+    "report_artifact": "output/credit_report.md",
+    "anomaly_flags": [],
+    "risk_level": "LOW",
+    "human_decision": null,
+    "human_comment": null,
+    "external_research_incomplete": false,
+    "failed_node": null,
+    "error_summary": null
+  },
+  "next": [],
+  "interrupts": []
+}

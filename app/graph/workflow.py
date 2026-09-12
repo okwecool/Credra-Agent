@@ -51,6 +51,8 @@ from app.runtime.tracing import TimedTrace, TraceWriter
 from app.tools.anomalies import detect_anomalies
 from app.tools.artifacts import ArtifactStore
 from app.tools.investigation import build_investigation_intent, build_query_plan
+from credra_agent.observability.events import log_context
+from credra_agent.observability.runtime import emit, require_logging
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -119,7 +121,7 @@ def build_workflow(
         return record
 
     def traced(node_name: str, node: Callable[[AgentState], dict[str, Any]]):
-        def wrapped(state: AgentState) -> dict[str, Any]:
+        def run_node(state: AgentState) -> dict[str, Any]:
             trace.instant(
                 task_id=state["task_id"],
                 node=node_name,
@@ -130,6 +132,8 @@ def build_workflow(
             try:
                 result = node(state)
             except GraphInterrupt:
+                emit("INTERRUPT", node=node_name, status="INTERRUPTED")
+                emit("NODE_END", node=node_name, status="INTERRUPTED")
                 raise
             except Exception as exc:  # noqa: BLE001 - node boundary persists safe failure
                 end_time, latency_ms = timer.finish()
@@ -167,6 +171,43 @@ def build_workflow(
                 output_summary="keys=" + ",".join(sorted(result)),
             )
             return result
+
+        def wrapped(state: AgentState) -> dict[str, Any]:
+            with log_context(
+                thread_id=state["task_id"],
+                case_id=state["case_id"],
+                run_id=state.get("run_id"),
+                node=node_name,
+            ):
+                emit("NODE_START", status="STARTED")
+                require_logging()
+                result = run_node(state)
+                emit(
+                    "NODE_END",
+                    status="FAILED" if result.get("status") == "FAILED" else "SUCCESS",
+                )
+                if result.get("status") and result["status"] != state.get("status"):
+                    emit(
+                        "TASK_STATE",
+                        from_state=state.get("status"),
+                        to_state=result["status"],
+                    )
+                return result
+
+        return wrapped
+
+    def routed(name, function):
+        def wrapped(state):
+            target = function(state)
+            emit(
+                "ROUTE",
+                thread_id=state["task_id"],
+                node=name,
+                target_node=target,
+                purpose="baseline_policy",
+                status="SUCCESS",
+            )
+            return target
 
         return wrapped
 
@@ -568,6 +609,7 @@ def build_workflow(
         output_path = run_dir / "output" / "credit_report.md"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(report, encoding="utf-8")
+        emit("REPORT_WRITE", artifact_ref="output/credit_report.md", status="SUCCESS")
         return {
             "status": "COMPLETED",
             "current_node": "report",
@@ -591,7 +633,7 @@ def build_workflow(
     )
     builder.add_conditional_edges(
         "financial",
-        route_after_financial,
+        routed("financial", route_after_financial),
         {"research": "research", "risk": "risk", "end": END},
     )
     builder.add_conditional_edges(
@@ -601,12 +643,12 @@ def build_workflow(
     )
     builder.add_conditional_edges(
         "risk",
-        route_after_risk,
+        routed("risk", route_after_risk),
         {"approval": "approval", "report": "report", "end": END},
     )
     builder.add_conditional_edges(
         "approval",
-        route_after_approval,
+        routed("approval", route_after_approval),
         {"research": "research", "report": "report", "end": END},
     )
     builder.add_edge("report", END)

@@ -8,6 +8,7 @@ import re
 import socket
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
@@ -26,6 +27,7 @@ from app.models.content import (
     FetchErrorCode,
 )
 from app.models.search import ResearchEvidence
+from credra_agent.observability.instrumentation import source_call
 
 _ALLOWED_CONTENT_TYPES = {
     "text/html": "HTML",
@@ -135,6 +137,10 @@ def normalize_public_url(url: str, resolver: HostResolver = _default_resolver) -
         raise ContentFetchError("INVALID_URL", "only HTTP and HTTPS URLs are allowed")
     if not parsed.hostname or parsed.username or parsed.password:
         raise ContentFetchError("INVALID_URL", "URL must contain a public hostname")
+    try:
+        parsed_port = parsed.port
+    except ValueError as exc:
+        raise ContentFetchError("INVALID_URL", "URL port is invalid") from exc
     hostname = parsed.hostname.rstrip(".").lower()
     if hostname == "localhost" or hostname.endswith(".local"):
         raise ContentFetchError("PRIVATE_ADDRESS", "local hostnames are not allowed")
@@ -159,10 +165,6 @@ def normalize_public_url(url: str, resolver: HostResolver = _default_resolver) -
             raise ContentFetchError(
                 "PRIVATE_ADDRESS", "URL hostname resolves to a non-public address"
             )
-    try:
-        parsed_port = parsed.port
-    except ValueError as exc:
-        raise ContentFetchError("INVALID_URL", "URL port is invalid") from exc
     port = f":{parsed_port}" if parsed_port else ""
     host_for_netloc = f"[{hostname}]" if ":" in hostname else hostname
     netloc = f"{host_for_netloc}{port}"
@@ -400,6 +402,7 @@ class HTTPContentFetcher:
             error_message=str(error),
         )
 
+    @source_call
     def fetch(self, url: str) -> FetchedDocument:
         current_url: str | None = None
         try:
@@ -539,6 +542,7 @@ class SnapshotContentFetcher:
     def __init__(self, store: ContentSnapshotStore) -> None:
         self._store = store
 
+    @source_call
     def fetch(self, url: str) -> FetchedDocument:
         try:
             return self._store.read(url)
@@ -633,7 +637,12 @@ def fetch_candidate_content(
     selected = urls[:max_candidates]
     skipped = set(urls[max_candidates:])
     with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-        documents = dict(zip(selected, executor.map(fetcher.fetch, selected)))
+        futures = [
+            executor.submit(copy_context().run, fetcher.fetch, url) for url in selected
+        ]
+        documents = dict(
+            zip(selected, (future.result() for future in futures), strict=True)
+        )
     for document in documents.values():
         if document.status == "SUCCESS":
             snapshot_store.write(document)

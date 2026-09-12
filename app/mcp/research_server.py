@@ -28,6 +28,9 @@ from app.search.verifier import (
     verification_counts,
     verify_candidate_evidence,
 )
+from credra_agent.execution.models import SearchEvidenceArgs
+from credra_agent.observability.events import log_context
+from credra_agent.observability.runtime import current, emit
 
 mcp = FastMCP("Credra Research MCP")
 
@@ -48,12 +51,32 @@ def _search(
         raise ValueError("query cannot be empty")
 
     resolved_settings = settings or get_settings()
-    active_provider = provider or build_search_provider(resolved_settings)
     requests = build_search_requests(
         query_type, normalized, subject_aliases, categories=categories
     )
+    return _execute_requests(
+        query_type,
+        requests,
+        provider=provider,
+        content_fetcher=content_fetcher,
+        fact_verifier=fact_verifier,
+        settings=resolved_settings,
+    )
+
+
+def _execute_requests(
+    query_type: Literal["company", "industry"],
+    requests,
+    *,
+    provider: SearchProvider | None = None,
+    content_fetcher: ContentFetcher | None = None,
+    fact_verifier: FactVerifier | None = None,
+    settings: Settings | None = None,
+) -> ResearchQueryResult:
+    resolved_settings = settings or get_settings()
     if not requests:
         raise ValueError("at least one search category is required")
+    active_provider = provider or build_search_provider(resolved_settings)
     responses = [active_provider.search(request) for request in requests]
     is_mock = active_provider.name == "mock"
     evidence = deduplicate_evidence(
@@ -133,25 +156,121 @@ def _search(
     )
 
 
-@mcp.tool
-def search_company(
-    company_name: str, categories: list[str] | None = None
-) -> dict[str, Any]:
-    """Search auditable external evidence for a company."""
+def _search_evidence(
+    request: SearchEvidenceArgs,
+    *,
+    provider: SearchProvider | None = None,
+    content_fetcher: ContentFetcher | None = None,
+    fact_verifier: FactVerifier | None = None,
+    settings: Settings | None = None,
+) -> ResearchQueryResult:
+    """Execute the exact typed Action query; no category template is applied."""
 
-    return _search("company", company_name, categories=categories).model_dump(
-        mode="json"
+    from app.models.search import SearchRequest
+
+    provider_request = SearchRequest(
+        query_type="company",
+        subject=request.subject_name,
+        category=request.category,
+        query=request.query,
+        subject_id=request.subject_id,
+        period=request.period,
+        source_policy=request.source_policy,
+    )
+    return _execute_requests(
+        "company",
+        [provider_request],
+        provider=provider,
+        content_fetcher=content_fetcher,
+        fact_verifier=fact_verifier,
+        settings=settings,
     )
 
 
 @mcp.tool
+def search_evidence(
+    request: dict[str, Any],
+    diagnostic_context: dict[str, str | None] | None = None,
+) -> dict[str, Any]:
+    """Run a complete, validated custom evidence-search request."""
+
+    arguments = SearchEvidenceArgs.model_validate(request)
+    with log_context(**(diagnostic_context or {})):
+        return _logged_search_evidence(arguments)
+
+
+@mcp.tool
+def search_company(
+    company_name: str,
+    categories: list[str] | None = None,
+    diagnostic_context: dict[str, str | None] | None = None,
+) -> dict[str, Any]:
+    """Search auditable external evidence for a company."""
+
+    with log_context(**(diagnostic_context or {})):
+        return _logged_search("company", company_name, categories)
+
+
+@mcp.tool
 def search_industry(
-    industry: str, categories: list[str] | None = None
+    industry: str,
+    categories: list[str] | None = None,
+    diagnostic_context: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Search auditable external evidence for an industry."""
 
-    return _search("industry", industry, categories=categories).model_dump(mode="json")
+    with log_context(**(diagnostic_context or {})):
+        return _logged_search("industry", industry, categories)
+
+
+def _logged_search(kind, query, categories):
+    emit("TOOL_START", tool=f"search_{kind}", status="STARTED")
+    try:
+        result = _search(kind, query, categories=categories)
+    except Exception as exc:
+        emit("TOOL_END", tool=f"search_{kind}", status="FAILED", exception=exc)
+        raise
+    emit(
+        "SOURCE_RESULT",
+        tool=f"search_{kind}",
+        status="SUCCESS" if result.found else "NO_RESULT",
+        result_count=len(result.facts),
+    )
+    emit("TOOL_END", tool=f"search_{kind}", status="SUCCESS")
+    payload = result.model_dump(mode="json")
+    if current():
+        payload["_service_log_available"] = current().healthy
+    return payload
+
+
+def _logged_search_evidence(arguments: SearchEvidenceArgs) -> dict[str, Any]:
+    emit("TOOL_START", tool="search_evidence", status="STARTED")
+    try:
+        result = _search_evidence(arguments)
+    except Exception as exc:
+        emit("TOOL_END", tool="search_evidence", status="FAILED", exception=exc)
+        raise
+    emit(
+        "SOURCE_RESULT",
+        tool="search_evidence",
+        status="SUCCESS" if result.found else "NO_RESULT",
+        result_count=len(result.facts),
+    )
+    emit("TOOL_END", tool="search_evidence", status="SUCCESS")
+    payload = result.model_dump(mode="json")
+    if current():
+        payload["_service_log_available"] = current().healthy
+    return payload
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio", show_banner=False)
+    from credra_agent.observability.runtime import (
+        config_from_settings,
+        start_process_service,
+    )
+
+    instance = start_process_service("research_mcp", config_from_settings(Settings()))
+    try:
+        mcp.run(transport="stdio", show_banner=False)
+    finally:
+        instance.stop_process()

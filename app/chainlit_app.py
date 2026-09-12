@@ -5,6 +5,7 @@ import json
 import re
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ import chainlit as cl
 
 from app.cases import HIDDEN_DEMO_CASE_IDS, validate_case
 from app.config import Settings, get_settings
+from app.llm.gateway import StructuredModelError
 from app.mcp.research_client import ResearchServiceError
 from app.runtime.tasks import get_task_status, resume_task, start_task
 from app.workbench import (
@@ -32,8 +34,11 @@ from app.workbench_live import (
     project_live_progress,
     read_live_trace_events,
 )
+from credra_agent.intent.models import IntentResult
+from credra_agent.intent.service import build_intent_model, interpret_message
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
+AGENTIC_WORKFLOW_NODES = ("decide", "execute")
 _NODE_LABELS = {
     "document": "材料解析",
     "financial": "财务分析",
@@ -41,6 +46,8 @@ _NODE_LABELS = {
     "risk": "风险分析",
     "approval": "人工审核",
     "report": "报告生成",
+    "decide": "模型决策",
+    "execute": "受控执行",
 }
 _NODE_DESCRIPTIONS = {
     "document": "读取并校验企业材料",
@@ -49,6 +56,8 @@ _NODE_DESCRIPTIONS = {
     "risk": "生成确定性风险项与解释",
     "approval": "等待审核意见或继续决策",
     "report": "生成可追溯的最终报告",
+    "decide": "依据任务、证据索引和预算选择下一步",
+    "execute": "校验并持久化 Action，执行已授权工具",
 }
 _FLOW_STATE_CODES = {
     "待执行": "pending",
@@ -71,6 +80,9 @@ _TASK_LIST_STATUS = {
     "CREATED": "准备中",
     "RUNNING": "执行中",
     "WAITING_APPROVAL": "等待人工审核",
+    "WAITING_CLARIFICATION": "等待用户澄清",
+    "LIMITED": "受限结束",
+    "PAUSED_LOGGING": "日志恢复后继续",
     "COMPLETED": "已完成",
     "FAILED": "执行失败",
 }
@@ -91,6 +103,9 @@ _STATUS_LABELS = {
     "CREATED": "⚪ 已创建",
     "RUNNING": "🔵 执行中",
     "WAITING_APPROVAL": "🟠 等待人工审核",
+    "WAITING_CLARIFICATION": "🟠 等待用户澄清",
+    "LIMITED": "🟡 受限结束",
+    "PAUSED_LOGGING": "🟠 日志暂停",
     "COMPLETED": "🟢 已完成",
     "FAILED": "🔴 执行失败",
 }
@@ -177,6 +192,8 @@ def _validation_markdown(validation: dict[str, Any] | None) -> list[str]:
 
 def _node_states(payload: dict[str, Any]) -> dict[str, str]:
     state = payload["state"]
+    if state.get("graph_version") == "agentic_v2":
+        return _agentic_node_states(payload)
     node_states = {node: "待执行" for node in WORKFLOW_NODES}
     references = {
         "document": state.get("company_artifact"),
@@ -204,6 +221,37 @@ def _node_states(payload: dict[str, Any]) -> dict[str, str]:
     return node_states
 
 
+def _agentic_node_states(payload: dict[str, Any]) -> dict[str, str]:
+    state = payload["state"]
+    status = state.get("status")
+    current = state.get("current_node")
+    node_states = {node: "待执行" for node in AGENTIC_WORKFLOW_NODES}
+    if state.get("iteration", 0) > 0 or current in AGENTIC_WORKFLOW_NODES:
+        node_states["decide"] = "已完成"
+    if state.get("observation_index_ref") and state.get("coverage_ref"):
+        node_states["execute"] = "已完成"
+    if status in {"COMPLETED", "LIMITED"}:
+        return {node: "已完成" for node in AGENTIC_WORKFLOW_NODES}
+    if status in {"WAITING_CLARIFICATION", "PAUSED_LOGGING"}:
+        node_states[current if current in node_states else "execute"] = "等待操作"
+        return node_states
+    if status == "FAILED":
+        node_states[current if current in node_states else "decide"] = "失败"
+        return node_states
+    if status == "RUNNING":
+        next_node = next(
+            (node for node in payload.get("next", []) if node in node_states), None
+        )
+        node_states[next_node or current or "decide"] = "执行中"
+    return node_states
+
+
+def _workflow_nodes(payload: dict[str, Any]) -> tuple[str, ...]:
+    if payload["state"].get("graph_version") == "agentic_v2":
+        return AGENTIC_WORKFLOW_NODES
+    return WORKFLOW_NODES
+
+
 def _timeline_markdown(payload: dict[str, Any]) -> list[str]:
     symbols = {
         "已完成": "✅",
@@ -215,11 +263,12 @@ def _timeline_markdown(payload: dict[str, Any]) -> list[str]:
         "待执行": "⚪",
     }
     states = _node_states(payload)
+    workflow_nodes = _workflow_nodes(payload)
     return [
         "## 执行进度",
         " → ".join(
             f"{symbols[states[node]]} `{node}`（{states[node]}）"
-            for node in WORKFLOW_NODES
+            for node in workflow_nodes
         ),
     ]
 
@@ -229,6 +278,7 @@ def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
 
     state = payload["state"]
     node_states = _node_states(payload)
+    workflow_nodes = _workflow_nodes(payload)
     nodes = [
         {
             "id": node,
@@ -237,7 +287,7 @@ def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
             "status": _FLOW_STATE_CODES[node_states[node]],
             "statusLabel": node_states[node],
         }
-        for node in WORKFLOW_NODES
+        for node in workflow_nodes
     ]
     processed = sum(node["status"] in {"done", "skipped"} for node in nodes)
     workflow_status = str(state.get("status") or "UNKNOWN")
@@ -249,9 +299,9 @@ def _flow_view(payload: dict[str, Any]) -> dict[str, Any]:
         "runId": str(state.get("run_id") or "legacy"),
         "workflowStatus": workflow_status,
         "workflowStatusLabel": _STATUS_LABELS.get(workflow_status, workflow_status),
-        "currentNode": current_node if current_node in WORKFLOW_NODES else None,
+        "currentNode": current_node if current_node in workflow_nodes else None,
         "nextNodes": [
-            node for node in payload.get("next", []) if node in WORKFLOW_NODES
+            node for node in payload.get("next", []) if node in workflow_nodes
         ],
         "riskLevel": str(state.get("risk_level") or "—"),
         "progress": {
@@ -415,20 +465,32 @@ async def _send_new_audit_steps(
 
 
 def _artifact_markdown(state: dict[str, Any]) -> list[str]:
-    artifacts = [
-        ("Company", state.get("company_artifact")),
-        ("Financial", state.get("financial_artifact")),
-        ("Intent", state.get("investigation_intent_artifact")),
-        ("Query Plan", state.get("query_plan_artifact")),
-        ("Research", state.get("research_artifact")),
-        ("Evidence Summary", state.get("evidence_summary_artifact")),
-        ("Query Proposal", state.get("query_proposal_artifact")),
-        ("Risk", state.get("risk_artifact")),
-        ("LLM Narrative", state.get("risk_narrative_artifact")),
-        ("Report Draft", state.get("report_draft_artifact")),
-        ("Report Expression", state.get("report_expression_artifact")),
-        ("Report", state.get("report_artifact")),
-    ]
+    if state.get("graph_version") == "agentic_v2":
+        artifacts = [
+            ("TaskSpec", state.get("task_spec_ref")),
+            ("Run Authorization", state.get("authorization_ref")),
+            ("Hypotheses", state.get("hypotheses_ref")),
+            ("Observation Index", state.get("observation_index_ref")),
+            ("Coverage", state.get("coverage_ref")),
+            ("Budget Ledger", state.get("budget_ledger_ref")),
+            ("Active Decision", state.get("active_decision_ref")),
+            ("Active Action", state.get("active_action_ref")),
+        ]
+    else:
+        artifacts = [
+            ("Company", state.get("company_artifact")),
+            ("Financial", state.get("financial_artifact")),
+            ("Intent", state.get("investigation_intent_artifact")),
+            ("Query Plan", state.get("query_plan_artifact")),
+            ("Research", state.get("research_artifact")),
+            ("Evidence Summary", state.get("evidence_summary_artifact")),
+            ("Query Proposal", state.get("query_proposal_artifact")),
+            ("Risk", state.get("risk_artifact")),
+            ("LLM Narrative", state.get("risk_narrative_artifact")),
+            ("Report Draft", state.get("report_draft_artifact")),
+            ("Report Expression", state.get("report_expression_artifact")),
+            ("Report", state.get("report_artifact")),
+        ]
     lines = ["## Artifact 引用", "| 类型 | 当前版本 |", "|---|---|"]
     lines.extend(f"| {name} | `{reference or '—'}` |" for name, reference in artifacts)
     return lines
@@ -488,6 +550,16 @@ def _task_actions(payload: dict[str, Any]) -> list[cl.Action]:
             payload={"thread_id": thread_id},
         )
     ]
+    if payload.get("execution_blocked"):
+        actions.insert(
+            0,
+            cl.Action(
+                name="resume_logging",
+                label="日志恢复后继续",
+                payload={"thread_id": thread_id},
+            ),
+        )
+        return actions
     if payload.get("interrupts"):
         actions[:0] = [
             cl.Action(
@@ -656,6 +728,11 @@ async def _send_payload(
         )
         await live_message.update()
     content = _risk_markdown(payload)
+    if payload.get("execution_blocked"):
+        content = (
+            "日志不可用，任务已在下一节点执行前暂停。恢复日志服务（必要时重启应用）后，点击“日志恢复后继续”。已保存的结果会保留。\n\n"
+            + content
+        )
     detail_content = workbench_detail_markdown(details)
     if detail_content:
         content += "\n\n---\n\n" + detail_content
@@ -768,6 +845,71 @@ async def _send_error(exc: Exception) -> None:
     await cl.Message(content=f"## 操作失败\n\n`{_safe_error(exc)}`").send()
 
 
+def _intent_markdown(result: IntentResult) -> str:
+    lines = [
+        "## 自然语言任务已解析",
+        "",
+        f"- 操作：`{result.operation}`",
+        f"- 解析方式：`{result.parser_mode}`",
+        f"- 消息去重：`{'是' if result.duplicate else '否'}`",
+    ]
+    spec = result.task_spec
+    if spec is not None:
+        periods = (
+            "、".join(
+                f"{item.start.isoformat()} 至 {item.end.isoformat()}"
+                for item in spec.periods
+            )
+            or "待澄清"
+        )
+        focuses = "、".join(question.focus for question in spec.questions)
+        lines.extend(
+            [
+                f"- 主体：`{spec.subject_name or '待澄清'}`（`{spec.subject_id or '—'}`）",
+                f"- 截止日：`{spec.as_of.isoformat()}`",
+                f"- 期间：{periods}",
+                f"- 调查重点：{focuses}",
+                f"- TaskSpec：`v{spec.version}` / `{spec.readiness}`",
+            ]
+        )
+        if spec.unresolved_fields:
+            lines.append("- 待澄清：" + "、".join(spec.unresolved_fields))
+    else:
+        lines.append(f"- 绑定 TaskSpec：`v{result.bound_task_spec_version}`")
+    if result.rejected_instructions:
+        lines.append("- 已拒绝指令：" + "、".join(result.rejected_instructions))
+    if result.warnings:
+        lines.append("- 限制：" + "、".join(result.warnings))
+    lines.extend(
+        [
+            "",
+            "> 解析结果已持久化。可通过受控 Agent Runtime 或 `app.task_cli agent` 执行；当前界面不会自行创建运行授权或发起付费调用。",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def _interpret_natural_language(message: cl.Message, settings: Settings) -> None:
+    thread_id = cl.user_session.get("intent_thread_id")
+    if not thread_id:
+        thread_id = f"agentic-ui-{uuid.uuid4().hex[:16]}"
+        cl.user_session.set("intent_thread_id", thread_id)
+    source_message_id = str(getattr(message, "id", None) or uuid.uuid4().hex)
+    result = await asyncio.to_thread(
+        partial(
+            interpret_message,
+            thread_id=str(thread_id),
+            source_message_id=source_message_id,
+            text=message.content,
+            as_of=datetime.now(UTC).date(),
+            data_dir=settings.data_dir,
+            database_path=settings.checkpoint_db_path,
+            model=build_intent_model(settings),
+        )
+    )
+    await cl.Message(content=_intent_markdown(result)).send()
+
+
 @cl.on_chat_start
 async def on_chat_start() -> None:
     await _send_case_catalog(get_settings())
@@ -799,10 +941,9 @@ async def on_message(message: cl.Message) -> None:
                 settings=settings,
             )
         else:
-            raise ValueError(
-                "无法识别输入；可使用页面按钮，或输入 cases、start、status、resume。"
-            )
-    except (OSError, ResearchServiceError, ValueError) as exc:
+            await _interpret_natural_language(message, settings)
+            return
+    except (OSError, ResearchServiceError, StructuredModelError, ValueError) as exc:
         await _send_error(exc)
         return
     await _send_payload(
@@ -853,6 +994,23 @@ async def refresh_task(action: cl.Action) -> None:
         await _send_error(exc)
         return
     await _send_payload(payload)
+
+
+@cl.action_callback("resume_logging")
+async def resume_logging(action: cl.Action) -> None:
+    try:
+        payload, live_task_list, live_message = await _resume_with_live_updates(
+            thread_id=str(action.payload["thread_id"]),
+            decision="resume_logging",
+            comment=None,
+            settings=get_settings(),
+        )
+    except (OSError, ResearchServiceError, ValueError) as exc:
+        await _send_error(exc)
+        return
+    await _send_payload(
+        payload, live_task_list=live_task_list, live_message=live_message
+    )
 
 
 @cl.action_callback("approve_task")

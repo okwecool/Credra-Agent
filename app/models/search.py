@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.content import FetchedContentReference
 from app.models.verification import ClaimVerification, VerificationClaim
+from credra_agent.intent.models import Period, SourcePolicy
 
 QueryType = Literal["company", "industry"]
 SourceTier = Literal["A", "B", "C"]
@@ -37,6 +38,9 @@ class SearchRequest(BaseModel):
     subject_aliases: list[str] = Field(default_factory=list)
     category: str = Field(min_length=1)
     query: str = Field(min_length=1)
+    subject_id: str | None = None
+    period: Period | None = None
+    source_policy: SourcePolicy | None = None
 
 
 class SearchItem(BaseModel):

@@ -1,0 +1,56 @@
+{
+  "thread_id": "v2-legacy-waiting",
+  "exists": true,
+  "state": {
+    "task_id": "v2-legacy-waiting",
+    "case_id": "case_saic_600104",
+    "run_id": "e5d4966b46c3bf54254c",
+    "status": "WAITING_APPROVAL",
+    "current_node": "risk",
+    "company_artifact": "artifacts/company_profile_v1.json",
+    "financial_artifact": "artifacts/financial_analysis_v1.json",
+    "research_artifact": null,
+    "risk_artifact": "artifacts/risk_analysis_v1.json",
+    "investigation_intent_artifact": null,
+    "query_plan_artifact": null,
+    "evidence_summary_artifact": null,
+    "query_proposal_artifact": null,
+    "risk_narrative_artifact": "artifacts/risk_narrative_v1.json",
+    "report_draft_artifact": null,
+    "report_expression_artifact": null,
+    "report_artifact": null,
+    "anomaly_flags": [],
+    "risk_level": "MEDIUM",
+    "human_decision": null,
+    "human_comment": null,
+    "external_research_incomplete": false,
+    "failed_node": null,
+    "error_summary": null
+  },
+  "next": [
+    "approval"
+  ],
+  "interrupts": [
+    {
+      "id": "00a31fc97f7a017c147d17d428ea484f",
+      "value": {
+        "task_id": "v2-legacy-waiting",
+        "risk_level": "MEDIUM",
+        "risk_flags": [
+          {
+            "type": "cashflow",
+            "severity": "MEDIUM",
+            "description": "经营现金流较观察期初下降。",
+            "evidence": [
+              "metric:operating_cash_flow_trend"
+            ]
+          }
+        ],
+        "allowed_decisions": [
+          "approve",
+          "research"
+        ]
+      }
+    }
+  ]
+}

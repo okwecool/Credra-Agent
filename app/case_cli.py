@@ -10,6 +10,7 @@ from pathlib import Path
 from app.cases import create_case_template, validate_case
 from app.config import Settings
 from app.runtime.tasks import start_task
+from credra_agent.observability.runtime import entrypoint
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@entrypoint("case_cli")
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     overrides: dict[str, object] = {}

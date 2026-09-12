@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from app.evals.runner import run_eval_suite
+from credra_agent.observability.runtime import entrypoint
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@entrypoint("eval_cli")
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     suite_path = args.suite

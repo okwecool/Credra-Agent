@@ -5,11 +5,14 @@ import json
 import os
 import shutil
 import tempfile
+from datetime import date
 from pathlib import Path
 
 from app.config import Settings
 from app.graph.runner import run_workflow
 from app.mcp.research_client import ResearchMCPClient
+from credra_agent.execution.models import SearchEvidenceArgs
+from credra_agent.intent.models import Period, SourcePolicy
 
 
 async def verify_tools() -> None:
@@ -17,6 +20,20 @@ async def verify_tools() -> None:
     company = await client.search_company("迅驰供应链科技有限公司")
     industry = await client.search_industry("供应链服务")
     assert company.found and industry.found
+    custom_query = "迅驰供应链科技有限公司 债务 逾期 核查"
+    custom = await client.search_evidence(
+        SearchEvidenceArgs(
+            query=custom_query,
+            subject_id="case_risky",
+            subject_name="迅驰供应链科技有限公司",
+            period=Period(start=date(2024, 1, 1), end=date(2025, 12, 31)),
+            source_policy=SourcePolicy(
+                preferred=["exchange_disclosure"], denied=["social_media"]
+            ),
+            category="debt",
+        )
+    )
+    assert custom.query == custom_query
     print("stdio_tools=SUCCESS")
 
 

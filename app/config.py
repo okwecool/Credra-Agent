@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     analysis_llm_research_max_output_tokens: int = Field(
         default=2_400, ge=100, le=8_000
     )
+    intent_mode: str = Field(default="deterministic", pattern=r"^(deterministic|llm)$")
+    intent_model: str = ""
+    intent_llm_max_output_tokens: int = Field(default=1_600, ge=200, le=8_000)
     checkpoint_db_path: Path = Path("checkpoints/credra_agent.db")
     max_retry: int = Field(default=2, ge=0, le=10)
     research_fail_first: bool = False
@@ -72,6 +75,12 @@ class Settings(BaseSettings):
     revenue_threshold: float = Field(default=0.20, ge=-1, le=10)
     data_dir: Path = Path("data")
     trace_dir: Path = Path("traces")
+    service_log_dir: Path = Path("logs")
+    service_log_max_bytes: int = Field(default=10_000_000, ge=1024)
+    service_log_queue_capacity: int = Field(default=1024, ge=1, le=100_000)
+    service_log_enqueue_timeout: float = Field(default=2.0, gt=0, le=60)
+    service_log_ack_timeout: float = Field(default=5.0, gt=0, le=60)
+    service_log_shutdown_timeout: float = Field(default=10.0, gt=0, le=120)
 
 
 def get_settings() -> Settings:

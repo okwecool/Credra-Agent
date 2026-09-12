@@ -10,6 +10,7 @@ import httpx
 
 from app.config import Settings
 from app.models.search import SearchItem, SearchRequest, SearchResponse
+from credra_agent.observability.instrumentation import source_call
 
 
 class SearchProviderError(RuntimeError):
@@ -81,7 +82,11 @@ class SnapshotStore:
 
     @staticmethod
     def key(request: SearchRequest) -> str:
-        canonical = request.model_dump_json(exclude={"subject_aliases"})
+        # exclude_none preserves the key of legacy requests while allowing the
+        # V2 period and source policy to distinguish custom Action snapshots.
+        canonical = request.model_dump_json(
+            exclude={"subject_aliases"}, exclude_none=True
+        )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def path_for(self, request: SearchRequest) -> Path:
@@ -109,6 +114,7 @@ class MockSearchProvider:
     def __init__(self, dataset_path: Path) -> None:
         self.dataset_path = dataset_path
 
+    @source_call
     def search(self, request: SearchRequest) -> SearchResponse:
         with self.dataset_path.open(encoding="utf-8") as file:
             dataset = json.load(file)
@@ -133,6 +139,7 @@ class SnapshotSearchProvider:
     def __init__(self, store: SnapshotStore) -> None:
         self.store = store
 
+    @source_call
     def search(self, request: SearchRequest) -> SearchResponse:
         response = self.store.read(request)
         return response.model_copy(update={"provider": self.name, "request": request})
@@ -165,6 +172,7 @@ class TavilySearchProvider:
         self._snapshot_store = snapshot_store
         self._client = client or httpx.Client(timeout=timeout_seconds)
 
+    @source_call
     def search(self, request: SearchRequest) -> SearchResponse:
         payload: dict[str, object] = {
             "query": request.query,

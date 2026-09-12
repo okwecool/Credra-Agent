@@ -37,6 +37,9 @@ def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.analysis_llm_max_input_chars == 30_000
     assert settings.analysis_llm_max_output_tokens == 1_200
     assert settings.analysis_llm_research_max_output_tokens == 2_400
+    assert settings.intent_mode == "deterministic"
+    assert settings.intent_model == ""
+    assert settings.intent_llm_max_output_tokens == 1_600
     assert settings.checkpoint_db_path == Path("checkpoints/credra_agent.db")
     assert settings.max_retry == 2
     assert settings.research_fail_first is False

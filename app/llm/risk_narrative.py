@@ -16,6 +16,8 @@ from app.models.analysis import (
     RiskNarrativeExplanation,
 )
 from app.models.risk import RiskAnalysis
+from credra_agent.observability.events import log_context
+from credra_agent.observability.instrumentation import validation
 
 PROMPT_VERSION = "m4a-risk-narrative-v1"
 _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "risk_narrative.md"
@@ -73,6 +75,7 @@ def _fallback(
     )
 
 
+@validation("citation")
 def _validate_citations(draft: RiskNarrativeDraft, entries: list[dict]) -> None:
     allowed_by_risk = {
         entry["risk_id"]: set(entry["allowed_evidence_ids"]) for entry in entries
@@ -150,7 +153,8 @@ def build_risk_narrative(
             },
             progress_callback=progress_callback,
         )
-        _validate_citations(result.output, entries)
+        with log_context(call_id=result.call_id):
+            _validate_citations(result.output, entries)
     except (OSError, StructuredModelError) as exc:
         error = (
             exc

@@ -23,6 +23,7 @@ venv/
 env/
 
 # Runtime data
+/logs/
 checkpoints/*.db
 checkpoints/*.db-*
 traces/*.jsonl

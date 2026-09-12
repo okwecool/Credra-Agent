@@ -82,6 +82,7 @@ $previousTemp = $env:TEMP
 $previousTmp = $env:TMP
 $offlineEnvironment = @{
     ANALYSIS_MODE = $env:ANALYSIS_MODE
+    INTENT_MODE = $env:INTENT_MODE
     ANALYSIS_LLM_ENABLE_THINKING = $env:ANALYSIS_LLM_ENABLE_THINKING
     ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS = $env:ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS
     MODEL_API_KEY = $env:MODEL_API_KEY
@@ -95,6 +96,7 @@ New-Item -ItemType Directory -Path $testTempDir -Force | Out-Null
 $env:TEMP = $testTempDir
 $env:TMP = $testTempDir
 $env:ANALYSIS_MODE = "deterministic"
+$env:INTENT_MODE = "deterministic"
 Remove-Item Env:ANALYSIS_LLM_ENABLE_THINKING -ErrorAction SilentlyContinue
 Remove-Item Env:ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS -ErrorAction SilentlyContinue
 $env:MODEL_API_KEY = ""
@@ -110,12 +112,12 @@ try {
 
     Write-Host "[1/5] Ruff check"
     Invoke-Checked -Command $pythonExe -Arguments @(
-        "-m", "ruff", "check", "app", "spikes", "tests", "chainlit_app.py"
+        "-m", "ruff", "check", "app", "credra_agent", "spikes", "tests", "chainlit_app.py"
     )
 
     Write-Host "[2/5] Ruff format check"
     Invoke-Checked -Command $pythonExe -Arguments @(
-        "-m", "ruff", "format", "--check", "app", "spikes", "tests", "chainlit_app.py"
+        "-m", "ruff", "format", "--check", "app", "credra_agent", "spikes", "tests", "chainlit_app.py"
     )
 
     Write-Host "[3/5] Pytest"

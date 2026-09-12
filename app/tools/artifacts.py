@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from credra_agent.observability.instrumentation import artifact_operation
+
 
 class ArtifactStore:
     """Read and write versioned artifacts beneath one execution directory."""
@@ -27,6 +29,7 @@ class ArtifactStore:
             raise ValueError(f"artifact path escapes run directory: {reference}")
         return target
 
+    @artifact_operation("ARTIFACT_WRITE")
     def write_json(self, reference: str, value: BaseModel | dict[str, Any]) -> str:
         target = self._resolve_reference(reference)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -63,16 +66,19 @@ class ArtifactStore:
             version = int(match.group(1)) + 1
         return f"artifacts/{base_name}_v{version}{suffix}"
 
+    @artifact_operation("ARTIFACT_READ")
     def read_json(self, reference: str) -> dict[str, Any]:
         target = self._resolve_reference(reference)
         with target.open(encoding="utf-8") as file:
             return json.load(file)
 
+    @artifact_operation("ARTIFACT_WRITE")
     def write_markdown(self, reference: str, content: str) -> str:
         target = self._resolve_reference(reference)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         return reference
 
+    @artifact_operation("ARTIFACT_READ")
     def read_markdown(self, reference: str) -> str:
         return self._resolve_reference(reference).read_text(encoding="utf-8")

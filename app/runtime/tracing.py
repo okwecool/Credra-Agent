@@ -1,11 +1,15 @@
 """Append-only JSONL tracing with deliberately small summaries."""
 
 import json
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
 from app.models.trace import TraceEvent, TraceStatus
+from credra_agent.observability.runtime import emit
+
+_write_lock = threading.RLock()
 
 
 class TraceWriter:
@@ -42,8 +46,30 @@ class TraceWriter:
         )
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         path = self.trace_dir / f"{task_id}.jsonl"
-        with path.open("a", encoding="utf-8") as file:
-            file.write(event.model_dump_json() + "\n")
+        with _write_lock:
+            line = 1
+            if path.exists():
+                with path.open(encoding="utf-8") as existing:
+                    line += sum(1 for _ in existing)
+            with path.open("a", encoding="utf-8") as file:
+                file.write(event.model_dump_json() + "\n")
+            emit(
+                "TRACE_MIRROR",
+                thread_id=task_id,
+                node=node,
+                status=status.value,
+                trace_event_ref=f"{task_id}.{line}",
+                trace_line=line,
+                duration_ms=latency_ms,
+            )
+            if event_type == "RETRY":
+                emit(
+                    "RETRY",
+                    thread_id=task_id,
+                    node=node,
+                    status="RETRY",
+                    trace_event_ref=f"{task_id}.{line}",
+                )
 
     def instant(
         self,
