@@ -140,8 +140,8 @@
     },
     {
       "relative_path": "docs/materials/v2-2-p20/material_catalog.json",
-      "bytes": 20741,
-      "sha256": "sha256:b69f89f3ef866fed0900e094ea0fb9ff273618d4c2adeb599bd0d4cdf6082387",
+      "bytes": 20723,
+      "sha256": "sha256:5d425add33a36dd0f3d406cd766ec33130c2c22403d14620d6ff5633e1def0b6",
       "tracked_in_git": true
     }
   ]

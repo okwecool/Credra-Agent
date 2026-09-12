@@ -8,12 +8,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from credra_agent.evidence.models import EvidenceBundle
+
 
 class ExecutionOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["SUCCESS", "NO_RESULT", "UNAVAILABLE", "MISSING_DATA", "FAILED"]
     summary: str = Field(min_length=1, max_length=2000)
     payload: dict = Field(default_factory=dict)
+    evidence_bundle: EvidenceBundle | None = None
     artifact_refs: list[str] = Field(default_factory=list)
     novelty_keys: list[str] = Field(default_factory=list)
     answered_question_ids: list[str] = Field(default_factory=list)

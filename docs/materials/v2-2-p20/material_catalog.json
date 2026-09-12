@@ -3,9 +3,9 @@
   "product": "Credra Agent",
   "case_id_reserved": "case_byd_002594_v2",
   "related_legacy_case_id": "case_byd_002594",
-  "status": "PENDING_MATERIAL_REVIEW",
+  "status": "FROZEN",
   "scope_approved_by_user": true,
-  "material_list_approved_by_user": false,
+  "material_list_approved_by_user": true,
   "cutoff": "2026-06-30",
   "analysis_years": [
     2023,

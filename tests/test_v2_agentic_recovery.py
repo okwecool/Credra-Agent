@@ -522,7 +522,7 @@ def test_authorized_natural_language_runs_the_agentic_vertical_slice(
     assert model.calls == 2
 
 
-def test_research_executor_maps_verified_service_result_to_question_coverage():
+def test_research_executor_does_not_complete_question_from_legacy_verified_flag():
     captured = []
 
     class FakeResearchClient:
@@ -558,8 +558,9 @@ def test_research_executor_maps_verified_service_result_to_question_coverage():
 
     assert captured[0].model_dump(mode="json") == arguments
     assert outcome.status == "SUCCESS"
-    assert outcome.answered_question_ids == ["q-regulatory"]
-    assert outcome.gap_question_ids == []
+    assert outcome.answered_question_ids == []
+    assert outcome.gap_question_ids == ["q-regulatory"]
+    assert outcome.evidence_bundle.claims[0].status == "UNVERIFIED"
     assert outcome.novelty_keys == [f"fact:{'a' * 64}"]
 
 

@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.llm.gateway import StructuredModel, StructuredModelError
 from app.tools.artifacts import ArtifactStore
+from credra_agent.evidence.artifacts import write_evidence_artifacts
 from credra_agent.execution.budget import (
     BudgetAuditRecord,
     BudgetError,
@@ -486,7 +487,12 @@ class Coordinator:
                     )
 
                 observation = self._record_observation(
-                    action_id, decision_number, outcome, artifact_refs, available_refs
+                    action_id,
+                    decision_number,
+                    outcome,
+                    artifact_refs,
+                    available_refs,
+                    task_spec,
                 )
                 observations.append(observation)
                 observation_index.append(
@@ -537,8 +543,19 @@ class Coordinator:
         outcome: ExecutionOutcome,
         artifact_refs: list[str],
         available_refs: set[str],
+        task_spec: TaskSpec,
     ) -> Observation:
         refs = list(outcome.artifact_refs)
+        if outcome.evidence_bundle is not None:
+            evidence_refs = write_evidence_artifacts(
+                self.artifacts,
+                outcome.evidence_bundle,
+                number,
+                as_of=task_spec.as_of,
+                subject_id=task_spec.subject_id,
+            )
+            refs.extend(evidence_refs)
+            artifact_refs.extend(evidence_refs)
         if outcome.payload:
             payload_ref = self._write_versioned(
                 "agent_tool_result", None, outcome.payload, suffix=number

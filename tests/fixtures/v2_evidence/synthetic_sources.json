@@ -1,0 +1,15 @@
+{
+  "source_kind": "SYNTHETIC",
+  "notice": "Fictional P21 control materials; no assertion about BYD or any real enterprise.",
+  "entities": [
+    {"entity_id": "control-parent", "legal_name": "示例甲股份有限公司", "aliases": ["示例甲"]},
+    {"entity_id": "control-child", "legal_name": "示例甲汽车工业有限公司", "aliases": []},
+    {"entity_id": "control-other", "legal_name": "示例甲商贸有限公司", "aliases": ["示例甲"]}
+  ],
+  "claim": "示例甲股份有限公司全部应收账款已逾期。",
+  "records": [
+    {"id": "original", "publisher": "独立调查机构甲", "origin": "original-investigation", "text": "独立调查机构甲声称：示例甲股份有限公司全部应收账款已逾期。", "relation": "SUPPORTS"},
+    {"id": "repost", "publisher": "媒体乙", "origin": "original-investigation", "text": "媒体乙转述独立调查机构甲的主张：示例甲股份有限公司全部应收账款已逾期。", "relation": "SUPPORTS"},
+    {"id": "clarification", "publisher": "示例甲股份有限公司", "origin": "company-clarification", "text": "示例甲股份有限公司声明：并非全部应收账款已逾期；完整账龄暂未提供。", "relation": "REFUTES"}
+  ]
+}

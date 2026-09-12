@@ -14,6 +14,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from app.llm.gateway import StructuredModel, StructuredModelError
 from app.tools.artifacts import ArtifactStore
+from credra_agent.evidence.artifacts import (
+    validate_evidence_artifacts,
+    write_evidence_artifacts,
+)
 from credra_agent.execution.executor import ActionExecutor, ExecutionOutcome
 from credra_agent.execution.ledger import (
     ActionLedger,
@@ -488,6 +492,18 @@ class AgenticGraphRuntime:
         observation = Observation.model_validate(
             self.artifacts.read_json(record.observation_ref)
         )
+        try:
+            task = self._read_task(state)
+            validate_evidence_artifacts(
+                self.artifacts,
+                observation.artifact_refs,
+                as_of=task.as_of,
+                subject_id=task.subject_id,
+            )
+        except (OSError, ValueError, TypeError):
+            return self._limited(
+                state, "EVIDENCE_ARTIFACT_INVALID", state["budget_ledger_ref"]
+            )
         return self._project_observation(state, record, observation, replayed=True)
 
     def _project_observation(
@@ -700,6 +716,17 @@ class AgenticGraphRuntime:
                     outcome.payload,
                 )
                 outcome.artifact_refs.append(payload_ref)
+            if outcome.evidence_bundle is not None:
+                task = self._read_task(state)
+                outcome.artifact_refs.extend(
+                    write_evidence_artifacts(
+                        self.artifacts,
+                        outcome.evidence_bundle,
+                        action.plan_version,
+                        as_of=task.as_of,
+                        subject_id=task.subject_id,
+                    )
+                )
             observation = Observation(
                 observation_id=f"observation-{action.plan_version}-{action.action_id[-8:]}",
                 action_id=action.action_id,

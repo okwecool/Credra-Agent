@@ -1,6 +1,12 @@
 """Production adapters from registered agent actions to existing services."""
 
+from collections.abc import Callable
+
 from app.mcp.research_client import ResearchMCPClient, run_async
+from app.models.content import FetchedDocument
+from credra_agent.evidence.adapters import from_research_result
+from credra_agent.evidence.models import Entity, SourceKind
+from credra_agent.evidence.service import summarize_bundle
 from credra_agent.execution.executor import (
     ActionExecutor,
     ExecutionOutcome,
@@ -11,7 +17,11 @@ from credra_agent.intent.models import TaskSpec
 
 
 def build_agentic_executor(
-    task_spec: TaskSpec, *, research_client: ResearchMCPClient | None = None
+    task_spec: TaskSpec,
+    *,
+    research_client: ResearchMCPClient | None = None,
+    evidence_source_kind: SourceKind = "UNKNOWN",
+    document_loader: Callable[[str], FetchedDocument] | None = None,
 ) -> ActionExecutor:
     """Expose only handlers that are connected to real application services."""
 
@@ -25,7 +35,24 @@ def build_agentic_executor(
             for item in task_spec.questions
             if item.focus in {"general", arguments.category}
         ]
-        verified = result.verification_status in {"SUPPORTED", "CORROBORATED"}
+        mapping_failed = False
+        try:
+            bundle = from_research_result(
+                result,
+                target=Entity(
+                    entity_id=task_spec.subject_id, legal_name=task_spec.subject_name
+                ),
+                as_of=task_spec.as_of,
+                source_kind=evidence_source_kind,
+                document_loader=document_loader,
+            )
+            evidence_summary = summarize_bundle(bundle)
+        except Exception:  # noqa: BLE001 - local mapping cannot invalidate request delivery
+            # Keep the actual returned request result; local mapping failure
+            # must not turn it into an uncertain/retryable external request.
+            bundle = None
+            evidence_summary = {"conflict_ids": []}
+            mapping_failed = True
         if result.status == "FAILED":
             status = "FAILED"
             error_code = "RESEARCH_SERVICE_FAILED"
@@ -46,14 +73,19 @@ def build_agentic_executor(
         return ExecutionOutcome(
             status=status,
             summary=(
-                "检索与核验完成，结果已保存为可追溯 Artifact。"
+                "检索结果已保存；V2 证据映射失败，需修复后核验。"
+                if mapping_failed
+                else "检索结果与 V2 证据已保存；主体、来源和问题完成度仍需核验。"
                 if result.found
                 else "指定范围内未检出可采信结果。"
             ),
             payload=result.model_dump(mode="json"),
+            evidence_bundle=bundle,
             novelty_keys=novelty,
-            answered_question_ids=matching_questions if verified else [],
-            gap_question_ids=[] if verified else matching_questions,
+            # Aggregate legacy verification is not semantic completion of a
+            # user's question; P22 will consume the richer evidence artifacts.
+            gap_question_ids=matching_questions,
+            conflict_ids=evidence_summary["conflict_ids"],
             error_code=error_code,
             actual_external_requests=1,
         )
