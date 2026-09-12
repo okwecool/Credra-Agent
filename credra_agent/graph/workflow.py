@@ -18,12 +18,17 @@ from credra_agent.evidence.artifacts import (
     validate_evidence_artifacts,
     write_evidence_artifacts,
 )
-from credra_agent.execution.executor import ActionExecutor, ExecutionOutcome
+from credra_agent.execution.executor import (
+    ActionExecutor,
+    ExecutionContext,
+    ExecutionOutcome,
+)
 from credra_agent.execution.ledger import (
     ActionLedger,
     DurableBudgetExhausted,
     ExecutionRecord,
 )
+from credra_agent.execution.model_budget import external_usage, model_reservation
 from credra_agent.execution.models import Action, AskUserArgs
 from credra_agent.execution.policy import ActionPolicy, PolicyViolation
 from credra_agent.execution.registry import ActionRegistry, default_registry
@@ -35,6 +40,12 @@ from credra_agent.planning.coordinator import (
     PROMPT_PATH,
     PROMPT_VERSION,
     DecisionFallback,
+)
+from credra_agent.planning.evidence_context import (
+    assess_questions,
+    coordinator_evidence_context,
+    current_conflicts,
+    store_proposals,
 )
 from credra_agent.planning.models import (
     Coverage,
@@ -198,6 +209,9 @@ class AgenticGraphRuntime:
         require_logging()
         task = self._read_task(state)
         authorization = self._read_authorization(state)
+        model_external, model_tokens = model_reservation(
+            self.model, authorization.limits
+        )
         plan_version = state["iteration"] + 1
         if authorization.task_spec_version != task.version:
             return {
@@ -252,6 +266,9 @@ class AgenticGraphRuntime:
             "available_references": sorted(state["artifact_refs"]),
             "available_tools": catalog,
             "budget": self.ledger.budget_snapshot(state["task_id"], authorization),
+            "evidence_context": coordinator_evidence_context(
+                self.artifacts, set(state["artifact_refs"]), task
+            ),
             "policy_rejections": state["policy_rejections"][-10:],
             "no_progress_locked": state["no_progress_count"]
             >= authorization.limits.no_progress_limit,
@@ -276,13 +293,22 @@ class AgenticGraphRuntime:
             budget_ref = self._budget_ref(state, authorization)
             return self._limited(state, "MODEL_REQUEST_RESULT_UNCERTAIN", budget_ref)
         else:
+            if budget_record is not None and (
+                budget_record.requested_external != model_external
+                or budget_record.requested_tokens != model_tokens
+            ):
+                return self._limited(
+                    state,
+                    "MODEL_REQUEST_PROFILE_CHANGED",
+                    self._budget_ref(state, authorization),
+                )
             try:
                 self.ledger.reserve_budget(
                     task_id=state["task_id"],
                     operation_id=operation_id,
                     phase="MODEL",
-                    external=authorization.limits.model_attempt_reservation,
-                    tokens=authorization.limits.decision_token_reservation,
+                    external=model_external,
+                    tokens=model_tokens,
                     authorization=authorization,
                 )
                 self.ledger.mark_budget_dispatched(state["task_id"], operation_id)
@@ -310,9 +336,7 @@ class AgenticGraphRuntime:
                 self.ledger.settle_budget(
                     state["task_id"],
                     operation_id,
-                    actual_external=result.attempts
-                    if result.accounting_complete
-                    else None,
+                    actual_external=external_usage(result),
                     actual_tokens=tokens,
                     result_ref=decision_ref,
                     active_seconds=perf_counter() - model_started,
@@ -324,8 +348,10 @@ class AgenticGraphRuntime:
                 self.ledger.settle_budget(
                     state["task_id"],
                     operation_id,
-                    actual_external=exc.attempts or None,
-                    actual_tokens=None,
+                    actual_external=exc.external_requests
+                    if exc.external_requests is not None
+                    else exc.attempts or None,
+                    actual_tokens=0 if exc.external_requests == 0 else None,
                     active_seconds=perf_counter() - model_started,
                 )
                 if self.fallback is not None:
@@ -355,12 +381,44 @@ class AgenticGraphRuntime:
         )
         budget_ref = self._budget_ref(state, authorization)
         refs = [*state["artifact_refs"], decision_ref, budget_ref]
+        try:
+            proposal_ref = store_proposals(
+                self.artifacts,
+                draft.claim_proposals,
+                references=set(state["artifact_refs"]),
+                task=task,
+                version=plan_version,
+            )
+        except ValueError:
+            return {
+                **self._limited(state, "INVALID_CLAIM_PROPOSAL", budget_ref),
+                "artifact_refs": refs,
+            }
+        if proposal_ref:
+            refs.append(proposal_ref)
 
         if draft.decision == "FINISH":
+            coverage.unresolved_conflict_ids = current_conflicts(
+                self.artifacts, set(refs), task, coverage.unresolved_conflict_ids
+            )
+            coverage.review_required = bool(coverage.unresolved_conflict_ids)
+            try:
+                semantic_answered, semantic_gaps = assess_questions(
+                    self.artifacts,
+                    draft.question_assessments,
+                    references=set(refs),
+                    task=task,
+                )
+            except ValueError:
+                semantic_answered, semantic_gaps = [], required
+            answered = set(coverage.answered_question_ids) | set(semantic_answered)
             coverage = _coverage(required, observations).model_copy(
                 update={
+                    "answered_question_ids": sorted(answered),
                     "gap_question_ids": sorted(
-                        set(coverage.gap_question_ids) | set(draft.gap_question_ids)
+                        (set(coverage.gap_question_ids) - answered)
+                        | set(draft.gap_question_ids)
+                        | set(semantic_gaps)
                     ),
                     "unresolved_conflict_ids": sorted(
                         set(coverage.unresolved_conflict_ids) | set(draft.conflict_ids)
@@ -369,6 +427,19 @@ class AgenticGraphRuntime:
                     or draft.review_required,
                 }
             )
+            assessment_ref = self.artifacts.write_json(
+                f"artifacts/agent_question_assessment_v{plan_version}.json",
+                {
+                    "schema_version": "question_assessment_v2_p22",
+                    "accepted_answered_question_ids": semantic_answered,
+                    "unresolved_question_ids": semantic_gaps,
+                    "assessments": [
+                        item.model_dump(mode="json")
+                        for item in draft.question_assessments
+                    ],
+                },
+            )
+            refs.append(assessment_ref)
             coverage_ref = self._write_next(
                 "agent_coverage",
                 state.get("coverage_ref"),
@@ -464,7 +535,7 @@ class AgenticGraphRuntime:
         requested_external = (
             0
             if action.tool == "ask_user"
-            else self.executor.reservation_for(action.tool)
+            else self.executor.reservation_for(action.tool, authorization.limits)
         )
         self.ledger.reserve_action(
             task_id=state["task_id"],
@@ -566,9 +637,16 @@ class AgenticGraphRuntime:
             state.get("coverage_ref"),
             _coverage(required, observations).model_dump(mode="json"),
         )
+        prior_novelty = {
+            key
+            for item in observations
+            if item.action_id != observation.action_id
+            for key in item.novelty_keys
+        }
         no_progress = (
             state["no_progress_count"] + 1
-            if observation.status == "NO_RESULT" or not observation.novelty_keys
+            if observation.status == "NO_RESULT"
+            or not set(observation.novelty_keys) - prior_novelty
             else 0
         )
         status = (
@@ -678,13 +756,27 @@ class AgenticGraphRuntime:
                     actual_external_requests=0,
                 )
             else:
+                if (
+                    self.executor.reservation_for(action.tool, authorization.limits)
+                    > record.requested_external
+                ):
+                    self.ledger.mark_failed(
+                        state["task_id"], action_id, "MODEL_REQUEST_PROFILE_CHANGED"
+                    )
+                    return self._limited(
+                        state,
+                        "MODEL_REQUEST_PROFILE_CHANGED",
+                        self._budget_ref(state, authorization),
+                    )
                 try:
                     self.ledger.reserve_budget(
                         task_id=state["task_id"],
                         operation_id=record.budget_operation_id,
                         phase="TOOL",
                         external=record.requested_external,
-                        tokens=0,
+                        tokens=self.executor.token_reservation_for(
+                            action.tool, authorization.limits
+                        ),
                         authorization=authorization,
                     )
                 except DurableBudgetExhausted as exc:
@@ -699,7 +791,16 @@ class AgenticGraphRuntime:
                 arguments = self.registry.validate(action.tool, action.arguments)
                 tool_started = perf_counter()
                 emit("TOOL_START", status="STARTED", tool=action.tool)
-                outcome = self.executor.execute(action.tool, arguments)
+                outcome = self.executor.execute(
+                    action.tool,
+                    arguments,
+                    context=ExecutionContext(
+                        artifacts=self.artifacts,
+                        task_spec=self._read_task(state),
+                        limits=authorization.limits,
+                        available_refs=set(state["artifact_refs"]),
+                    ),
+                )
                 emit(
                     "TOOL_END",
                     status=outcome.status,
@@ -756,7 +857,7 @@ class AgenticGraphRuntime:
                     state["task_id"],
                     record.budget_operation_id,
                     actual_external=outcome.actual_external_requests,
-                    actual_tokens=0,
+                    actual_tokens=outcome.actual_tokens,
                     result_ref=observation_ref,
                     active_seconds=perf_counter() - tool_started,
                 )

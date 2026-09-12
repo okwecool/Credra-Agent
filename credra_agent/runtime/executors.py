@@ -2,9 +2,12 @@
 
 from collections.abc import Callable
 
+from app.config import Settings
+from app.llm.gateway import StructuredModel, build_analysis_model
 from app.mcp.research_client import ResearchMCPClient, run_async
 from app.models.content import FetchedDocument
 from credra_agent.evidence.adapters import from_research_result
+from credra_agent.evidence.investigation import InvestigationActions
 from credra_agent.evidence.models import Entity, SourceKind
 from credra_agent.evidence.service import summarize_bundle
 from credra_agent.execution.executor import (
@@ -14,6 +17,29 @@ from credra_agent.execution.executor import (
 )
 from credra_agent.execution.models import SearchEvidenceArgs
 from credra_agent.intent.models import TaskSpec
+from credra_agent.planning.models import CoordinatorLimits
+
+
+def build_agentic_model(
+    settings: Settings, limits: CoordinatorLimits
+) -> StructuredModel | None:
+    """Preserve thinking, bind each stage to authorized caps and aggregate usage."""
+    scoped = settings.model_copy(
+        update={
+            "analysis_llm_max_retry": min(
+                settings.analysis_llm_max_retry, limits.model_attempt_reservation - 1
+            ),
+            "analysis_llm_thinking_budget_tokens": min(
+                settings.analysis_llm_thinking_budget_tokens,
+                limits.decision_max_output_tokens,
+            ),
+        }
+    )
+    return build_analysis_model(
+        scoped,
+        process_max_output_tokens=limits.decision_max_output_tokens,
+        aggregate_accounting=True,
+    )
 
 
 def build_agentic_executor(
@@ -22,6 +48,10 @@ def build_agentic_executor(
     research_client: ResearchMCPClient | None = None,
     evidence_source_kind: SourceKind = "UNKNOWN",
     document_loader: Callable[[str], FetchedDocument] | None = None,
+    verifier_model: StructuredModel | None = None,
+    content_fetcher: Callable[[str], FetchedDocument] | None = None,
+    fetch_external_requests: int = 0,
+    fetch_actual_external_requests: int | None = None,
 ) -> ActionExecutor:
     """Expose only handlers that are connected to real application services."""
 
@@ -29,7 +59,12 @@ def build_agentic_executor(
 
     def search_evidence(arguments):
         assert isinstance(arguments, SearchEvidenceArgs)
-        result = run_async(client.search_evidence(arguments))
+        search = (
+            client.search_candidates
+            if isinstance(client, ResearchMCPClient)
+            else client.search_evidence
+        )
+        result = run_async(search(arguments))
         matching_questions = [
             item.question_id
             for item in task_spec.questions
@@ -90,10 +125,26 @@ def build_agentic_executor(
             actual_external_requests=1,
         )
 
-    return ActionExecutor(
-        {
-            "search_evidence": HandlerDefinition(
-                search_evidence, external_request_reservation=1
-            )
-        }
+    services = InvestigationActions(
+        model=verifier_model,
+        fetcher=content_fetcher,
+        fetch_external_requests=fetch_external_requests,
+        fetch_actual_external_requests=fetch_actual_external_requests,
     )
+    handlers = {
+        "search_evidence": HandlerDefinition(
+            search_evidence, external_request_reservation=1
+        ),
+        "read_document": HandlerDefinition(services.read, contextual=True),
+    }
+    if content_fetcher is not None:
+        handlers["fetch_content"] = HandlerDefinition(
+            services.fetch,
+            external_request_reservation=fetch_external_requests,
+            contextual=True,
+        )
+    if verifier_model is not None:
+        handlers["verify_claim"] = HandlerDefinition(
+            services.verify, contextual=True, uses_model=True, model=verifier_model
+        )
+    return ActionExecutor(handlers)

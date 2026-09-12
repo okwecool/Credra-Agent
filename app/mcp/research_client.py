@@ -86,6 +86,26 @@ class ResearchMCPClient:
             raise ResearchServiceError(f"evidence search failed: {exc}") from exc
 
     @tool_call
+    async def search_candidates(
+        self, arguments: SearchEvidenceArgs | dict[str, Any]
+    ) -> ResearchQueryResult:
+        request = SearchEvidenceArgs.model_validate(arguments)
+        try:
+            async with Client(self._session_transport()) as client:
+                result = await client.call_tool(
+                    "search_candidates",
+                    {
+                        "request": request.model_dump(mode="json"),
+                        **_diagnostics(),
+                    },
+                )
+            return self._parse_result(result)
+        except ResearchServiceError:
+            raise
+        except Exception as exc:
+            raise ResearchServiceError("candidate search failed") from exc
+
+    @tool_call
     async def search_company(
         self, company_name: str, categories: list[str] | None = None
     ) -> ResearchQueryResult:

@@ -225,6 +225,7 @@ def start_agentic_task(
     execution_mode: str = "agentic",
     fallback: Any | None = None,
     fault_hook: Any | None = None,
+    initial_evidence_bundle: Any | None = None,
 ) -> dict[str, Any]:
     """Start agentic_v2 explicitly; baseline remains the default start entry."""
 
@@ -254,6 +255,18 @@ def start_agentic_task(
     authorization_ref = artifacts.write_json(
         "artifacts/agent_run_authorization_v1.json", approved
     )
+    initial_evidence_refs = []
+    if initial_evidence_bundle is not None:
+        from credra_agent.evidence.artifacts import write_evidence_artifacts
+        from credra_agent.evidence.models import EvidenceBundle
+
+        initial_evidence_refs = write_evidence_artifacts(
+            artifacts,
+            EvidenceBundle.model_validate(initial_evidence_bundle),
+            0,
+            as_of=spec.as_of,
+            subject_id=spec.subject_id,
+        )
     hypotheses = [
         HypothesisState(
             hypothesis_id=f"hyp-{question.question_id}",
@@ -274,7 +287,14 @@ def start_agentic_task(
         "artifacts/agent_budget_ledger_v1.json",
         ledger.budget_snapshot(thread_id, approved),
     )
-    refs = [task_ref, authorization_ref, hypotheses_ref, index_ref, budget_ref]
+    refs = [
+        task_ref,
+        authorization_ref,
+        hypotheses_ref,
+        index_ref,
+        budget_ref,
+        *initial_evidence_refs,
+    ]
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         config = graph_config(thread_id)
         if checkpointer.get_tuple(config) is not None:

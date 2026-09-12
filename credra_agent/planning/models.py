@@ -67,6 +67,36 @@ class HypothesisUpdate(PlanningModel):
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
 
 
+class ClaimProposal(PlanningModel):
+    """A model hypothesis bound to one question; never a verification receipt."""
+
+    proposal_id: str = Field(pattern=r"^proposal:[a-zA-Z0-9_-]{1,80}$")
+    question_id: str = Field(min_length=1)
+    statement: str = Field(min_length=1, max_length=1200)
+    kind: Literal["HYPOTHESIS", "REPORTED_FACT", "PARTY_STATEMENT", "ANALYST_ESTIMATE"]
+    attributed_to: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def attribution(self) -> "ClaimProposal":
+        if (
+            self.kind in {"PARTY_STATEMENT", "ANALYST_ESTIMATE"}
+            and not self.attributed_to
+        ):
+            raise ValueError("statement or estimate proposal requires attribution")
+        return self
+
+
+class QuestionAssessment(PlanningModel):
+    """Semantic completion proposal subject to runtime evidence gates."""
+
+    question_id: str = Field(min_length=1)
+    status: Literal["ANSWERED", "UNRESOLVED"]
+    conclusion: str = Field(min_length=1, max_length=1600)
+    evidence_refs: list[str] = Field(min_length=1, max_length=20)
+    claim_ids: list[str] = Field(min_length=1, max_length=20)
+    limitations: list[str] = Field(default_factory=list, max_length=20)
+
+
 class Observation(PlanningModel):
     observation_id: str = Field(min_length=1)
     action_id: str = Field(min_length=1)
@@ -126,6 +156,10 @@ class DecisionDraft(PlanningModel):
     conflict_ids: list[str] = Field(default_factory=list, max_length=50)
     review_required: bool = False
     limitations: list[str] = Field(default_factory=list, max_length=50)
+    claim_proposals: list[ClaimProposal] = Field(default_factory=list, max_length=10)
+    question_assessments: list[QuestionAssessment] = Field(
+        default_factory=list, max_length=20
+    )
 
     @model_validator(mode="after")
     def coherent(self) -> "DecisionDraft":

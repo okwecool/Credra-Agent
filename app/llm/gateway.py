@@ -55,10 +55,12 @@ class StructuredModelError(RuntimeError):
         message: str,
         *,
         attempts: int = 0,
+        external_requests: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.attempts = attempts
+        self.external_requests = external_requests
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,7 @@ class StructuredModelResult(Generic[OutputT]):
     output_tokens: int | None = None
     call_id: str | None = None
     accounting_complete: bool = False
+    external_requests: int | None = None
 
 
 @runtime_checkable
@@ -106,6 +109,8 @@ class OpenAICompatibleStructuredModel:
         enable_thinking: bool | None = None,
         thinking_ttft_seconds: float = 30.0,
         thinking_budget_tokens: int = 800,
+        process_max_output_tokens: int | None = None,
+        aggregate_accounting: bool = False,
         process_summary_max_chars: int = 400,
         client: Any | None = None,
     ) -> None:
@@ -126,6 +131,8 @@ class OpenAICompatibleStructuredModel:
         self._enable_thinking = enable_thinking
         self._thinking_ttft_seconds = thinking_ttft_seconds
         self._thinking_budget_tokens = thinking_budget_tokens
+        self._process_max_output_tokens = process_max_output_tokens
+        self._aggregate_accounting = aggregate_accounting
         self._process_summary_max_chars = process_summary_max_chars
         self._structured_timeout_seconds = timeout_seconds
         self._client = client or OpenAI(
@@ -249,6 +256,14 @@ class OpenAICompatibleStructuredModel:
                 )
         return "".join(content_parts), usage, reasoning_chars
 
+    @property
+    def request_reservation_multiplier(self) -> int:
+        return 2 if self._enable_thinking is True else 1
+
+    @property
+    def token_reservation_multiplier(self) -> int:
+        return self.request_reservation_multiplier
+
     def _public_process_summary(
         self,
         *,
@@ -256,6 +271,7 @@ class OpenAICompatibleStructuredModel:
         prompt_version: str,
         payload: dict[str, Any],
         progress_callback: ModelProgressCallback | None,
+        request_usage: list | None = None,
     ) -> str | None:
         if self._enable_thinking is not True:
             return None
@@ -285,12 +301,15 @@ class OpenAICompatibleStructuredModel:
                 ),
             )
             try:
-                content, _, reasoning_chars = self._stream_completion(
+                if request_usage is not None:
+                    request_usage.append(None)
+                content, usage, reasoning_chars = self._stream_completion(
                     request={
                         "model": self.model_name,
                         "messages": process_messages,
                         "temperature": 0,
-                        "max_tokens": max(
+                        "max_tokens": self._process_max_output_tokens
+                        or max(
                             self._max_output_tokens,
                             self._thinking_budget_tokens + 400,
                         ),
@@ -305,6 +324,8 @@ class OpenAICompatibleStructuredModel:
                     phase="PROCESS",
                     progress_callback=progress_callback,
                 )
+                if request_usage is not None:
+                    request_usage[-1] = usage
                 summary = " ".join(_CONTROL_CHARS.sub("", content).split())
                 summary = summary[: self._process_summary_max_chars]
                 if not summary:
@@ -354,12 +375,15 @@ class OpenAICompatibleStructuredModel:
             raise StructuredModelError(
                 "INPUT_TOO_LARGE",
                 "structured model input exceeds configured limit",
+                external_requests=0 if self._aggregate_accounting else None,
             )
+        request_usage = [] if self._aggregate_accounting else None
         process_summary = self._public_process_summary(
             purpose=purpose,
             prompt_version=prompt_version,
             payload=payload,
             progress_callback=progress_callback,
+            request_usage=request_usage,
         )
         user_payload = json.dumps(
             {
@@ -389,6 +413,8 @@ class OpenAICompatibleStructuredModel:
                 ),
             )
             try:
+                if request_usage is not None:
+                    request_usage.append(None)
                 request: dict[str, Any] = {
                     "model": self.model_name,
                     "messages": messages,
@@ -410,6 +436,8 @@ class OpenAICompatibleStructuredModel:
                     phase="STRUCTURED",
                     progress_callback=progress_callback,
                 )
+                if request_usage is not None:
+                    request_usage[-1] = usage
                 if not isinstance(content, str) or not content.strip():
                     emit(
                         "LLM_VALIDATION",
@@ -455,16 +483,38 @@ class OpenAICompatibleStructuredModel:
                     purpose=purpose,
                     attempt=attempt,
                 )
+                input_tokens = getattr(usage, "prompt_tokens", None)
+                output_tokens = getattr(usage, "completion_tokens", None)
+                complete = self._enable_thinking is not True and attempt == 1
+                if request_usage is not None:
+                    complete = all(
+                        item is not None
+                        and getattr(item, "prompt_tokens", None) is not None
+                        and getattr(item, "completion_tokens", None) is not None
+                        for item in request_usage
+                    )
+                    input_tokens = (
+                        sum(item.prompt_tokens for item in request_usage)
+                        if complete
+                        else None
+                    )
+                    output_tokens = (
+                        sum(item.completion_tokens for item in request_usage)
+                        if complete
+                        else None
+                    )
                 return StructuredModelResult(
                     output=output,
                     model_name=self.model_name,
                     attempts=attempt,
                     latency_ms=max(0, round((perf_counter() - started) * 1000)),
                     call_id=(CONTEXT.get() or {}).get("call_id"),
-                    input_tokens=getattr(usage, "prompt_tokens", None),
-                    output_tokens=getattr(usage, "completion_tokens", None),
-                    accounting_complete=self._enable_thinking is not True
-                    and attempt == 1,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    accounting_complete=complete,
+                    external_requests=len(request_usage)
+                    if request_usage is not None
+                    else None,
                 )
             except (ValidationError, ValueError, IndexError, AttributeError) as exc:
                 last_error = exc
@@ -492,11 +542,16 @@ class OpenAICompatibleStructuredModel:
             last_code,
             message,
             attempts=self._max_attempts,
+            external_requests=len(request_usage) if request_usage is not None else None,
         ) from last_error
 
 
 def build_analysis_model(
-    settings: Settings, *, client: Any | None = None
+    settings: Settings,
+    *,
+    client: Any | None = None,
+    process_max_output_tokens: int | None = None,
+    aggregate_accounting: bool = False,
 ) -> StructuredModel | None:
     if settings.analysis_mode == "deterministic":
         return None
@@ -511,6 +566,8 @@ def build_analysis_model(
         enable_thinking=settings.analysis_llm_enable_thinking,
         thinking_ttft_seconds=settings.analysis_llm_thinking_ttft_seconds,
         thinking_budget_tokens=settings.analysis_llm_thinking_budget_tokens,
+        process_max_output_tokens=process_max_output_tokens,
+        aggregate_accounting=aggregate_accounting,
         process_summary_max_chars=settings.analysis_llm_process_summary_max_chars,
         client=client,
     )

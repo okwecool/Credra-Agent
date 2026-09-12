@@ -72,6 +72,7 @@ def _execute_requests(
     content_fetcher: ContentFetcher | None = None,
     fact_verifier: FactVerifier | None = None,
     settings: Settings | None = None,
+    candidates_only: bool = False,
 ) -> ResearchQueryResult:
     resolved_settings = settings or get_settings()
     if not requests:
@@ -86,12 +87,12 @@ def _execute_requests(
             for item in evidence_from_response(
                 response,
                 min_relevance_score=resolved_settings.search_min_relevance_score,
-                trusted_fixture=is_mock,
+                trusted_fixture=is_mock and not candidates_only,
             )
         ]
     )
-    active_content_fetcher = content_fetcher
-    if active_content_fetcher is None and provider is None:
+    active_content_fetcher = None if candidates_only else content_fetcher
+    if not candidates_only and active_content_fetcher is None and provider is None:
         active_content_fetcher = build_content_fetcher(resolved_settings)
     content_store = ContentSnapshotStore(resolved_settings.search_content_snapshot_dir)
     evidence, content_fetch_status = fetch_candidate_content(
@@ -101,9 +102,10 @@ def _execute_requests(
         max_candidates=resolved_settings.search_fetch_max_candidates,
         max_concurrency=resolved_settings.search_fetch_max_concurrency,
     )
-    active_fact_verifier = fact_verifier
+    active_fact_verifier = None if candidates_only else fact_verifier
     if (
         active_fact_verifier is None
+        and not candidates_only
         and provider is None
         and any(item.evidence_stage == "CANDIDATE" for item in evidence)
     ):
@@ -163,6 +165,7 @@ def _search_evidence(
     content_fetcher: ContentFetcher | None = None,
     fact_verifier: FactVerifier | None = None,
     settings: Settings | None = None,
+    candidates_only: bool = False,
 ) -> ResearchQueryResult:
     """Execute the exact typed Action query; no category template is applied."""
 
@@ -184,6 +187,7 @@ def _search_evidence(
         content_fetcher=content_fetcher,
         fact_verifier=fact_verifier,
         settings=settings,
+        candidates_only=candidates_only,
     )
 
 
@@ -197,6 +201,17 @@ def search_evidence(
     arguments = SearchEvidenceArgs.model_validate(request)
     with log_context(**(diagnostic_context or {})):
         return _logged_search_evidence(arguments)
+
+
+@mcp.tool
+def search_candidates(
+    request: dict[str, Any],
+    diagnostic_context: dict[str, str | None] | None = None,
+) -> dict[str, Any]:
+    """One search request only; fetching and model verification are separate actions."""
+    arguments = SearchEvidenceArgs.model_validate(request)
+    with log_context(**(diagnostic_context or {})):
+        return _logged_search_evidence(arguments, candidates_only=True)
 
 
 @mcp.tool
@@ -243,20 +258,27 @@ def _logged_search(kind, query, categories):
     return payload
 
 
-def _logged_search_evidence(arguments: SearchEvidenceArgs) -> dict[str, Any]:
-    emit("TOOL_START", tool="search_evidence", status="STARTED")
+def _logged_search_evidence(
+    arguments: SearchEvidenceArgs, *, candidates_only: bool = False
+) -> dict[str, Any]:
+    tool = "search_candidates" if candidates_only else "search_evidence"
+    emit("TOOL_START", tool=tool, status="STARTED")
     try:
-        result = _search_evidence(arguments)
+        result = (
+            _search_evidence(arguments, candidates_only=True)
+            if candidates_only
+            else _search_evidence(arguments)
+        )
     except Exception as exc:
-        emit("TOOL_END", tool="search_evidence", status="FAILED", exception=exc)
+        emit("TOOL_END", tool=tool, status="FAILED", exception=exc)
         raise
     emit(
         "SOURCE_RESULT",
-        tool="search_evidence",
+        tool=tool,
         status="SUCCESS" if result.found else "NO_RESULT",
         result_count=len(result.facts),
     )
-    emit("TOOL_END", tool="search_evidence", status="SUCCESS")
+    emit("TOOL_END", tool=tool, status="SUCCESS")
     payload = result.model_dump(mode="json")
     if current():
         payload["_service_log_available"] = current().healthy

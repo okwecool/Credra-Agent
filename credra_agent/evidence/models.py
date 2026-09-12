@@ -56,6 +56,7 @@ class Document(EvidenceModel):
     original_publisher: str | None = Field(default=None, min_length=1)
     hosting_publisher: str | None = None
     declared_publisher: str | None = None
+    source_tags: list[str] = Field(default_factory=list)
     title: str = Field(min_length=1)
     url: str | None = None
     published_at: date | None = None

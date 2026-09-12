@@ -58,6 +58,13 @@ def from_p20_catalog(
                 original_source_id=source_id,
                 original_publisher=material["original_publisher"],
                 hosting_publisher=material["hosting_publisher"],
+                source_tags=["exchange_disclosure", "company_disclosure"]
+                if reporting
+                else ["company_disclosure"]
+                if material["category"] == "ISSUER_OPERATING_COMMUNICATION"
+                else ["regulator"]
+                if material["category"] == "PUBLIC_REGULATORY_RECORD"
+                else ["media"],
                 title=material["title"],
                 url=material["url"],
                 published_at=date.fromisoformat(material["published_on"]),
