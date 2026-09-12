@@ -1,0 +1,100 @@
+{
+  "schema_version": "p20_financial_candidates_v1",
+  "status": "VISUALLY_CHECKED_CANDIDATES_NOT_RUNTIME_INPUT",
+  "case_id": "case_byd_002594_v2",
+  "currency": "CNY",
+  "source_unit": "CNY_1000",
+  "normalized_unit": "CNY_1000",
+  "accounting_scope": "CONSOLIDATED",
+  "accounts_receivable_basis": "NET_CARRYING_AMOUNT_EXCLUDES_RECEIVABLES_FINANCING_CONTRACT_ASSETS_LONG_TERM_RECEIVABLES",
+  "profit_attribution": {
+    "consolidated_net_profit": "GROUP_TOTAL",
+    "owners_net_profit": "OWNERS_OF_PARENT"
+  },
+  "amount_tolerance": "Exact comparison to disclosed integer thousand-yuan values; no extra amount tolerance.",
+  "ratio_absolute_tolerance": "0.000001",
+  "growth_difference_unit": "PERCENTAGE_POINTS",
+  "source_page_numbering": "pdf_pages are one-based physical pages; 2024 bilingual report printed page = physical page + 3.",
+  "rows": [
+    {
+      "year": 2023,
+      "source_id": "fin-2024-annual",
+      "revision": "2024_ANNUAL_RESTATED_COMPARATIVE",
+      "pdf_pages": {
+        "accounts_receivable": 124,
+        "revenue": 127,
+        "consolidated_net_profit": 127,
+        "owners_net_profit": 127,
+        "operating_cash_flow": 131
+      },
+      "values": {
+        "accounts_receivable": "61866019",
+        "revenue": "602315354",
+        "consolidated_net_profit": "31344070",
+        "owners_net_profit": "30040811",
+        "operating_cash_flow": "169725025"
+      }
+    },
+    {
+      "year": 2024,
+      "source_id": "fin-2025-annual",
+      "revision": "2025_ANNUAL_COMPARATIVE",
+      "pdf_pages": {
+        "accounts_receivable": 123,
+        "revenue": 126,
+        "consolidated_net_profit": 126,
+        "owners_net_profit": 126,
+        "operating_cash_flow": 130
+      },
+      "values": {
+        "accounts_receivable": "62298988",
+        "revenue": "777102455",
+        "consolidated_net_profit": "41587940",
+        "owners_net_profit": "40254346",
+        "operating_cash_flow": "133453873"
+      }
+    },
+    {
+      "year": 2025,
+      "source_id": "fin-2025-annual",
+      "revision": "2025_ANNUAL_CURRENT",
+      "pdf_pages": {
+        "accounts_receivable": 123,
+        "revenue": 126,
+        "consolidated_net_profit": 126,
+        "owners_net_profit": 126,
+        "operating_cash_flow": 130
+      },
+      "values": {
+        "accounts_receivable": "37004685",
+        "revenue": "803964958",
+        "consolidated_net_profit": "33760758",
+        "owners_net_profit": "32619022",
+        "operating_cash_flow": "59135544"
+      }
+    }
+  ],
+  "formulas": {
+    "accounts_receivable_growth": "AR_t / AR_prev - 1",
+    "revenue_growth": "Revenue_t / Revenue_prev - 1",
+    "growth_gap": "AR_growth - Revenue_growth",
+    "cash_profit_ratio": "CFO_t / GROUP_TOTAL_net_profit_t"
+  },
+  "not_computable_conditions": [
+    "MISSING_FIELD",
+    "NON_POSITIVE_DENOMINATOR",
+    "ENTITY_MISMATCH",
+    "PERIOD_MISMATCH",
+    "SCOPE_MISMATCH",
+    "REVISION_MISMATCH"
+  ],
+  "not_in_scope": [
+    "QUARTERLY_ADAPTATION",
+    "ADJUSTED_NET_DEBT",
+    "PAYABLE_DAYS",
+    "FACTORING_ADJUSTED_RECEIVABLES_GROWTH",
+    "GUARANTEES",
+    "PEERS",
+    "SCENARIOS"
+  ]
+}

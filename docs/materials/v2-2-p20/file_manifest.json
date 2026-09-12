@@ -1,0 +1,148 @@
+{
+  "schema_version": "p20_file_manifest_v1",
+  "hash_scope": "Original response bytes and curated JSON file bytes; excludes this manifest to avoid circular hash.",
+  "originals": [
+    {
+      "source_id": "analysis-gmt-2025",
+      "relative_path": "data/content_snapshots/p20_byd_v2/analysis-gmt-2025.bin",
+      "bytes": 29240,
+      "sha256": "sha256:5206194ef71290809b3ac4d7c6c562637dbc0ac8d4bc24cdfbb94de00a8492d6",
+      "retrieved_at": "2026-09-11T15:01:49Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "fin-2023-audit",
+      "relative_path": "data/content_snapshots/p20_byd_v2/fin-2023-audit.bin",
+      "bytes": 5587832,
+      "sha256": "sha256:551380f3c45fe8c530d1f0adcf847ed2a126978a20aabd29e0aeeb3839a2e323",
+      "retrieved_at": "2026-09-11T14:55:42Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "fin-2024-annual",
+      "relative_path": "data/content_snapshots/p20_byd_v2/fin-2024-annual.bin",
+      "bytes": 33730602,
+      "sha256": "sha256:cd971445c965ce528dd5268bd0c9383e126fb74cc8aa6eedb462b2731195f699",
+      "retrieved_at": "2026-09-11T14:55:47Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "fin-2025-annual",
+      "relative_path": "data/content_snapshots/p20_byd_v2/fin-2025-annual.bin",
+      "bytes": 7533972,
+      "sha256": "sha256:710d8b2e08e37ba521f1c4071d2c3e2369d3cadabc21a45073215d9f72138b0b",
+      "retrieved_at": "2026-09-11T14:55:48Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "fin-2025-half",
+      "relative_path": "data/content_snapshots/p20_byd_v2/fin-2025-half.bin",
+      "bytes": 1401617,
+      "sha256": "sha256:c42620b87a67995ed7c2bc78fbcc99bede6732fede6a0dbb3f49221ac1ec96ea",
+      "retrieved_at": "2026-09-11T14:55:49Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "fin-2025-q3",
+      "relative_path": "data/content_snapshots/p20_byd_v2/fin-2025-q3.bin",
+      "bytes": 174523,
+      "sha256": "sha256:f811d53ccf948c7119c90f423b08a6f8dd8a24b738ab063f612ab17d66725593",
+      "retrieved_at": "2026-09-11T14:55:50Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "fin-2026-q1",
+      "relative_path": "data/content_snapshots/p20_byd_v2/fin-2026-q1.bin",
+      "bytes": 306755,
+      "sha256": "sha256:8e07bf9481c450daa0184c8bab218eb5b29f5587fc406116a911903852c0c907",
+      "retrieved_at": "2026-09-11T14:55:51Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "issuer-2024-sustainability",
+      "relative_path": "data/content_snapshots/p20_byd_v2/issuer-2024-sustainability.bin",
+      "bytes": 21711010,
+      "sha256": "sha256:8dfceabd75452ffaf39b0ffa7a1e841707b586931347819e058ebb343c93b1dd",
+      "retrieved_at": "2026-09-11T14:57:03Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "issuer-2025-dec-sales",
+      "relative_path": "data/content_snapshots/p20_byd_v2/issuer-2025-dec-sales.bin",
+      "bytes": 52167,
+      "sha256": "sha256:efa8a9b6c8c07fd42b5885cba3a03829b40f886c46eac2b09e9ea0e1d8d663eb",
+      "retrieved_at": "2026-09-11T14:55:56Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "issuer-2025-results-briefing",
+      "relative_path": "data/content_snapshots/p20_byd_v2/issuer-2025-results-briefing.bin",
+      "bytes": 159244,
+      "sha256": "sha256:dd344ba1fe8e02bfa2147c3ab0abc0ccc1431d3ee61ab3eb108f7611fca7dd89",
+      "retrieved_at": "2026-09-11T14:55:53Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "issuer-2026-may-sales",
+      "relative_path": "data/content_snapshots/p20_byd_v2/issuer-2026-may-sales.bin",
+      "bytes": 50770,
+      "sha256": "sha256:8c6f290bba769a7c4fe6a00c9256db46281d1f90ef2f35739287053724d459d2",
+      "retrieved_at": "2026-09-11T14:55:56Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "issuer-2026-shareholder-meeting",
+      "relative_path": "data/content_snapshots/p20_byd_v2/issuer-2026-shareholder-meeting.bin",
+      "bytes": 144669,
+      "sha256": "sha256:4946bbfde664b4bb7ac6d0c9de3515e5a7617c0962b27a85971bfad118d5e803",
+      "retrieved_at": "2026-09-11T14:55:56Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "media-bloomberg-gmt",
+      "relative_path": "data/content_snapshots/p20_byd_v2/media-bloomberg-gmt.bin",
+      "bytes": 1066135,
+      "sha256": "sha256:96aecca0d46866a4e0133b36cd2e23365c7a57cb4b28be4d8fd249bec1d48c1e",
+      "retrieved_at": "2026-09-11T15:01:47Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "media-caixin-60day",
+      "relative_path": "data/content_snapshots/p20_byd_v2/media-caixin-60day.bin",
+      "bytes": 75756,
+      "sha256": "sha256:ad57e2c305b060684bdf92faaf86b76a080a35b950318ef6ca81fc9ddc85726d",
+      "retrieved_at": "2026-09-11T15:01:46Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "media-reuters-60day",
+      "relative_path": "data/content_snapshots/p20_byd_v2/media-reuters-60day.bin",
+      "bytes": 896657,
+      "sha256": "sha256:7a01808d517e45dfd23a1f70d453b0eb0e4aabdbb404b8723902793c5e3ff5e9",
+      "retrieved_at": "2026-09-11T15:01:45Z",
+      "tracked_in_git": false
+    },
+    {
+      "source_id": "regulator-miit-60day",
+      "relative_path": "data/content_snapshots/p20_byd_v2/regulator-miit-60day.bin",
+      "bytes": 18680,
+      "sha256": "sha256:9ae695bd7ef474464b6696b1816d09a66b5b2fb6abc9181f9630fd1038062bb3",
+      "retrieved_at": "2026-09-11T15:01:50Z",
+      "tracked_in_git": false
+    }
+  ],
+  "curated": [
+    {
+      "relative_path": "docs/materials/v2-2-p20/field_candidates.json",
+      "bytes": 3117,
+      "sha256": "sha256:8c94bf8fbdde8bb925ffca9de9600c01bdb2054d0139583786f0b7d748a0bef1",
+      "tracked_in_git": true
+    },
+    {
+      "relative_path": "docs/materials/v2-2-p20/material_catalog.json",
+      "bytes": 20741,
+      "sha256": "sha256:b69f89f3ef866fed0900e094ea0fb9ff273618d4c2adeb599bd0d4cdf6082387",
+      "tracked_in_git": true
+    }
+  ]
+}
