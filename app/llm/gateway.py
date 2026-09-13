@@ -428,7 +428,7 @@ class OpenAICompatibleStructuredModel:
                 }
                 if self._enable_thinking is not None:
                     request["extra_body"] = {"enable_thinking": False}
-                content, usage, _ = self._stream_completion(
+                content, usage, reasoning_chars = self._stream_completion(
                     request=request,
                     timeout_seconds=self._structured_timeout_seconds,
                     purpose=purpose,
@@ -443,17 +443,25 @@ class OpenAICompatibleStructuredModel:
                         "LLM_VALIDATION",
                         validation_stage="json",
                         status="INVALID_JSON",
+                        level="WARNING",
+                        error_code="EMPTY_CONTENT",
                         purpose=purpose,
                         attempt=attempt,
                     )
                     raise ValueError("model returned empty content")
                 try:
                     json.loads(content)
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as exc:
                     emit(
                         "LLM_VALIDATION",
                         validation_stage="json",
                         status="INVALID_JSON",
+                        level="WARNING",
+                        output_chars=len(content),
+                        reasoning_chars=reasoning_chars,
+                        json_error_position=getattr(exc, "pos", None),
+                        json_error_line=getattr(exc, "lineno", None),
+                        json_error_column=getattr(exc, "colno", None),
                         purpose=purpose,
                         attempt=attempt,
                     )
@@ -464,16 +472,23 @@ class OpenAICompatibleStructuredModel:
                     status="SUCCESS",
                     purpose=purpose,
                     attempt=attempt,
+                    output_chars=len(content),
+                    reasoning_chars=reasoning_chars,
                 )
                 try:
                     output = output_schema.model_validate_json(content)
-                except ValidationError:
+                except ValidationError as exc:
+                    from credra_agent.observability.validation import schema_issues
+
                     emit(
                         "LLM_VALIDATION",
                         validation_stage="schema",
                         status="INVALID_SCHEMA",
+                        level="WARNING",
                         purpose=purpose,
                         attempt=attempt,
+                        output_chars=len(content),
+                        **schema_issues(exc, output_schema),
                     )
                     raise
                 emit(

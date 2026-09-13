@@ -119,6 +119,12 @@ NUMBERS = {
     "task_spec_version",
     "external_requests",
     "token_units",
+    "output_chars",
+    "reasoning_chars",
+    "json_error_position",
+    "json_error_line",
+    "json_error_column",
+    "validation_issue_count",
 }
 TECHNICAL = {
     "node",
@@ -252,4 +258,10 @@ def event_record(
     if exception is not None:
         record["exception_type_ref"] = reference_id(type(exception).__name__)
         record["stack"] = safe_stack(exception)
+    if "validation_issues" in fields:
+        # Accept only diagnostics built from trusted Schema names and safe enums.
+        from .wire import validate_issues
+
+        validate_issues(fields["validation_issues"])
+        record["validation_issues"] = fields["validation_issues"]
     return record

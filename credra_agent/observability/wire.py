@@ -6,6 +6,35 @@ from datetime import datetime
 from .events import EVENTS, IDENTIFIERS, NUMBERS, STATES, STATUSES, TECHNICAL
 
 
+def validate_issues(issues):
+    from .text import ISSUE_LABELS
+
+    if not isinstance(issues, list) or len(issues) > 20:
+        raise ValueError("invalid validation diagnostics")
+    for issue in issues:
+        if (
+            not isinstance(issue, dict)
+            or set(issue) - {"path", "kind", "limit", "actual_length"}
+            or issue.get("kind") not in ISSUE_LABELS
+            or not isinstance(issue.get("path"), list)
+            or len(issue["path"]) > 12
+        ):
+            raise ValueError("invalid validation issue")
+        for part in issue["path"]:
+            if not (
+                type(part) is int
+                and 0 <= part <= 10**15
+                or isinstance(part, str)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,79}", part)
+            ):
+                raise ValueError("invalid diagnostic path")
+        for key in ("limit", "actual_length"):
+            if key in issue and (
+                type(issue[key]) is not int or not 0 <= issue[key] <= 10**15
+            ):
+                raise ValueError("invalid diagnostic size")
+
+
 def validate_event(record: dict) -> None:
     base = {
         "timestamp_utc",
@@ -18,6 +47,7 @@ def validate_event(record: dict) -> None:
         "message",
         "exception_type_ref",
         "stack",
+        "validation_issues",
     }
     if not isinstance(record, dict) or set(
         record
@@ -81,3 +111,5 @@ def validate_event(record: dict) -> None:
             for k in ("file_ref", "function_ref")
         ):
             raise ValueError("invalid stack reference")
+    if "validation_issues" in record:
+        validate_issues(record["validation_issues"])

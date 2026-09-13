@@ -101,6 +101,8 @@ def _rule_draft(text: str, *, has_current: bool) -> IntentDraft:
         if f"只使用{label}" in text
         or f"只用{label}" in text
         or f"只核对{label}" in text
+        or f"仅限{label}" in text
+        or f"只能使用{label}" in text
     ]
     unresolved: list[str] = []
     if any(term in text for term in ("去年", "今年", "最近")) and not years:

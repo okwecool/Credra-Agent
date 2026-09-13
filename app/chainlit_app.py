@@ -35,7 +35,12 @@ from app.workbench_live import (
     read_live_trace_events,
 )
 from credra_agent.intent.models import IntentResult
-from credra_agent.intent.service import build_intent_model, interpret_message
+from credra_agent.intent.service import interpret_message
+from credra_agent.runtime.ui_service import (
+    UIRunResult,
+    execute_ui_message,
+    ui_execution_description,
+)
 
 WORKFLOW_NODES = ("document", "financial", "research", "risk", "approval", "report")
 AGENTIC_WORKFLOW_NODES = ("decide", "execute")
@@ -550,6 +555,20 @@ def _task_actions(payload: dict[str, Any]) -> list[cl.Action]:
             payload={"thread_id": thread_id},
         )
     ]
+    if (payload.get("state") or {}).get("graph_version") == "agentic_v2":
+        if (
+            payload.get("next")
+            and payload["state"].get("status") != "WAITING_CLARIFICATION"
+        ):
+            actions.insert(
+                0,
+                cl.Action(
+                    name="continue_agent_task",
+                    label="恢复 Agent 调查",
+                    payload={"thread_id": thread_id},
+                ),
+            )
+        return actions
     if payload.get("execution_blocked"):
         actions.insert(
             0,
@@ -716,6 +735,16 @@ async def _send_payload(
     live_message: cl.Message | None = None,
 ) -> None:
     cl.user_session.set("credra_thread_id", payload["thread_id"])
+    if payload["state"].get("graph_version") == "agentic_v2":
+        await _sync_task_list(payload, live_task_list)
+        content = _risk_markdown(payload)
+        if payload.get("execution_blocked"):
+            content = (
+                "日志不可用，下一动作已暂停。恢复日志后点击“恢复 Agent 调查”；Checkpoint 中的运行状态保留。\n\n"
+                + content
+            )
+        await cl.Message(content=content, actions=_task_actions(payload)).send()
+        return  # Legacy report approval, charts and fixed percentages do not describe Agent investigation.
     details = await asyncio.to_thread(load_workbench_details, payload, get_settings())
     await _sync_task_list(payload, live_task_list)
     await _send_new_audit_steps(payload, details)
@@ -845,7 +874,16 @@ async def _send_error(exc: Exception) -> None:
     await cl.Message(content=f"## 操作失败\n\n`{_safe_error(exc)}`").send()
 
 
-def _intent_markdown(result: IntentResult) -> str:
+def _clarification_label(field: str) -> str:
+    return {
+        "subject_id": "请提供企业名称（比亚迪或上汽）",
+        "comparable_periods": "请明确比较年度（例如 2024 年和 2025 年）",
+        "period_after_as_of": "调查期间不能晚于截止日，请调整期间或截止日",
+        "contradictory_source_policy": "来源限制存在冲突，请调整允许或排除的渠道",
+    }.get(field, field)
+
+
+def _intent_markdown(result: IntentResult, *, execution_enabled: bool = False) -> str:
     lines = [
         "## 自然语言任务已解析",
         "",
@@ -873,7 +911,13 @@ def _intent_markdown(result: IntentResult) -> str:
             ]
         )
         if spec.unresolved_fields:
-            lines.append("- 待澄清：" + "、".join(spec.unresolved_fields))
+            lines.append(
+                "- 待澄清："
+                + "、".join(
+                    _clarification_label(field) if execution_enabled else field
+                    for field in spec.unresolved_fields
+                )
+            )
     else:
         lines.append(f"- 绑定 TaskSpec：`v{result.bound_task_spec_version}`")
     if result.rejected_instructions:
@@ -883,7 +927,9 @@ def _intent_markdown(result: IntentResult) -> str:
     lines.extend(
         [
             "",
-            "> 解析结果已持久化。可通过受控 Agent Runtime 或 `app.task_cli agent` 执行；当前界面不会自行创建运行授权或发起付费调用。",
+            "> 解析结果已持久化；执行与授权状态见任务面板。"
+            if execution_enabled
+            else "> 解析结果已持久化。可通过受控 Agent Runtime 或 `app.task_cli agent` 执行；当前界面不会自行创建运行授权或发起付费调用。设置 AGENT_UI_EXECUTION_ENABLED=true 并配置 AGENT_UI_POLICY_PATH 后可启用。",
         ]
     )
     return "\n".join(lines)
@@ -895,6 +941,11 @@ async def _interpret_natural_language(message: cl.Message, settings: Settings) -
         thread_id = f"agentic-ui-{uuid.uuid4().hex[:16]}"
         cl.user_session.set("intent_thread_id", thread_id)
     source_message_id = str(getattr(message, "id", None) or uuid.uuid4().hex)
+    if settings.agent_ui_execution_enabled:
+        await _execute_agent_ui(
+            message.content, str(thread_id), source_message_id, settings
+        )
+        return
     result = await asyncio.to_thread(
         partial(
             interpret_message,
@@ -904,15 +955,134 @@ async def _interpret_natural_language(message: cl.Message, settings: Settings) -
             as_of=datetime.now(UTC).date(),
             data_dir=settings.data_dir,
             database_path=settings.checkpoint_db_path,
-            model=build_intent_model(settings),
+            model=None,  # Parsing-only UI has no trusted paid-call budget.
         )
     )
     await cl.Message(content=_intent_markdown(result)).send()
 
 
+def _agent_run_markdown(result: UIRunResult) -> str:
+    labels = {
+        "CONFIGURATION_REQUIRED": "配置未就绪",
+        "WAITING_CLARIFICATION": "等待澄清",
+        "CONTROL_UNAVAILABLE": "操作未执行",
+        "TASK_STATE": "Agent 调查状态",
+        "LIMITED": "预算或执行受限",
+        "PAUSED_LOGGING": "日志恢复后继续",
+    }
+    lines = [
+        f"## {labels[result.outcome]}",
+        "",
+        f"- 任务 ID：`{result.thread_id}`",
+        f"- 重复消息：{'是，返回已有状态' if result.duplicate else '否'}",
+    ]
+    lines.extend(f"- {_clarification_label(item)}" for item in result.limitations)
+    if result.budget:
+        budget = result.budget
+        lines.extend(
+            [
+                f"- 外部请求：`{budget['external_spent']} / {budget['external_limit']}`",
+                f"- Token：`{budget['token_spent']} / {budget['token_limit']}`",
+                f"- 活跃时长：`{budget['active_seconds']:.2f} / {budget['active_seconds_limit']}` 秒",
+                f"- 用量不确定：`{budget['usage_uncertain']}`",
+            ]
+        )
+    if result.task:
+        state = result.task["state"]
+        lines.extend(
+            [
+                f"- 调查状态：`{state.get('status')}`",
+                f"- 停止原因：`{state.get('stop_reason') or '—'}`",
+                f"- 决策轮次：`{state.get('iteration', 0)}`",
+                "",
+                "> 当前结果为 Agent 调查与缺口记录；最终报告与报告审核尚未接入此流程。",
+            ]
+        )
+        if state.get("status") == "WAITING_CLARIFICATION":
+            lines.append("请直接回答下方待澄清问题。")
+            lines.extend(f"- {item}" for item in state.get("limitations", []))
+        if result.observations:
+            lines.extend(["", "### 最近调查观察（最多 8 条）", ""])
+            for observation in result.observations:
+                lines.append(
+                    f"- `{observation.get('tool') or '观察'}` / `{observation.get('status')}`：{str(observation.get('summary', ''))[:2000]}"
+                )
+                if observation.get("query"):
+                    lines.append(f"  - 查询：{str(observation['query'])[:1000]}")
+                lines.extend(
+                    f"  - 引用：`{ref}`" for ref in observation.get("artifact_refs", [])
+                )
+    return "\n".join(lines)
+
+
+async def _execute_agent_ui(
+    text: str, thread_id: str, message_id: str, settings: Settings
+):
+    cl.user_session.set("intent_thread_id", thread_id)
+    progress = cl.Message(
+        content=f"正在解析任务并通过受控 Agent Runtime 执行。任务 ID：`{thread_id}`"
+    )
+    await progress.send()
+
+    def operation():
+        return execute_ui_message(
+            thread_id=thread_id,
+            message_id=message_id,
+            text=text,
+            as_of=datetime.now(UTC).date(),
+            settings=settings,
+        ).model_dump(mode="json")
+
+    worker = _track_background_operation(
+        asyncio.create_task(asyncio.to_thread(operation))
+    )
+    while not worker.done():
+        await asyncio.sleep(0.8)
+        if worker.done():
+            break
+        try:
+            payload = await asyncio.to_thread(
+                get_task_status, thread_id=thread_id, settings=settings
+            )
+        except ValueError:
+            continue  # Parsing/clarification has not created a graph checkpoint yet.
+        state = payload["state"]
+        content = f"任务 `{thread_id}`：`{state.get('status')}`，当前节点 `{state.get('current_node')}`，决策轮次 `{state.get('iteration', 0)}`。"
+        if state.get("active_action_ref"):
+            try:
+                from app.tools.artifacts import ArtifactStore
+
+                run_dir = (
+                    settings.data_dir / state["case_id"] / "runs" / state["run_id"]
+                )
+                action = await asyncio.to_thread(
+                    ArtifactStore(run_dir).read_json, state["active_action_ref"]
+                )
+                content += f" 当前动作：`{action['tool']}`。"
+            except (OSError, KeyError, ValueError):
+                pass  # Projection failure never invalidates an already dispatched operation.
+        if content != progress.content:
+            progress.content = content
+            await progress.update()
+    result = UIRunResult.model_validate(await asyncio.shield(worker))
+    progress.content = _agent_run_markdown(result)
+    await progress.update()
+    if result.intent:
+        await cl.Message(
+            content=_intent_markdown(result.intent, execution_enabled=True)
+        ).send()
+    if result.task:
+        await _send_payload(result.task)
+
+
 @cl.on_chat_start
 async def on_chat_start() -> None:
-    await _send_case_catalog(get_settings())
+    settings = get_settings()
+    await cl.Message(
+        content=ui_execution_description(settings)
+        + "\n\nAgent 调查可直接输入自然语言；新建任务用 `agent new`，恢复用 `agent resume THREAD`，查看用 `agent status THREAD`。"
+    ).send()
+    await _send_case_catalog(settings)
 
 
 @cl.on_message
@@ -922,6 +1092,34 @@ async def on_message(message: cl.Message) -> None:
     live_task_list: cl.TaskList | None = None
     live_message: cl.Message | None = None
     try:
+        if parts and parts[0].lower() == "agent":
+            if len(parts) == 2 and parts[1].lower() == "new":
+                thread_id = f"agentic-ui-{uuid.uuid4().hex[:16]}"
+                cl.user_session.set("intent_thread_id", thread_id)
+                await cl.Message(
+                    content=f"新任务 ID：`{thread_id}`。请描述调查主体、期间和问题。"
+                ).send()
+                return
+            if len(parts) == 3 and parts[1].lower() in {"status", "resume"}:
+                if parts[1].lower() == "status":
+                    if settings.agent_ui_execution_enabled:
+                        await _execute_agent_ui(
+                            "status", parts[2], str(message.id), settings
+                        )
+                        return
+                    payload = await asyncio.to_thread(
+                        get_task_status, thread_id=parts[2], settings=settings
+                    )
+                    cl.user_session.set("intent_thread_id", parts[2])
+                    await _send_payload(payload)
+                else:
+                    await _execute_agent_ui(
+                        "resume", parts[2], str(message.id), settings
+                    )
+                return
+            raise ValueError(
+                "使用 agent new、agent status THREAD 或 agent resume THREAD"
+            )
         if len(parts) == 1 and parts[0].lower() == "cases":
             await _send_case_catalog(settings)
             return
@@ -982,6 +1180,11 @@ async def restore_task(_: cl.Action) -> None:
 
 @cl.action_callback("refresh_task")
 async def refresh_task(action: cl.Action) -> None:
+    settings = get_settings()
+    thread_id = str(action.payload["thread_id"])
+    if settings.agent_ui_execution_enabled and thread_id.startswith("agentic-ui-"):
+        await _execute_agent_ui("status", thread_id, uuid.uuid4().hex, settings)
+        return
     try:
         payload = await asyncio.to_thread(
             partial(
@@ -994,6 +1197,13 @@ async def refresh_task(action: cl.Action) -> None:
         await _send_error(exc)
         return
     await _send_payload(payload)
+
+
+@cl.action_callback("continue_agent_task")
+async def continue_agent_task(action: cl.Action) -> None:
+    await _execute_agent_ui(
+        "resume", str(action.payload["thread_id"]), uuid.uuid4().hex, get_settings()
+    )
 
 
 @cl.action_callback("resume_logging")

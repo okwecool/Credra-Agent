@@ -240,6 +240,11 @@ def start_agentic_task(
     approved = RunAuthorization.model_validate(authorization)
     if execution_mode not in {"agentic", "shadow"}:
         raise ValueError("execution_mode must be agentic or shadow")
+    if approved.task_spec_version != spec.version or approved.task_id not in (
+        None,
+        thread_id,
+    ):
+        raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
     if spec.case_id is None:
         raise ValueError("agentic task requires a bound case_id")
     case_dir = _case_dir(settings, spec.case_id)
@@ -346,7 +351,10 @@ def amend_agentic_task(
 
     spec = TaskSpec.model_validate(task_spec)
     approved = RunAuthorization.model_validate(authorization)
-    if approved.task_spec_version != spec.version:
+    if approved.task_spec_version != spec.version or approved.task_id not in (
+        None,
+        thread_id,
+    ):
         raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         config = graph_config(thread_id)

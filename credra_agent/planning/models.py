@@ -33,6 +33,8 @@ class RunAuthorization(PlanningModel):
     )
     authorization_id: str = Field(min_length=1, max_length=200)
     authorized_by: Literal["USER", "RUNTIME_POLICY", "OFFLINE_TEST"]
+    task_id: str | None = None
+    policy_ref: str | None = None
     task_spec_version: int = Field(ge=1)
     approval: Literal["UNCONFIRMED", "APPROVED"]
     external_request_limit: int | None = Field(default=None, ge=1)

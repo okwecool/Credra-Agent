@@ -70,6 +70,12 @@ async def test_real_mcp_children_and_restart_join_one_batch(tmp_path):
     } >= {reference_id("a"), reference_id("b")}
     assert [e["sequence"] for e in events] == list(range(1, len(events) + 1))
     assert all(p.stat().st_size <= 4096 for p in directory.glob("service.*.jsonl"))
+    text = "".join(
+        p.read_text(encoding="utf-8") for p in sorted(directory.glob("service.*.log"))
+    )
+    assert "子进程启动" in text and "[research_mcp]" in text
+    assert "消息来源结果" in text
+    assert all(p.stat().st_size <= 4096 for p in directory.glob("service.*.log"))
     assert json.loads((directory / "startup.json").read_text())["normal_shutdown"]
 
 

@@ -1,5 +1,6 @@
 """Application service joining parsing, safety resolution and persistence."""
 
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from app.llm.gateway import (
     StructuredModelError,
 )
 from credra_agent.intent.catalog import load_subject_catalog
-from credra_agent.intent.models import IntentResult
+from credra_agent.intent.models import IntentResult, TaskSpec
 from credra_agent.intent.parser import build_task_spec, parse_draft
 from credra_agent.intent.store import IntentStore
 from credra_agent.observability.events import log_context
@@ -56,6 +57,7 @@ def interpret_message(
     data_dir: Path,
     database_path: Path,
     model: StructuredModel | None = None,
+    task_spec_validator: Callable[[TaskSpec], None] | None = None,
 ) -> IntentResult:
     if not thread_id.strip() or not source_message_id.strip() or not text.strip():
         raise ValueError("thread_id, source_message_id and text are required")
@@ -85,6 +87,8 @@ def interpret_message(
                 anchor_date=as_of,
                 current=current,
             )
+            if task_spec_validator is not None:
+                task_spec_validator(spec)
             result = IntentResult(
                 source_message_id=source_message_id,
                 thread_id=thread_id,

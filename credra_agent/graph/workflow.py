@@ -213,7 +213,14 @@ class AgenticGraphRuntime:
             self.model, authorization.limits
         )
         plan_version = state["iteration"] + 1
-        if authorization.task_spec_version != task.version:
+        if (
+            authorization.task_spec_version != task.version
+            or authorization.task_id
+            not in (
+                None,
+                state["task_id"],
+            )
+        ):
             return {
                 "status": "FAILED",
                 "current_node": "decide",

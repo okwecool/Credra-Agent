@@ -1,0 +1,20 @@
+{
+  "schema_version": "agent_ui_policy_v1",
+  "policy_id": "local-ui-validation",
+  "version": 1,
+  "approval": "UNCONFIRMED",
+  "allowed_subject_ids": ["002594", "600104"],
+  "external_request_limit": null,
+  "token_limit": null,
+  "active_seconds_limit": null,
+  "limits": {
+    "max_decisions": 12,
+    "no_progress_limit": 2,
+    "model_attempt_reservation": 2,
+    "decision_token_reservation": 8192,
+    "decision_max_output_tokens": 1200
+  },
+  "intent_attempt_reservation": 2,
+  "intent_token_reservation": 8192,
+  "intent_max_output_tokens": 1600
+}

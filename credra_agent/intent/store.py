@@ -42,6 +42,7 @@ class IntentStore:
             rows = connection.execute(
                 """SELECT result_json FROM credra_intent_messages
                 WHERE thread_id = ? AND task_spec_version IS NOT NULL
+                AND json_extract(result_json, '$.task_spec') IS NOT NULL
                 ORDER BY task_spec_version DESC LIMIT 1""",
                 (thread_id,),
             ).fetchall()

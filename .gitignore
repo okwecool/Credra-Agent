@@ -26,6 +26,8 @@ env/
 /logs/
 checkpoints/*.db
 checkpoints/*.db-*
+/checkpoints/ui_task_locks/
+/checkpoints/.p25-browser/
 traces/*.jsonl
 traces/.fault_state/
 data/*/artifacts/
@@ -56,6 +58,7 @@ Thumbs.db
 /data/case_*/source/
 
 # Curated repository fixtures
+/config/*.local.json
 !/data/case_normal/source/
 !/data/case_normal/source/**
 !/data/case_risky/source/

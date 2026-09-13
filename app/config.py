@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     intent_mode: str = Field(default="deterministic", pattern=r"^(deterministic|llm)$")
     intent_model: str = ""
     intent_llm_max_output_tokens: int = Field(default=1_600, ge=200, le=8_000)
+    agent_ui_execution_enabled: bool = False
+    agent_ui_policy_path: Path | None = None
     checkpoint_db_path: Path = Path("checkpoints/credra_agent.db")
     max_retry: int = Field(default=2, ge=0, le=10)
     research_fail_first: bool = False
