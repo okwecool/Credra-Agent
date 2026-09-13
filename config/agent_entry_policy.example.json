@@ -1,0 +1,17 @@
+{
+  "schema_version": "agent_entry_policy_v1",
+  "policy_id": "local-entry",
+  "version": 1,
+  "approval": "UNCONFIRMED",
+  "allowed_subject_ids": ["002594", "600104"],
+  "allowed_control_tools": ["prepare_investigation", "submit_clarification", "resume_investigation"],
+  "external_request_limit": null,
+  "token_limit": null,
+  "active_seconds_limit": null,
+  "max_model_rounds": 4,
+  "max_tool_calls": 3,
+  "model_attempt_reservation": 2,
+  "model_token_reservation": 6000,
+  "max_output_tokens": 1200,
+  "max_input_chars": 30000
+}

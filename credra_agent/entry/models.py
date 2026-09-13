@@ -36,6 +36,9 @@ class TaskView(EntryModel):
     pending_writes: bool = False
     execution_blocked: Literal["LOGGING_UNAVAILABLE", "CHECKPOINT_ERROR"] | None = None
     result_refs: dict[str, str] = Field(default_factory=dict)
+    budget: dict | None = None
+    command: dict | None = None
+    pending_clarification: dict | None = None
 
 
 class TaskPage(EntryModel):
@@ -50,6 +53,7 @@ class TaskPage(EntryModel):
 
 class EntryReply(EntryModel):
     decision: Literal["reply"]
+    content_kind: Literal["conversation", "task_facts", "capabilities"] = "conversation"
     text: str = Field(min_length=1, max_length=4000)
     fact_refs: list[str] = Field(default_factory=list, max_length=50)
     limitations: list[str] = Field(default_factory=list, max_length=20)
@@ -113,6 +117,7 @@ class EntryPermissions(EntryModel):
     task_remaining_requests: int | None = Field(default=None, ge=0)
     task_remaining_tokens: int | None = Field(default=None, ge=0)
     investigation_control_enabled: bool = False
+    allowed_control_tools: list[str] = Field(default_factory=list)
     logging_healthy: bool = False
     request_profile_compatible: bool = False
 
@@ -126,6 +131,7 @@ class EntryContext(EntryModel):
     timezone: str
     snapshot_at: datetime
     history: list[dict]
+    turn_events: list[dict] = Field(default_factory=list)
     selected_task_id: str | None
     current_task: TaskView | None
     pending_question: EntryAskUser | None
@@ -172,6 +178,7 @@ class PrepareInvestigationArgs(EntryModel):
 class ClarifyArgs(TaskArgs):
     expected_spec_version: int = Field(ge=1)
     draft: IntentDraft
+    case_id: str | None = Field(default=None, max_length=64)
 
 
 class ResumeArgs(TaskArgs):

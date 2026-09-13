@@ -31,6 +31,7 @@ class EntryContextBuilder:
         max_input_chars=30000,
         max_history_messages=12,
         task_page_size=20,
+        input_measurer=None,
     ):
         if (
             max_input_chars < 1000
@@ -43,6 +44,9 @@ class EntryContextBuilder:
         self.max_input_chars = max_input_chars
         self.max_history_messages = max_history_messages
         self.task_page_size = task_page_size
+        self.input_measurer = input_measurer or (
+            lambda context: len(context.model_dump_json())
+        )
 
     def build(
         self,
@@ -53,6 +57,7 @@ class EntryContextBuilder:
         permissions,
         timezone="Asia/Singapore",
         investigation_executor=None,
+        turn_events=None,
     ):
         with service_session(
             "entry_context", config_from_settings(self.registry.settings)
@@ -64,6 +69,7 @@ class EntryContextBuilder:
                 permissions=permissions,
                 timezone=timezone,
                 investigation_executor=investigation_executor,
+                turn_events=turn_events,
             )
 
     def _build(
@@ -75,6 +81,7 @@ class EntryContextBuilder:
         permissions,
         timezone="Asia/Singapore",
         investigation_executor=None,
+        turn_events=None,
     ):
         if (
             frozenset(permissions.allowed_subject_ids)
@@ -126,6 +133,7 @@ class EntryContextBuilder:
             timezone=timezone,
             snapshot_at=now(),
             history=history,
+            turn_events=turn_events or [],
             selected_task_id=conversation["selected_task_id"],
             current_task=current,
             pending_question=conversation["pending_question"],
@@ -141,7 +149,7 @@ class EntryContextBuilder:
         )
         # Remove only optional complete history turns/page rows. Never cut query,
         # negative constraints, current task, pending questions or tool schemas.
-        while len(context.model_dump_json()) > self.max_input_chars and context.history:
+        while self.input_measurer(context) > self.max_input_chars and context.history:
             turn = context.history[0]["turn_id"]
             context.history = [
                 item for item in context.history if item["turn_id"] != turn
@@ -149,7 +157,7 @@ class EntryContextBuilder:
             if "输入容量限制：历史轮次已缩减。" not in context.limitations:
                 context.limitations.append("输入容量限制：历史轮次已缩减。")
         while (
-            len(context.model_dump_json()) > self.max_input_chars
+            self.input_measurer(context) > self.max_input_chars
             and context.task_page.items
         ):
             context.task_page.items.pop()
@@ -163,7 +171,7 @@ class EntryContextBuilder:
                 context.limitations.append(
                     "上下文任务摘要已缩减；通过 list_tasks 从第一页读取。"
                 )
-        if len(context.model_dump_json()) > self.max_input_chars:
+        if self.input_measurer(context) > self.max_input_chars:
             raise ContextLimited(
                 "CONTEXT_LIMITED: 必需上下文超过容量，未保存快照或调用模型"
             )

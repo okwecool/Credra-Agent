@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import chainlit as cl
 
@@ -936,6 +937,34 @@ def _intent_markdown(result: IntentResult, *, execution_enabled: bool = False) -
 
 
 async def _interpret_natural_language(message: cl.Message, settings: Settings) -> None:
+    if settings.agent_entry_policy_path is not None:
+        from credra_agent.entry.service import execute_entry_message
+
+        conversation_id = cl.user_session.get("entry_conversation_id")
+        if not conversation_id:
+            conversation_id = f"conversation-{uuid.uuid4().hex}"
+            cl.user_session.set("entry_conversation_id", conversation_id)
+        progress = cl.Message(content="正在处理对话…")
+        await progress.send()
+        worker = asyncio.create_task(
+            asyncio.to_thread(
+                execute_entry_message,
+                conversation_id=conversation_id,
+                message_id=str(getattr(message, "id", None) or uuid.uuid4().hex),
+                text=message.content,
+                as_of=datetime.now(ZoneInfo("Asia/Singapore")).date(),
+                settings=settings,
+            )
+        )
+        worker.add_done_callback(
+            lambda task: task.exception() if not task.cancelled() else None
+        )
+        result = await asyncio.shield(worker)
+        progress.content = result.text
+        if result.budget:
+            progress.content += f"\n\n会话 `{result.conversation_id}`；会话预算：请求 {result.budget['external_spent']}/{result.budget['external_limit']}；Token {result.budget['token_spent']}/{result.budget['token_limit']}。"
+        await progress.update()
+        return
     thread_id = cl.user_session.get("intent_thread_id")
     if not thread_id:
         thread_id = f"agentic-ui-{uuid.uuid4().hex[:16]}"
@@ -1078,10 +1107,12 @@ async def _execute_agent_ui(
 @cl.on_chat_start
 async def on_chat_start() -> None:
     settings = get_settings()
-    await cl.Message(
-        content=ui_execution_description(settings)
-        + "\n\nAgent 调查可直接输入自然语言；新建任务用 `agent new`，恢复用 `agent resume THREAD`，查看用 `agent status THREAD`。"
-    ).send()
+    guidance = (
+        "\n\n配置并启用后，普通消息由入口 LLM 处理；支持对话、任务查询及策略允许的调查创建/澄清/恢复。调查命令先返回回执，后台使用独立任务预算执行。"
+        if settings.agent_entry_policy_path is not None
+        else "\n\nAgent 调查可直接输入自然语言；新建任务用 `agent new`，恢复用 `agent resume THREAD`，查看用 `agent status THREAD`。"
+    )
+    await cl.Message(content=ui_execution_description(settings) + guidance).send()
     await _send_case_catalog(settings)
 
 

@@ -79,6 +79,19 @@ def _validate_dependencies(settings: Settings):
 
 
 def ui_execution_description(settings: Settings) -> str:
+    if settings.agent_entry_policy_path is not None:
+        from credra_agent.entry.policy import load_entry_policy
+
+        if not settings.agent_ui_execution_enabled:
+            return "LLM 对话入口已配置但未启用；设置 AGENT_UI_EXECUTION_ENABLED=true 后按独立会话策略运行。"
+        try:
+            policy = load_entry_policy(settings)
+            controls = "、".join(policy.allowed_control_tools) or "未允许调查控制"
+            return f"LLM 对话策略已就绪：{policy.policy_id} v{policy.version}；模型配置将在请求前校验。允许的调查控制：{controls}；委派还须有效的独立任务策略、配置和剩余额度。"
+        except ValueError:
+            return (
+                "LLM 对话入口已配置，入口策略尚未批准或额度不完整；不会发起模型调用。"
+            )
     if not settings.agent_ui_execution_enabled:
         return "自然语言入口：解析模式。设置 AGENT_UI_EXECUTION_ENABLED=true 并配置 AGENT_UI_POLICY_PATH 后可自动执行。"
     try:
@@ -89,11 +102,16 @@ def ui_execution_description(settings: Settings) -> str:
         return f"自然语言入口：已开启，配置未就绪。{exc}"
 
 
-def build_ui_models(settings: Settings, policy: UIPolicy):
+def build_investigation_model(settings: Settings, policy: UIPolicy):
     _validate_dependencies(settings)
     coordinator = build_agentic_model(settings, policy.limits)
     if coordinator is None:
         raise ValueError("ANALYSIS_MODE_LLM_REQUIRED: UI 执行需要 Coordinator 模型")
+    return coordinator
+
+
+def build_ui_models(settings: Settings, policy: UIPolicy):
+    coordinator = build_investigation_model(settings, policy)
     intent = None
     if settings.intent_mode == "llm":
         intent = OpenAICompatibleStructuredModel(

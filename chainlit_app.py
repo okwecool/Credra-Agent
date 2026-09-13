@@ -8,3 +8,8 @@ from credra_agent.observability.runtime import (
 )
 
 start_process_service("chainlit", config_from_settings(Settings()))
+
+# Resume only durable, never-dispatched entry commands under frozen task policy.
+from credra_agent.entry.delegation import recover_entry_commands
+
+recover_entry_commands(Settings())

@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     intent_llm_max_output_tokens: int = Field(default=1_600, ge=200, le=8_000)
     agent_ui_execution_enabled: bool = False
     agent_ui_policy_path: Path | None = None
+    agent_entry_policy_path: Path | None = None
     checkpoint_db_path: Path = Path("checkpoints/credra_agent.db")
     max_retry: int = Field(default=2, ge=0, le=10)
     research_fail_first: bool = False

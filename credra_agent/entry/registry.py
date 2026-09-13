@@ -1,4 +1,4 @@
-"""Executable local entry tools; investigation delegation remains explicitly unavailable."""
+"""Executable local entry tools and optional, policy-controlled investigation delegation."""
 
 import base64
 import hashlib
@@ -43,12 +43,21 @@ class EntryToolDefinition:
 
 
 class EntryToolRegistry:
-    def __init__(self, *, settings, query_service, conversation_id, workspace_ref):
+    def __init__(
+        self,
+        *,
+        settings,
+        query_service,
+        conversation_id,
+        workspace_ref,
+        delegation=None,
+    ):
         self.settings = settings
         self.query = query_service
         self.store = EntryStore(settings.checkpoint_db_path)
         self.conversation_id = conversation_id
         self.workspace_ref = workspace_ref
+        self.delegation = delegation
         self.store.ensure_conversation(conversation_id, workspace_ref)
         definitions = [
             EntryToolDefinition(
@@ -100,7 +109,7 @@ class EntryToolRegistry:
                 PrepareInvestigationArgs,
                 "DISPATCH_INVESTIGATION",
                 "有效任务策略、独立任务预算、日志及配置",
-                None,
+                delegation.execute if delegation else None,
             ),
             EntryToolDefinition(
                 "submit_clarification",
@@ -108,7 +117,7 @@ class EntryToolRegistry:
                 ClarifyArgs,
                 "DISPATCH_INVESTIGATION",
                 "原主体/来源/版本/授权不扩大",
-                None,
+                delegation.execute if delegation else None,
             ),
             EntryToolDefinition(
                 "resume_investigation",
@@ -116,7 +125,7 @@ class EntryToolRegistry:
                 ResumeArgs,
                 "DISPATCH_INVESTIGATION",
                 "任务可见，状态版本匹配，原策略和预算有效",
-                None,
+                delegation.execute if delegation else None,
             ),
         ]
         self.definitions = {item.name: item for item in definitions}
@@ -175,14 +184,19 @@ class EntryToolRegistry:
                 else 0,
                 "replayable": item.effect == "READ_LOCAL",
                 "available": item.handler is not None
+                and (item.effect != "WRITE_CONVERSATION" or permissions.logging_healthy)
                 and (
-                    item.effect != "WRITE_CONVERSATION" or permissions.logging_healthy
+                    item.effect != "DISPATCH_INVESTIGATION"
+                    or self.delegation.unavailable_reason(item.name, permissions)
+                    is None
                 ),
                 "unavailable_reason": "P26-3 调查委派尚未接入"
                 if item.handler is None
                 else "日志不可用"
                 if item.effect == "WRITE_CONVERSATION"
                 and not permissions.logging_healthy
+                else self.delegation.unavailable_reason(item.name, permissions)
+                if item.effect == "DISPATCH_INVESTIGATION"
                 else None,
             }
             for item in self.definitions.values()
@@ -229,36 +243,23 @@ class EntryToolRegistry:
             try:
                 if definition.effect != "READ_LOCAL":
                     require_logging()
-                data = definition.handler(parsed)
+                if definition.effect == "DISPATCH_INVESTIGATION":
+                    result = self.delegation.execute(tool, parsed, call_id=call_id)
+                else:
+                    result = self._execute_local(definition, parsed, call_id, tool)
+            except EntryConflict as exc:
                 result = EntryToolResult(
                     call_id=call_id,
                     tool=tool,
-                    status="NO_RESULT"
-                    if tool in {"list_tasks", "list_cases"} and not data["items"]
-                    else "SUCCESS",
-                    data=data,
+                    status="LIMITED"
+                    if str(exc) == "ENTRY_TASK_BUDGET_EXHAUSTED"
+                    else "REJECTED",
                     observed_at=now(),
-                )
-                if tool == "list_tasks":
-                    result.fact_refs = [item["state_ref"] for item in data["items"]]
-                    result.limitations = data["limitations"]
-                    result.next_cursor = data["next_cursor"]
-                elif tool == "list_cases":
-                    result.next_cursor = data["next_cursor"]
-                    result.limitations = data["limitations"]
-                elif tool in {"get_task_status", "select_task"}:
-                    result.state_ref = data["summary"]["state_ref"]
-                    result.fact_refs = [result.state_ref]
-                elif tool == "get_task_result":
-                    result.state_ref = data["state_ref"]
-                    result.fact_refs = [result.state_ref]
-            except EntryConflict:
-                result = EntryToolResult(
-                    call_id=call_id,
-                    tool=tool,
-                    status="REJECTED",
-                    observed_at=now(),
-                    limitations=["ENTRY_TASK_OR_REFERENCE_NOT_VISIBLE"],
+                    limitations=[
+                        str(exc)
+                        if str(exc).startswith("ENTRY_")
+                        else "ENTRY_TASK_OR_REFERENCE_NOT_VISIBLE"
+                    ],
                 )
             except (OSError, ValueError):
                 result = EntryToolResult(
@@ -271,15 +272,38 @@ class EntryToolRegistry:
             emit(
                 "TOOL_END",
                 tool=tool,
-                status="NO_RESULT"
-                if result.status == "NO_RESULT"
-                else "REJECTED"
-                if result.status == "REJECTED"
-                else "UNKNOWN"
-                if result.status == "UNKNOWN"
+                status=result.status
+                if result.status
+                in {"NO_RESULT", "REJECTED", "UNKNOWN", "ACCEPTED", "UNAVAILABLE"}
                 else "SUCCESS",
             )
             return result
+
+    def _execute_local(self, definition, parsed, call_id, tool):
+        data = definition.handler(parsed)
+        result = EntryToolResult(
+            call_id=call_id,
+            tool=tool,
+            status="NO_RESULT"
+            if tool in {"list_tasks", "list_cases"} and not data["items"]
+            else "SUCCESS",
+            data=data,
+            observed_at=now(),
+        )
+        if tool == "list_tasks":
+            result.fact_refs = [item["state_ref"] for item in data["items"]]
+            result.limitations = data["limitations"]
+            result.next_cursor = data["next_cursor"]
+        elif tool == "list_cases":
+            result.next_cursor = data["next_cursor"]
+            result.limitations = data["limitations"]
+        elif tool in {"get_task_status", "select_task"}:
+            result.state_ref = data["summary"]["state_ref"]
+            result.fact_refs = [result.state_ref]
+        elif tool == "get_task_result":
+            result.state_ref = data["state_ref"]
+            result.fact_refs = [result.state_ref]
+        return result
 
     def _list_tasks(self, args):
         return self.query.list(**args.model_dump()).model_dump(mode="json")

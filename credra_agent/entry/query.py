@@ -9,10 +9,11 @@ from app.runtime.tasks import graph_config, open_checkpointer
 from app.tools.artifacts import ArtifactStore
 from credra_agent.entry.models import TaskPage, TaskSummary, TaskView
 from credra_agent.entry.store import EntryConflict, EntryStore, now
+from credra_agent.execution.ledger import ActionLedger
 from credra_agent.intent.catalog import load_subject_catalog
 from credra_agent.intent.models import TaskSpec
 from credra_agent.intent.store import IntentStore
-from credra_agent.runtime.ui_store import task_lock
+from credra_agent.runtime.ui_store import UIRequestBlocked, UITaskStore, task_lock
 
 RESULT_FIELDS = (
     "observation_index_ref",
@@ -108,13 +109,65 @@ class TaskQueryService:
             if errors
             else None
         )
+        task_budget = None
+        try:
+            frozen = UITaskStore(self.settings.checkpoint_db_path).policy(task_id)
+            if frozen:
+                task_budget = ActionLedger(
+                    self.settings.checkpoint_db_path
+                ).budget_snapshot(task_id, frozen[1])
+                task_budget.update(scope="TASK", policy_ref=frozen[1].policy_ref)
+        except UIRequestBlocked:
+            blocked = "CHECKPOINT_ERROR"
+        command = self.store.public_command(self.store.latest_command(task_id))
+        if (
+            not checkpoint
+            and command
+            and command["status"] in {"QUEUED", "DISPATCHED", "UNCERTAIN"}
+        ):
+            summary.status = {
+                "QUEUED": "QUEUED",
+                "DISPATCHED": "STARTING",
+                "UNCERTAIN": "UNKNOWN",
+            }[command["status"]]
+        pending_clarification = None
+        unresolved = list(spec.unresolved_fields) if spec else []
+        if values.get("status") == "WAITING_CLARIFICATION" and values.get(
+            "observation_index_ref"
+        ):
+            artifacts = ArtifactStore(
+                self.settings.data_dir / case_id / "runs" / run_id
+            )
+            index = artifacts.read_json(values["observation_index_ref"])
+            if index.get("items"):
+                observation_ref = index["items"][-1]["observation_ref"]
+                observation = artifacts.read_json(observation_ref)
+                action = (
+                    ActionLedger(self.settings.checkpoint_db_path)
+                    .get_action(task_id, observation["action_id"])
+                    .action
+                )
+                if action.tool == "ask_user":
+                    pending_clarification = {
+                        "question": action.arguments["question"],
+                        "unresolved_fields": action.arguments["unresolved_fields"],
+                        "observation_ref": observation_ref,
+                    }
+                    unresolved = list(
+                        dict.fromkeys(
+                            [*unresolved, *action.arguments["unresolved_fields"]]
+                        )
+                    )
         return TaskView(
             summary=summary,
             task_spec=spec,
             stop_reason=values.get("stop_reason") or values.get("finish_reason"),
-            unresolved_fields=spec.unresolved_fields if spec else [],
+            unresolved_fields=unresolved,
             pending_writes=bool(checkpoint.pending_writes) if checkpoint else False,
             execution_blocked=blocked,
+            budget=task_budget,
+            command=command,
+            pending_clarification=pending_clarification,
             result_refs={
                 key: values[key]
                 for key in RESULT_FIELDS

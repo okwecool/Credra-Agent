@@ -2,7 +2,7 @@
 
 制定日期：2026-09-07。产品名称：Credra Agent。代码基线：`ce7dede`。计划依据：[自主调查架构与演进路线 v2.0](Credra%20Agent%20自主调查架构与演进路线%20v2.0（提案）.md)。
 
-**状态说明：制定时仅交付开发计划，工作包从 `NOT_STARTED` 开始；后续实施事实不追溯改写初始验收记录。2026-09-13 文档整合：P25 已有工具离线闭环及可读服务日志技术 `VERIFIED`，待人工审核；P25/U09 真实试跑、P24/P23 和 G2 未完成。P26 开发及前置顺序已获用户认可；P26-0/P26-1 基础接口技术 VERIFIED，待人工审核；普通对话尚未接入入口模型。会话与调查分别控制预算已确认。**
+**状态说明：制定时仅交付开发计划，工作包从 `NOT_STARTED` 开始；后续实施事实不追溯改写初始验收记录。2026-09-13 当前进展：P25 离线闭环/可读日志和 P26-0/P26-1 基础接口已审核提交；P26-2 已接通配置受控的入口模型与本地取数循环，P26-3 已接通一次解析后的实际调查委派、后台回执及独立预算，最终普通标准门禁通过，均为离线技术 VERIFIED、待人工审核，见第 6.2.14、6.2.15 节。P26-4、P25/U09 和 E10 真实试跑、P24/P23 及 G2 尚未完成；本轮曾触发的日志暂停异常未确认原因，保留为 P26-4 验证输入。**
 
 后续入口、日志优化和对应使用/验收记录统一维护在本计划：P25 见第 6.1.1–6.1.2 节，P26 见第 6.2 节，文本日志见第 10.5 节；实施事实与设计偏差继续记入既有《开发日志》。
 
@@ -156,7 +156,7 @@ flowchart LR
 | P21 证据与实体处理 | 主体/子公司/同名关系；发布/事件/抓取时间分开；原文定位、转载去重、修订链、独立印证、支持与反证 | Evidence/Claim/Observation Artifact 和兼容映射 |
 | P22 证据驱动重规划 | Coordinator 消费冲突与缺口，选择查原文、查另一独立来源或停止并披露；结构化计数不取代语义判断 | 可重放的计划版本、Action、证据状态与停止原因 |
 | P25 UI 最小执行闭环与流程验证 | 在 P10/P13/P14 与 P22 之上接通配置策略、自然语言澄清、授权、实际执行和状态/结果投影；分离离线闭环与授权真实试跑，见第 6.1 节 | 配置示例、共享 Runtime 接入、UI 端到端验证脚本、任务/授权/预算/日志证据及能力边界说明 |
-| P26 对话入口与上下文 | query、会话、任务列表和动态工具目录共同交给入口 LLM，委派共享 Runtime；会话/调查预算分开，按钮与页面保持不变；见第 6.2 节 | 已批准按 P26-0–P26-4 分节点实施及 E01–E10 验收；本轮基础接口收口见第 6.2.13 节，不能视为入口 LLM 或 P26 整体验收完成 |
+| P26 对话入口与上下文 | query、会话、任务列表和动态工具目录共同交给入口 LLM，委派共享 Runtime；会话/调查预算分开，按钮与页面保持不变；见第 6.2 节 | 已批准按 P26-0–P26-4 分节点实施及 E01–E10 验收；基础接口/对话取数循环见第 6.2.13–6.2.14 节，调查委派及整体验收未完成 |
 | P24 首例最小财务扩展 | 在 P02 契约下增加首例所需输入适配、字段血缘、Decimal/单位/缺失处理及应收、现金质量公式；复用既有收入、利润和现金流；不覆盖旧 Case 数值 | 最小 Financial v2 子集、人工算例、工具 Schema 和可引用计算 Artifact |
 | P23 首例与人工答案 | A+C 组合包：问题、材料、允许行动偏序、应拒绝的主张、事实/推断答案、离线快照和人工检查表；准备第 9.1 节请求策略对照的共用样本 | 可复现的首个复杂案例与同素材 baseline 对照；供 P50/P51 复用的策略评测样本 |
 
@@ -367,7 +367,7 @@ P25 已有工具的离线最小闭环技术状态为 `VERIFIED`，待人工审�
 
 ### 6.2 P26：LLM 对话决策入口与上下文接口
 
-日期：2026-09-13。状态：用户已认可接下来 P26→P24→P23 的工作包并要求开始开发；本轮实施 P26-0/P26-1，P26-2–P26-4 待推进。会话/调查分开预算已确认。对应用户要求：把 LLM 决策接入直接与人对话的入口；完善提供给模型的任务、工具和会话上下文；页面按钮和界面设计保持不变。
+日期：2026-09-13。状态：用户已认可接下来 P26→P24→P23 的工作包；P26-0/P26-1 已审核提交，P26-2/P26-3 已离线验证、待人工审核；调查委派实施记录见第 6.2.15 节，P26-4 待推进。会话/调查分开预算已确认。对应用户要求：把 LLM 决策接入直接与人对话的入口；完善提供给模型的任务、工具和会话上下文；页面按钮和界面设计保持不变。
 
 本节整合 P10/P25 的入口补充方案；此前归并文档并未批准开发，用户在确认后续工作包并要求开始下一步骤后，明确按 P25→P26→P24→P23 推进。P25 已提交基线为 `58c5ca8`；P26 按第 6.2.10 节分节点实施与审核。P25 已验证的是自然语言调查的纵向执行，不等于已实现本节的通用对话决策入口。
 
@@ -569,7 +569,7 @@ flowchart TD
 
 - 入口方案分析阶段仅编制提案及开发日志核查记录，未修改应用代码、按钮、界面、配置、数据或 .env；现按用户要求将提案归并本计划。已有 P25 未提交代码全部保留，没有新增真实 LLM/业务搜索调用，没有 Git 暂存/提交/推送。
 - 预算归属已由用户确认分开控制；真实开发调试的次数上限待答复，正式试跑具体额度不在本轮硬编码。首版范围为当前本地工作区、已导入企业和现有受控 Runtime；多用户 ACL、运行中编辑/暂停、报告批准与页面重设计不前置。
-- 本方案归并后，用户已认可 P26→P24→P23 的下一工作包顺序并要求开始开发。分节点完成状态、接口适配和验证事实见第 6.2.13 节；P26-2–P26-4 与 E10 尚未实施，不因基础接口通过而标记通用对话入口或 G2 完成。
+- 本方案归并后，用户已认可 P26→P24→P23 的下一工作包顺序并要求开始开发。基础接口、对话及调查委派的实施事实分别见第 6.2.13、6.2.14、6.2.15 节；P26-4 与 E10 尚未实施，不因单节点通过而标记 P26 整体或 G2 完成。
 
 #### 6.2.12 资料依据
 
@@ -598,9 +598,115 @@ flowchart TD
 
 **验证：** 新增 20 个离线测试，使用真实 SQLite Checkpoint 版本及 pending_writes；验证草稿/子图去重、增量溢出、权限/隐藏记录/跨任务引用、分页/SQL 参数、任务锁并行读取、动态 Handler、消息/选择重开、Case 歧义、容量和共享 Schema 引用、当前 Graph 与未应用草稿区分、错误及日志保密。模型 generate 被测试禁止，未发起真实调用。首轮修复错误的日志 API 测试导入；沙箱阻止 pytest 临时目录访问，经批准运行离线测试；后续 13 通过、2 失败，修复 Schema 重复与 bytes 文本断言后 15 通过；补强后 P26/旧文本日志/旧意图定向 35 项通过（8.38 秒）。标准脚本已通过 Ruff lint、201 文件 format、444 项 pytest（203.11 秒）、pip check 与独立 MCP stdio smoke（document → financial → research → risk，research COMPLETE）；只保留第三方 Traceloop 既有 Pydantic 弃用警告。脚本开始后补入口日志初始化及查询期间状态/可见性再核对，新增竞态检查后最终 P26 20 项通过（7.60 秒）；最终全仓 lint/format 与 diff 检查通过。标准脚本采集的 444 项与最后 20 项定向结果分别记录，不宣称完整 445 项标准重跑。
 
-**验收状态：** P26-0/P26-1 本基础节点技术 `VERIFIED`，待人工审核；P26-2–P26-4 未开始。本节点验收只覆盖 E01 上下文静态准备、E02 列表本地工具部分、E03 选择持久化部分、E07 动态工具/参数门禁及 E08 日志/投影基础；没有实际 LLM→工具→LLM，没有 UI 消息联通，没有调查委派或两个账本独立耗尽验证。E01–E10 的完整端到端状态保留待实施，P26 整体未完成。下一节点为 P26-2：接入非 thinking 入口模型、普通对话和实际取数反馈循环，同时落实付费请求前会话授权/预留，禁止先无预算调用再补计账。
+**本基础节点完成时的验收状态：** P26-0/P26-1 技术 `VERIFIED`，当时待人工审核，P26-2–P26-4 未开始。本节点验收只覆盖 E01 上下文静态准备、E02 列表本地工具部分、E03 选择持久化部分、E07 动态工具/参数门禁及 E08 日志/投影基础；没有实际 LLM→工具→LLM，没有 UI 消息联通，没有调查委派或两个账本独立耗尽验证。E01–E10 的完整端到端状态保留待实施，P26 整体未完成。后续审核提交为 `6e1b139`；接下来的 P26-2 要先落实会话授权/预留，再接模型，实施事实见第 6.2.14 节。
 
 **本节点拟提交范围（11 文件）：** `credra_agent/entry/{models,store,query,registry,context}.py`、`credra_agent/intent/store.py`、`credra_agent/observability/{events,text}.py`、`tests/test_v2_entry_context.py`、本计划和 `docs/开发日志.md`。建议提交信息：`V2-2：建立对话入口上下文与任务查询接口`。未经人工审核批准不暂存/提交/推送；.env、配置、UI/按钮、案例、既有调查 Graph、模型重试策略和依赖不改。
+
+#### 6.2.14 P26-2：受控 LLM 对话入口与实际取数循环
+
+实施日期：2026-09-13。起点：用户已审核提交的 P26-0/P26-1 `6e1b139`，开始时工作区干净。本节点按第 6.2.10 节接通普通消息→入口 LLM→本地工具→入口 LLM；首次付费请求前先完成独立会话授权和预留。调查委派和两个账本分别耗尽的纵向验证仍在 P26-3，不提前执行。
+
+| 能力 | 实现与边界 |
+|---|---|
+| 普通消息入口 | 配置入口策略后，真实 Chainlit `on_message` 的普通消息进入 Entry Runtime，不预先分配调查 Thread、不走独立 Intent 解析。模型同时接收 query、历史、当前选择/TaskSpec、任务页、Case 页、动态目录/Schema、调查执行能力和可信权限/预算 |
+| 模型决策 | 使用既有兼容网关及独立 entry Prompt；固定非 thinking、结构化 `reply/ask_user/call_tool`。模型决定是否查询及调用哪个入口工具；服务不按任务列表关键词预先路由。模型候选仍按 INTENT_MODEL→ANALYSIS_MODEL→MODEL_NAME 选择，配置入口后不依赖 INTENT_MODE；调查模型与执行模式后续单独验证 |
+| 有界取数循环 | 每轮最多一个 Schema 验证过的工具；实际本地 Handler 结果、引用、缺口和最新预算进入下一次完整模型上下文。模型轮次和工具次数分别受策略限制；失败/超限明确受限，不降级为未计账的意图模型或偷偷创建调查 |
+| 选择与提问 | `select_task` 仍仅改变会话选择，后续组装读取实际选择；`ask_user` 保存问题供下一条消息使用。它尚不能构造或更新调查 TaskSpec，调查缺项处理归 P26-3 |
+| 独立会话账本 | 单独 SQLite policy/turn/operation/tool-result 表；不创建伪 TaskSpec 或调查 ActionLedger。三项会话总额度由用户批准配置；旧 P25 账本保留。入口请求只扣会话，当前五个本地工具外调次数为零 |
+| 请求与预算 | 每次 generate 前预留单次模型尝试次数和 Token；实际已知 Usage 按全部 JSON 尝试汇总结算，失败请求也计费；未知/非法 Usage 保留对应预留，不退款。时长累加模型及本地工具实际耗时，额度用完停止新动作；已经发生的请求不会中途取消，真实用量超预留如实记录并限制后续动作 |
+| 持久化与回放 | 冻结会话策略和请求配置摘要；同 message_id/内容回放已保存终态，不重调模型或工具；消息内容/会话冲突拒绝。模型结果先保存，再结算；DISPATCHED 无结果属于不确定窗口，不自动重发，保留预留并阻断新模型请求。工具结果先保存再写入会话；已派发效果工具无结果时不重做 |
+| 回复采信 | `content_kind` 区分 conversation/task_facts/capabilities；任务事实必须引用当前可信摘要或实际结果，服务渲染已保存状态/期间/资料包/引用索引，忽略模型虚构的任务数字和状态。空的过滤查询不拿上下文其他任务补齐。能力说明来自实际可用目录；普通对话采用保守的任务/财务主张过滤，尚不提供通用语义真实性证明或无引用财务回答 |
+| 容量 | 在原 30,000 字符默认限制内，完整计入 System Prompt、请求包装、Decision Schema 和当前轮工具反馈；保持基础节点的完整轮次缩减策略。必需内容仍超限时不预留或调用模型；不以扩大容量替代上下文设计 |
+| 日志与兼容 | 沿用同批次 `.jsonl`/可读 `.log`、10 MB 轮转和故障暂停；记录安全上下文引用、模型尝试/JSON 校验、路由、工具状态和可信预算，不打印 query/Prompt/Key。日志暂停恢复同一消息时回放结果。显式命令、按钮、目录和页面布局保持原路径；普通结果使用既有 Message 组件显示会话 ID 和预算 |
+
+**配置用法（用户维护 .env，本节点不代改）：**
+
+1. 复制 `config/agent_entry_policy.example.json` 为已忽略的 `config/agent_entry_policy.local.json`。示例三项总额度为空、approval=UNCONFIRMED，不能发起调用；填写并批准 `external_request_limit/token_limit/active_seconds_limit` 和允许企业后再使用。示例的轮次、单次预留、输出上限只是配置起点，不代表本轮已批准真实试跑额度；Token 预留需考虑完整输入、输出和所有允许重试。
+2. 在用户配置中设置 `AGENT_UI_EXECUTION_ENABLED=true`、`AGENT_ENTRY_POLICY_PATH=config/agent_entry_policy.local.json` 并配置有效模型名称/密钥，重启服务。普通聊天使用独立 EntryPolicy，不要求调查 UIPolicy；后续调查及已有直接执行路径仍需对应任务授权，不能拿会话额度替代。
+3. 没有配置入口策略路径时保留原 P25 兼容路径；配置路径后，关闭开关、未批准/缺额度/配置错误均明确阻断入口，不创建调查或发起付费调用。旧页面上的提示据实际入口节点说明查询/对话能力，不宣称调查委派已接通。
+4. 会话创建后冻结策略、模型/端点/超时/重试/容量/Prompt/Schema 的摘要，编辑文件不能扩大原会话额度；更改请求配置会阻断旧会话。密钥只用于请求，不保存进摘要或日志，轮换密钥不改变预算。日志仅保存散列短引用，本地专用 SQLite 会保存有界原始上下文与结果，不能视为公开日志。
+
+**恢复边界：** Entry API 用稳定 conversation_id/message_id 重开 SQLite 可以读取原选择、预算及结果；UI 使用当前 user_session 绑定 ID，服务器重启后的自动会话绑定、完整历史回填、独立进程故障窗口和浏览器操作仍归 P26-4/P44。接口的同消息回放不等同于完整聊天 UI 自动恢复。客户端断开后工作线程继续完成已开始动作并保存结果，不承诺用户刷新后自动定位原消息。
+
+**P26-2 完成时的未接范围：** 当时 prepare_investigation、submit_clarification、resume_investigation 无 Handler，目录和执行明确 UNAVAILABLE；未接自动调查启动、命令队列或后台 Graph。后续调查控制接入见第 6.2.15 节。get_task_result 仍只读状态及 Artifact 引用索引，没有报告正文解析；E10、P26 整体、G2、P24/P23 不因单节点而完成。
+
+**验证：** 本节点新增 24 项离线测试，使用真实 SQLite 与读取完整 Context 的模型替身，验证模型→实际工具→模型反馈、查询不造 TaskSpec、事实引用/空过滤、配置/冻结/独立预算/未知 Usage、模型与工具次数/时长上限、完整请求容量、同消息回放、结果落盘与不确定窗口、日志暂停后恢复、会话锁及真实 `on_message` 路径。额外通过实际网关 + 本地 SDK 替身验证两次 JSON 请求的汇总结算与回放，非真实网络调用。早期入口/基础上下文/旧 UI 定向 73 项通过（87.06 秒）；补强后 21 项通过（16.67 秒），首轮标准 466 项通过（226.44 秒）。新增结果引用/非法单项 Usage 的测试因误修改 frozen 实例而有 1 失败，改用副本后最终定向 24 项通过（17.73 秒）。修正入口日期/提示后，最终标准脚本完成 Ruff lint、206 文件 format、469 项 pytest（227.92 秒）、pip check、独立 MCP stdio Mock smoke（document → financial → research → risk；research COMPLETE）；只保留第三方 Traceloop 既有 Pydantic 弃用警告。
+
+**验收状态：** P26-2 本节点离线技术 `VERIFIED`，待人工审核；E01/E02 的请求上下文/查询反馈、E06 会话侧账本、E07 动态目录与参数门禁、E08 同消息回放/日志暂停及 E09 真实 on_message 路径已离线验证。E03 多任务真实指代、E04/E05 调查纵向、E06 两账本分别耗尽、E08 独立进程/命令队列、E09 浏览器及 E10 真实模型语义仍待后续。有限真实调试次数尚待答复，本节点未使用真实模型或付费搜索。最终文档/配置示例检查与 git diff --check 通过，暂存区为空；本轮三处已结束的定向临时目录已清理，未提交或推送。下一节点 P26-3，P26 整体未完成。
+
+**本节点拟提交范围（15 文件）：** `.env.example`、`app/{config,chainlit_app}.py`、`credra_agent/runtime/ui_service.py`、`credra_agent/entry/{models,store,context,policy,budget,service}.py`、`credra_agent/prompts/entry.py`、`config/agent_entry_policy.example.json`、`tests/test_v2_entry_dialogue.py`、本计划及 `docs/开发日志.md`。建议提交信息：`V2-2：接通预算受控的 LLM 对话入口与取数循环`。未获人工审核不暂存/提交/推送；不修改 .env、案例、调查 Graph、依赖或按钮布局，不另建说明文档。
+
+| 拟提交文件 | 变更摘要 |
+|---|---|
+| `.env.example` | 新增可选入口策略路径说明，不改用户配置 |
+| `app/config.py` | 读取 `agent_entry_policy_path` |
+| `app/chainlit_app.py` | 普通消息接 Entry Runtime、同会话绑定、工作线程保护及实际节点提示；日期与上下文时区一致 |
+| `credra_agent/runtime/ui_service.py` | 按实际 EntryPolicy 显示就绪/禁用/未批准状态 |
+| `credra_agent/entry/models.py` | 回复采信类型和当前轮反馈契约 |
+| `credra_agent/entry/store.py` | 提供持久化当前轮模型/工具消息 |
+| `credra_agent/entry/context.py` | 当前轮结果入上下文，完整请求容量测量 |
+| `credra_agent/entry/policy.py`（新） | 用户批准的独立会话策略、校验、冻结引用与请求摘要 |
+| `credra_agent/entry/budget.py`（新） | 独立预留/结果/结算/回放/工具计数，不确定窗口保护 |
+| `credra_agent/entry/service.py`（新） | 受控入口模型→实际本地工具→模型循环及事实回复 |
+| `credra_agent/prompts/entry.py`（新） | 独立对话入口 Prompt 与版本 |
+| `config/agent_entry_policy.example.json`（新） | 未批准、总额度留空的配置模板 |
+| `tests/test_v2_entry_dialogue.py`（新） | 24 项有状态离线链路及故障验证 |
+| `docs/Credra Agent 自主调查架构开发计划 v2.0.md` | 在现有计划中补齐状态、实施/配置/边界/验收和审核范围 |
+| `docs/开发日志.md` | 记录本节点实施事实、适配和验证结果 |
+
+#### 6.2.15 P26-3：调查委派、后台回执与两个独立预算
+
+实施日期：2026-09-13。起点：HEAD 仍为 `6e1b139`，工作区保留 P26-2 的 15 个未提交文件；用户明确要求继续下一节点，本轮在其上开发，不代替人工创建提交。以下为 P26-3 增量事实；前一节点的独立验收记录保留，当前可审核工作区合计 21 个文件。
+
+| 能力 | 实现与边界 |
+|---|---|
+| 真实调查控制 | prepare_investigation、submit_clarification、resume_investigation 接实际 Handler。目录由 Handler、冻结 EntryPolicy 的控制名单、日志及任务配置共同决定；执行时再校验任务可见性、原策略、版本、范围及预算，不允许模型自造授权 |
+| 一次入口解析 | 入口一次生成 IntentDraft；可信 build_task_spec 解析导入主体/期间、保留用户问题/来源/否定/条件，持久化 IntentResult 后交共享 execute_intent。不会再调用 parse_draft/intent_parse；未知主体保存待澄清，不套用其他企业 |
+| 同任务澄清 | 未启动草稿可补主体/年度；真实 WAITING_CLARIFICATION Graph 用 amend_agentic_task 更新 TaskSpec/授权版本后继续同 Run。拒绝过期版本、替换已知主体/Case、扩展原 allowed 或恢复 denied 来源；运行中编辑继续留待 V2-4 |
+| 资料包歧义 | 同企业多 Case 不任意启动；保存 case_id 缺项，submit_clarification 增加可选 case_id 从实际目录补齐。预检失败拒绝启动；修改测试夹具中的清单 ID 不修改真实案例 |
+| 恢复与兼容 | 恢复绑定实际 task_id/expected_state_ref；读取原 UIPolicy/RunAuthorization/请求配置和 TaskLedger，使用原 Graph/Run。终态回原状态零新增调查调用；旧 P25 意图费用保留在旧任务；无原 UI 策略的 legacy 记录只读，不凭新 EntryPolicy 获得恢复授权 |
+| 持久化命令 | command_id 由入口工具操作派生，参数/原消息指纹绑定；RESERVED→QUEUED→DISPATCHED→ACKED，未知记录 UNCERTAIN。同任务唯一活动命令，排队/派发/结果持久化；命令落盘后才回“已接受”，不把内存 Future 当执行承诺 |
+| 后台执行 | 本机 ThreadPoolExecutor 最多 2 个 Worker；会话锁只持有到命令回执，Worker 只获取 task_lock，不反向等待会话锁。Worker 再查冻结配置、状态/版本、实际单次模型预留和旧预算；明确已接受后按原任务额度继续，入口耗尽不停止已有调查 |
+| 重启与不确定 | 根 Chainlit 入口启动时分批 keyset 扫描 QUEUED 并重建 Worker，零入口调用；只恢复从未派发的命令。DISPATCHED/UNCERTAIN 不自动重发；同消息重试可回放实际命令状态/预算，入口工具回执丢失时用持久化命令去重。RESERVED 尚未承诺接受，原消息/API 回放继续，完整进程窗口与 UI 绑定恢复归 P26-4/P44 |
+| 两个预算 | EntryLedger 只记入口模型及 JSON 重试，TaskLedger 只记 Coordinator/调查工具/内部扇出。控制接口本身外调为 0，后台实际用量计 TASK；切换/创建/澄清/恢复不移动费用、不重开旧任务额度。TaskView 和回复分别展示两个 scope，记录 entry_separate_v1 命令归属，不修改原授权 Schema |
+| 模型反馈与回执 | 普通读工具继续有界模型→工具→模型；拒绝/不可用反馈允许限额内纠正。首次成功接受调查效果、待澄清或不确定回执即退出入口循环，不让模型等待整场调查或接受第二个效果动作；回执明确区分队列、已处理、待澄清、原终态和不确定 |
+| 上下文补齐 | TaskView 提供安全的命令投影、真实任务预算；等待澄清时读取当前 ask_user Observation/Action 的问题、缺项及引用。当前选择的实际 Executor 能力进入下一轮模型上下文；未接工具不因静态 Registry 标记冒充可用，报告正文读取仍未实施 |
+| 同启动批次日志 | 使用现有 .jsonl/.log/10 MB 双格式记录命令/Graph/模型/工具与安全错误元数据；Worker 复制上下文并租用根收集器寿命，短 API 返回后也不提前关闭本批次日志。命令错误记录异常类型/堆栈位置，不记录原异常内容、用户文字或密钥；日志恢复遵守既有暂停策略 |
+| 页面与命令 | 普通消息通过真实 on_message→Entry Runtime→后台 Graph；使用原 Message 回执/预算，原显式命令、按钮与状态面板路径保持原行为。未做页面重设计；独立浏览器、完整聊天恢复、长期任务管理继续归 P26-4/P44 |
+
+**配置补充：** EntryPolicy 增加 allowed_control_tools，旧策略缺此字段默认空名单，不能因升级代码自动获得调查控制；示例列出三项控制但仍 UNCONFIRMED、总额度为空。启用时用户需批准该名单，并另行配置有效、已批准的 AGENT_UI_POLICY_PATH 与调查模型/研究配置。原 AGENT_UI_EXECUTION_ENABLED 和 AGENT_ENTRY_POLICY_PATH 继续生效，.env 不代改。入口 Prompt 更新 entry-dialogue-v2、上下文 Schema 变化，旧 P26-2 会话的请求摘要不匹配会阻断新调用；应新建会话，原消息/选择/预算保留，不升级其授权。原 P25 任务仍按原请求配置恢复，入口费用不迁移过去。
+
+**实施适配：** 为多资料包澄清增加 case_id；为实际 Graph 的 ask_user 补齐待答问题；为后台服务增加日志寿命租用，避免 API 入口返回关闭仍在执行的 Worker 收集器。持久化命令使用现有 SQLite、原 TaskLedger/Graph/Run，Worker 数 2 为当前本机实现选择，后续并发调优单独验证。没有升级依赖、建立第二套 Graph/分布式队列或修改真实案例。
+
+**验证：** 新增 22 项离线测试，使用真实 SQLite、Graph、授权 Artifact 和 TaskLedger、实际本地 Handler；模型替身读取完整上下文，费用/用量为模拟值。覆盖一次解析→实际调查、同草稿及真实等待 Graph 澄清、来源/主体/Case/版本/授权门禁、多 Case、两个预算分别受限、运行中 task_lock 持有时模型取状态、原 Run/预算恢复、P25 历史意图费用、队列恢复、回执丢失/不确定状态回放、同批次日志与真实 Chainlit on_message。早期兼容 80 通过/1 失败为旧“尚未接入”提示断言，按实际策略门禁更新；首批 12 项通过（15.35 秒），扩展 41 通过/1 多 Case 测试清单 ID 不匹配，修复临时 fixture 后 18 通过（27.36 秒）。入口/UI/日志定向 126 项通过（127.92 秒）；补实际等待 Graph 的问题上下文和 amend 后最终委派 22 项通过（31.90 秒）。普通标准门禁前两次均为 490 通过/1 失败（260.87、279.85 秒）：旧 test_evidence_changes_route_and_completion[True] 触发日志不可用保护，任务留在 RUNNING；第二次启动清单记录 LOG_DELIVERY_UNCERTAIN，未确认具体原因，不归因于模型或擅自取消保护。单独证据回归 25 项通过（12.35 秒），入口/证据组合安全诊断 141 项通过（69.48 秒），直接全量安全诊断 491 项通过（272.04 秒），模拟标准环境的证据回归 25 项通过（13.27 秒）。一次性仅捕获异常类型/系统码的诊断插件原样执行标准脚本，Ruff lint/208 文件 format、491 项 pytest（253.00 秒）、pip check、独立 MCP stdio Mock smoke 均通过；未捕获日志异常，插件结束即删除，未改生产代码。去除插件后的最终普通标准脚本通过 Ruff lint/208 文件 format、491 项 pytest（276.21 秒）、pip check、独立 MCP stdio Mock smoke（document → financial → research → risk；research COMPLETE）；仅既有第三方 Traceloop Pydantic 弃用警告。P26-3 离线技术 VERIFIED、待人工审核；首次异常事实仍保留，并作为 P26-4 日志可靠性验证的已知输入。没有真实 LLM/付费搜索或 E10 试跑。
+
+**审核范围：** P26-3 增量涉及 18 路径，其中新增 credra_agent/entry/delegation.py 和 tests/test_v2_entry_delegation.py；其余是入口 Models/Policy/Store/Service/Registry/Query、Prompt/策略示例、根启动入口、日志寿命、现有 UI 提示/模型构造器、.env.example、旧不可用提示测试及两份既有文档。与未提交的 P26-2 合计 21 文件，完整清单如下；不把上一节点误标已提交，不改 .env、案例/财务输入、原调查 Graph、依赖或 AGENTS.md，不另建说明文档。
+
+| 当前拟审核文件 | 范围 |
+|---|---|
+| .env.example | 两类批准策略的入口配置说明 |
+| app/config.py | P26-2 保留的策略路径读取 |
+| app/chainlit_app.py | LLM 消息入口及实际委派提示/回执 |
+| chainlit_app.py | 根服务启动后恢复 QUEUED |
+| credra_agent/entry/models.py | 对话/权限、Case 澄清及任务预算/命令/问题契约 |
+| credra_agent/entry/context.py | P26-2 保留的完整容量/当前轮反馈 |
+| credra_agent/entry/store.py | 会话/命令与唯一派发、keyset 队列扫描 |
+| credra_agent/entry/query.py | 实际任务预算/命令/待澄清读取 |
+| credra_agent/entry/registry.py | 可选实际调查控制 Handler 与策略门禁 |
+| credra_agent/entry/policy.py（新） | 独立批准会话及调查控制名单 |
+| credra_agent/entry/budget.py（新） | P26-2 保留的独立会话账本 |
+| credra_agent/entry/service.py（新） | 一次模型决策委派及可信回执/回放 |
+| credra_agent/entry/delegation.py（新） | 持久化命令、本机 Worker、原 Runtime/预算恢复 |
+| credra_agent/prompts/entry.py（新） | entry-dialogue-v2 的调查/澄清/恢复策略 |
+| credra_agent/observability/runtime.py | 根日志收集器后台寿命租用 |
+| credra_agent/runtime/ui_service.py | 独立 Coordinator 构造器和实际入口提示 |
+| config/agent_entry_policy.example.json（新） | 未批准、总额度留空的控制策略模板 |
+| tests/test_v2_entry_dialogue.py（新） | P26-2 验收及真实门禁提示适配 |
+| tests/test_v2_entry_delegation.py（新） | 22 项实际 Graph/账本/Handler/UI 验收 |
+| docs/Credra Agent 自主调查架构开发计划 v2.0.md | 集中维护本节点事实/配置/验收/审核 |
+| docs/开发日志.md | 实施事实、适配及基线状态记录 |
+
+文档章节/代码块、未批准配置示例、git diff --check 和受保护范围检查通过，暂存区为空；本轮已结束的定向/诊断临时目录和一次性诊断插件已清理。建议提交信息：V2-2：打通 LLM 入口与受控后台调查委派。未经明确人工审核批准不创建提交。P26 整体、E08 独立进程窗口、E09 浏览器、E10/G2、P24/P23 仍未完成；下一节点 P26-4 收口可靠性及集成验证。
 
 ## 7. V2-3：财务分析深度与扩展案例
 

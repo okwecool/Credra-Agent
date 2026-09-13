@@ -44,6 +44,16 @@ class EntryStore:
                     summary_json TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS credra_entry_query_meta (
                     singleton INTEGER PRIMARY KEY CHECK(singleton=1), payload_json TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS credra_entry_commands (
+                    command_id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL, task_id TEXT NOT NULL, tool TEXT NOT NULL,
+                    status TEXT NOT NULL, payload_json TEXT NOT NULL,
+                    intent_json TEXT, result_json TEXT,
+                    budget_version TEXT NOT NULL DEFAULT 'entry_separate_v1',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_entry_active_command
+                    ON credra_entry_commands(task_id)
+                    WHERE status IN ('RESERVED','QUEUED','DISPATCHED');
             """)
 
     @contextmanager
@@ -178,6 +188,17 @@ class EntryStore:
             )
         return context_id
 
+    def turn_events(self, conversation_id, message_id):
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT role,payload_json FROM credra_entry_messages WHERE conversation_id=? AND turn_id=? AND role!='user' ORDER BY seq",
+                (conversation_id, message_id),
+            ).fetchall()
+        return [
+            {"role": row["role"], "payload": json.loads(row["payload_json"])}
+            for row in rows
+        ]
+
     def index(self, summary: TaskSummary, checkpoint_id=None):
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -258,3 +279,91 @@ class EntryStore:
             if row
             else {"cursor": None, "complete": False, "watermark": None}
         )
+
+    def command(self, command_id):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM credra_entry_commands WHERE command_id=?", (command_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def reserve_command(
+        self, *, command_id, conversation_id, message_id, task_id, tool, payload
+    ):
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM credra_entry_commands WHERE command_id=?", (command_id,)
+            ).fetchone()
+            if row:
+                if (
+                    row["conversation_id"] != conversation_id
+                    or row["payload_json"] != encoded
+                    or row["tool"] != tool
+                ):
+                    raise EntryConflict("ENTRY_COMMAND_ID_CONFLICT")
+                return dict(row)
+            try:
+                connection.execute(
+                    "INSERT INTO credra_entry_commands(command_id,conversation_id,message_id,task_id,tool,status,payload_json) VALUES(?,?,?,?,?,'RESERVED',?)",
+                    (command_id, conversation_id, message_id, task_id, tool, encoded),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise EntryConflict("ENTRY_TASK_COMMAND_BUSY") from exc
+        return self.command(command_id)
+
+    def set_command(
+        self, command_id, status, *, intent=None, result=None, expected=None
+    ):
+        with self.connect() as connection:
+            changed = connection.execute(
+                "UPDATE credra_entry_commands SET status=?,intent_json=COALESCE(?,intent_json),result_json=COALESCE(?,result_json) WHERE command_id=?"
+                + (" AND status=?" if expected else ""),
+                (
+                    status,
+                    intent.model_dump_json() if intent else None,
+                    json.dumps(result, ensure_ascii=False)
+                    if result is not None
+                    else None,
+                    command_id,
+                    *([expected] if expected else []),
+                ),
+            ).rowcount
+        return changed == 1
+
+    def queued_commands(self, *, after_rowid=0):
+        with self.connect() as connection:
+            return [
+                dict(row)
+                for row in connection.execute(
+                    "SELECT rowid AS queue_seq,* FROM credra_entry_commands WHERE status='QUEUED' AND rowid>? ORDER BY rowid LIMIT 100",
+                    (after_rowid,),
+                ).fetchall()
+            ]
+
+    def latest_command(self, task_id):
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM credra_entry_commands WHERE task_id=? ORDER BY rowid DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    @staticmethod
+    def public_command(row):
+        if row is None:
+            return None
+        public = {
+            key: row[key]
+            for key in ("command_id", "task_id", "tool", "status", "budget_version")
+        }
+        intent = json.loads(row["intent_json"]) if row["intent_json"] else None
+        public["task_spec_version"] = (
+            intent.get("bound_task_spec_version") if intent else None
+        )
+        result = json.loads(row["result_json"]) if row["result_json"] else None
+        if result:
+            public["outcome"] = result.get("outcome")
+            public["limitations"] = result.get("limitations", [])
+        return public
