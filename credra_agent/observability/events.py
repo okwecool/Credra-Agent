@@ -15,7 +15,17 @@ PROCESS_INSTANCE_ID = uuid4().hex
 CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
     "credra_log_context", default=None
 )
-CONTEXT_FIELDS = {"thread_id", "run_id", "case_id", "action_id", "call_id", "node"}
+CONTEXT_FIELDS = {
+    "thread_id",
+    "run_id",
+    "case_id",
+    "action_id",
+    "call_id",
+    "node",
+    "conversation_id",
+    "message_id",
+    "context_id",
+}
 EVENTS = frozenset(
     {
         "SERVICE_START",
@@ -140,6 +150,9 @@ TECHNICAL = {
     "schema_version",
 }
 IDENTIFIERS = {
+    "conversation_id",
+    "message_id",
+    "context_id",
     "thread_id",
     "run_id",
     "case_id",

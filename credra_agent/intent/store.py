@@ -92,3 +92,25 @@ class IntentStore:
                 (thread_id,),
             ).fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    def iter_latest_task_specs(self, *, batch_size: int = 200):
+        """Stream one real TaskSpec per thread; control messages are excluded."""
+        if not 1 <= batch_size <= 1000:
+            raise ValueError("INVALID_INTENT_BATCH_SIZE")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """SELECT messages.thread_id, messages.result_json
+                FROM credra_intent_messages AS messages
+                JOIN (
+                    SELECT thread_id, MAX(task_spec_version) AS version
+                    FROM credra_intent_messages
+                    WHERE json_extract(result_json, '$.task_spec') IS NOT NULL
+                    GROUP BY thread_id
+                ) AS latest ON messages.thread_id=latest.thread_id
+                AND messages.task_spec_version=latest.version
+                WHERE json_extract(messages.result_json, '$.task_spec') IS NOT NULL
+                ORDER BY messages.thread_id"""
+            )
+            while rows := cursor.fetchmany(batch_size):
+                for thread_id, payload in rows:
+                    yield thread_id, IntentResult.model_validate_json(payload).task_spec
