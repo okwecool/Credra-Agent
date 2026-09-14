@@ -226,6 +226,7 @@ def start_agentic_task(
     fallback: Any | None = None,
     fault_hook: Any | None = None,
     initial_evidence_bundle: Any | None = None,
+    initial_financial_input: Any | None = None,
 ) -> dict[str, Any]:
     """Start agentic_v2 explicitly; baseline remains the default start entry."""
 
@@ -247,6 +248,13 @@ def start_agentic_task(
         raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
     if spec.case_id is None:
         raise ValueError("agentic task requires a bound case_id")
+    financial_input = None
+    if initial_financial_input is not None:
+        from credra_agent.financial.models import FinancialInput
+
+        financial_input = FinancialInput.model_validate(initial_financial_input)
+        if financial_input.subject_id != spec.subject_id:
+            raise ValueError("FINANCIAL_SUBJECT_MISMATCH")
     case_dir = _case_dir(settings, spec.case_id)
     run_id = run_id_for_thread(thread_id)
     run_dir = case_dir / "runs" / run_id
@@ -261,6 +269,13 @@ def start_agentic_task(
         "artifacts/agent_run_authorization_v1.json", approved
     )
     initial_evidence_refs = []
+    initial_financial_refs = []
+    if financial_input is not None:
+        initial_financial_refs = [
+            artifacts.write_json(
+                "artifacts/agent_financial_input_v1.json", financial_input
+            )
+        ]
     if initial_evidence_bundle is not None:
         from credra_agent.evidence.artifacts import write_evidence_artifacts
         from credra_agent.evidence.models import EvidenceBundle
@@ -299,6 +314,7 @@ def start_agentic_task(
         index_ref,
         budget_ref,
         *initial_evidence_refs,
+        *initial_financial_refs,
     ]
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         config = graph_config(thread_id)

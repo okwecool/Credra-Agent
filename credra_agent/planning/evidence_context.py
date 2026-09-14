@@ -14,6 +14,8 @@ def evidence_context(
     """Only explicit read_document results expose text; indexes expose metadata."""
     bundles = []
     reads = []
+    financial_inputs = []
+    financial_results = []
     proposals = {}
     # The latest receipt for each claim replaces its earlier pending view;
     # source documents and contradictory independent evidence remain retained.
@@ -54,10 +56,43 @@ def evidence_context(
                     ],
                 }
             )
+        elif reference.startswith("artifacts/agent_financial_input_v"):
+            from credra_agent.financial.models import FinancialInput
+
+            data = FinancialInput.model_validate(store.read_json(reference))
+            financial_inputs.append(
+                {
+                    "reference": reference,
+                    "subject_id": data.subject_id,
+                    "source_kind": data.source_kind,
+                    "fields": [
+                        {
+                            "metric": item.metric,
+                            "period": item.period.model_dump(mode="json"),
+                            "measurement": item.measurement,
+                            "receivables_basis": item.receivables_basis,
+                            "accounting_basis": item.accounting_basis,
+                            "profit_attribution": item.profit_attribution,
+                            "revision": item.revision,
+                            "missing": item.value is None,
+                            "missing_reason": item.missing_reason,
+                            "normalized_unit": item.normalized_unit,
+                            "source_refs": [
+                                source.model_dump(mode="json")
+                                for source in item.source_refs
+                            ],
+                        }
+                        for item in data.datums
+                    ],
+                    "limitations": data.limitations,
+                }
+            )
         elif reference.startswith("artifacts/agent_tool_result_v"):
             payload = store.read_json(reference)
             if payload.get("schema_version") == "document_read_v2_p22":
                 reads.append({"reference": reference, **payload})
+            elif payload.get("schema_version") == "agent_financial_result_v2":
+                financial_results.append({"reference": reference, **payload})
         elif reference.startswith("artifacts/agent_claim_proposals_v"):
             payload = store.read_json(reference)
             for item in payload["proposals"]:
@@ -69,6 +104,8 @@ def evidence_context(
     return {
         "bundles": bundles,
         "document_reads": reads,
+        "financial_inputs": financial_inputs,
+        "financial_results": financial_results,
         "claim_proposals": [
             item.model_dump(mode="json") for item in proposals.values()
         ],
@@ -107,6 +144,10 @@ def coordinator_evidence_context(store, references, task) -> dict:
             context["bundles"].pop(0)
         elif context["claim_proposals"]:
             context["claim_proposals"].pop(0)
+        elif context["financial_results"]:
+            context["financial_results"].pop(0)
+        elif context["financial_inputs"]:
+            context["financial_inputs"].pop(0)
         else:
             break
     return context

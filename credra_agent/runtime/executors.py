@@ -16,6 +16,7 @@ from credra_agent.execution.executor import (
     HandlerDefinition,
 )
 from credra_agent.execution.models import SearchEvidenceArgs
+from credra_agent.financial.actions import compute_metrics
 from credra_agent.intent.models import TaskSpec
 from credra_agent.planning.models import CoordinatorLimits
 
@@ -132,6 +133,7 @@ def build_agentic_executor(
         fetch_actual_external_requests=fetch_actual_external_requests,
     )
     handlers = {
+        "compute_metrics": HandlerDefinition(compute_metrics, contextual=True),
         "search_evidence": HandlerDefinition(
             search_evidence, external_request_reservation=1
         ),
