@@ -177,6 +177,14 @@ class TaskQueryService:
 
     def refresh(self):
         """Bounded Checkpoint backfill plus a new-head scan; never count versions as tasks."""
+        try:
+            return self._refresh()
+        except UIRequestBlocked:
+            # Another conversation is rebuilding the shared projection. Existing
+            # rows remain readable; this page must disclose incomplete coverage.
+            return False
+
+    def _refresh(self):
         with task_lock(self.settings.checkpoint_db_path, "entry-task-projection"):
             meta = self.store.query_meta()
             with open_checkpointer(self.settings.checkpoint_db_path) as saver:

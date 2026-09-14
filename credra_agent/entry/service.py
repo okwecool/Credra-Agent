@@ -263,6 +263,17 @@ def _execute_locked(
         spent = budget.snapshot(conversation_id, policy)
         selected = store.conversation(conversation_id, workspace)["selected_task_id"]
         task_budget = query.get(selected).budget if selected else None
+        # Selecting an existing task is not authorization to create another one
+        # during the same turn, even if the model proposes it after selection.
+        controls = [
+            tool
+            for tool in policy.allowed_control_tools
+            if tool != "prepare_investigation"
+            or not any(
+                result.tool == "select_task" and result.status == "SUCCESS"
+                for result in results
+            )
+        ]
         return EntryPermissions(
             allowed_subject_ids=policy.allowed_subject_ids,
             entry_authorized=True,
@@ -276,7 +287,7 @@ def _execute_locked(
             logging_healthy=True,
             request_profile_compatible=True,
             investigation_control_enabled=bool(policy.allowed_control_tools),
-            allowed_control_tools=policy.allowed_control_tools,
+            allowed_control_tools=controls,
             task_policy_ref=task_budget.get("policy_ref") if task_budget else None,
             task_remaining_requests=task_budget.get("remaining_external")
             if task_budget
@@ -437,7 +448,6 @@ def _execute_locked(
                 )
                 tool_row = budget.tool(conversation_id, tool_operation)
             tool_result = EntryToolResult.model_validate_json(tool_row["result_json"])
-            results.append(tool_result)
             store.append(
                 conversation_id=conversation_id,
                 workspace_ref=workspace,
@@ -447,6 +457,17 @@ def _execute_locked(
                 payload=tool_result.model_dump(mode="json"),
             )
             definition = registry.definitions.get(decision.tool)
+            if definition and definition.effect == "DISPATCH_INVESTIGATION":
+                command = tool_result.data.get("command")
+                if command:
+                    live = store.command(command["command_id"])
+                    if live and live["conversation_id"] == conversation_id:
+                        if live["status"] == "QUEUED":
+                            delegation.schedule(live["command_id"])
+                        # Keep the saved tool/history receipt immutable; present
+                        # the command's current status after a process restart.
+                        tool_result = delegation._receipt(live, tool_result.call_id)
+            results.append(tool_result)
             if (
                 definition
                 and definition.effect == "DISPATCH_INVESTIGATION"
@@ -557,7 +578,7 @@ def _ground_reply(reply, payload, results):
             scopes.update({ref: result for ref in result.fact_refs})
     if reply.content_kind == "conversation":
         if reply.fact_refs or re.search(
-            r"任务|调查|报告|授信|完成|批准|拒绝|贷款|金额|利润|现金流|收入|债务|应收|担保|处罚|比亚迪|上汽|\d|\b(?:RUNNING|COMPLETED|READY|LIMITED)\b",
+            r"任务|调查|报告|授信|完成|批准|拒绝|贷款|金额|利润|现金流|收入|债务|应收|担保|处罚|比亚迪|上汽|\b(?:RUNNING|COMPLETED|READY|LIMITED)\b",
             reply.text,
         ):
             raise EntryConflict("ENTRY_UNREFERENCED_TASK_CLAIM")

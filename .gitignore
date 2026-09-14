@@ -28,6 +28,7 @@ checkpoints/*.db
 checkpoints/*.db-*
 /checkpoints/ui_task_locks/
 /checkpoints/.p25-browser/
+/checkpoints/.p26-browser/
 traces/*.jsonl
 traces/.fault_state/
 data/*/artifacts/

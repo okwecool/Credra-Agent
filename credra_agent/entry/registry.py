@@ -135,13 +135,14 @@ class EntryToolRegistry:
         schema = model.model_json_schema()
         definitions = schema.pop("$defs", {})
 
-        def references(value):
+        def references(value, properties=False):
             if isinstance(value, dict):
                 return {
                     key: item.replace("#/$defs/", "#/tool_contracts/")
                     if key == "$ref"
-                    else references(item)
+                    else references(item, properties=key == "properties")
                     for key, item in value.items()
+                    if key != "title" or properties
                 }
             if isinstance(value, list):
                 return [references(item) for item in value]
@@ -225,12 +226,15 @@ class EntryToolRegistry:
             )
         try:
             parsed = definition.arguments_model.model_validate(arguments)
-        except ValidationError:
+        except ValidationError as exc:
+            from credra_agent.observability.validation import schema_issues
+
             return EntryToolResult(
                 call_id=call_id,
                 tool=tool,
                 status="REJECTED",
                 observed_at=now(),
+                data=schema_issues(exc, definition.arguments_model),
                 limitations=["ENTRY_TOOL_ARGUMENTS_INVALID"],
             )
         with (

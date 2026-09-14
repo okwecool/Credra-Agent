@@ -332,13 +332,36 @@ class EntryStore:
             ).rowcount
         return changed == 1
 
-    def queued_commands(self, *, after_rowid=0):
+    def enqueue_command(self, command_id, intent, workspace_ref):
+        """Acceptance and its conversation selection have one durable boundary."""
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT conversation_id,task_id FROM credra_entry_commands WHERE command_id=? AND status='RESERVED'",
+                (command_id,),
+            ).fetchone()
+            if row is None:
+                raise EntryConflict("ENTRY_COMMAND_NOT_RESERVED")
+            selected = connection.execute(
+                "UPDATE credra_entry_conversations SET selected_task_id=? WHERE conversation_id=? AND workspace_ref=?",
+                (row["task_id"], row["conversation_id"], workspace_ref),
+            ).rowcount
+            if selected != 1:
+                raise EntryConflict("ENTRY_CONVERSATION_NOT_VISIBLE")
+            connection.execute(
+                "UPDATE credra_entry_commands SET status='QUEUED',intent_json=? WHERE command_id=? AND status='RESERVED'",
+                (intent.model_dump_json(), command_id),
+            )
+
+    def queued_commands(self, *, after_rowid=0, status="QUEUED"):
+        if status not in {"QUEUED", "DISPATCHED"}:
+            raise EntryConflict("ENTRY_COMMAND_SCAN_INVALID")
         with self.connect() as connection:
             return [
                 dict(row)
                 for row in connection.execute(
-                    "SELECT rowid AS queue_seq,* FROM credra_entry_commands WHERE status='QUEUED' AND rowid>? ORDER BY rowid LIMIT 100",
-                    (after_rowid,),
+                    "SELECT rowid AS queue_seq,* FROM credra_entry_commands WHERE status=? AND rowid>? ORDER BY rowid LIMIT 100",
+                    (status, after_rowid),
                 ).fetchall()
             ]
 

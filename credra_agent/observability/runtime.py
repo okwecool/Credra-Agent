@@ -59,10 +59,10 @@ class ServiceLog:
             else:
                 send(self.endpoint, record)
             return True
-        except (LoggingUnavailable, OSError, ValueError, TypeError):
+        except (LoggingUnavailable, OSError, ValueError, TypeError) as exc:
             if self.healthy:
                 self.healthy = False
-                diagnostic_failure()
+                diagnostic_failure("EVENT_OR_DELIVERY_FAILURE", exc)
             return False
 
     def close(self):

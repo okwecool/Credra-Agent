@@ -88,6 +88,8 @@ class InvestigationDelegation:
     def unavailable_reason(self, tool, permissions):
         if not self.policy or tool not in self.policy.allowed_control_tools:
             return "会话策略未允许此调查控制"
+        if tool not in permissions.allowed_control_tools:
+            return "当前轮次未允许此调查控制；选择已有任务不授权新建调查"
         if not permissions.logging_healthy:
             return "日志不可用"
         try:
@@ -294,9 +296,7 @@ class InvestigationDelegation:
                     if model is None:
                         raise EntryConflict("ENTRY_COORDINATOR_REQUIRED")
                     self._require_task_budget(task_id, frozen[1], model)
-                    self.store.set_command(
-                        command_id, "QUEUED", intent=intent, expected="RESERVED"
-                    )
+                    self.store.enqueue_command(command_id, intent, self.workspace_ref)
                     emit(
                         "ACTION_STATE",
                         status="ACCEPTED",
@@ -504,6 +504,28 @@ class InvestigationDelegation:
                 )
 
     def recover(self):
+        cursor = 0
+        while True:
+            batch = self.store.queued_commands(after_rowid=cursor, status="DISPATCHED")
+            for row in batch:
+                try:
+                    with task_lock(self.settings.checkpoint_db_path, row["task_id"]):
+                        self.store.set_command(
+                            row["command_id"],
+                            "UNCERTAIN",
+                            expected="DISPATCHED",
+                            result={
+                                "outcome": "UNKNOWN",
+                                "limitations": [
+                                    "ENTRY_PROCESS_INTERRUPTED_AFTER_DISPATCH"
+                                ],
+                            },
+                        )
+                except UIRequestBlocked:
+                    pass  # An OS-owned live worker still owns this task.
+            if len(batch) < 100:
+                break
+            cursor = batch[-1]["queue_seq"]
         cursor = 0
         while True:
             batch = self.store.queued_commands(after_rowid=cursor)

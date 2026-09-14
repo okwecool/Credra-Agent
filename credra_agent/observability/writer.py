@@ -4,6 +4,7 @@ import json
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from time import sleep
 from uuid import uuid4
 
 from .events import utc_now
@@ -27,6 +28,7 @@ class VolumeWriter:
         self.text_size = 0
         self.failed = False
         self.closed = False
+        self.operation = "INITIALIZE"
         self.started_at = utc_now()
         self.file = (self.directory / "service.0001.jsonl").open("xb")
         try:
@@ -54,12 +56,24 @@ class VolumeWriter:
         }
         target = self.directory / "startup.json"
         temporary = self.directory / "startup.json.tmp"
+        self.operation = "MANIFEST_WRITE"
         with temporary.open("w", encoding="utf-8", newline="\n") as file:
             json.dump(payload, file, ensure_ascii=False, indent=2)
             file.write("\n")
             file.flush()
             os.fsync(file.fileno())
-        temporary.replace(target)
+        self.operation = "MANIFEST_REPLACE"
+        for attempt, delay in enumerate((0.01, 0.02, 0.05, 0.1, 0)):
+            try:
+                temporary.replace(target)
+                break
+            except PermissionError as exc:
+                # Windows can deny an atomic rename while another reader holds
+                # the manifest without delete sharing. Retry only this metadata
+                # replacement (180 ms total), never event writes or requests.
+                if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 4:
+                    raise
+                sleep(delay)
 
     @staticmethod
     def encode(record: dict) -> bytes:
@@ -110,10 +124,12 @@ class VolumeWriter:
                 self.text_file = next_text_file
                 self.text_segment = next_text_segment
                 self.text_size = 0
+            self.operation = "JSONL_WRITE"
             self.file.write(payload)
             self.file.flush()
             os.fsync(self.file.fileno())
             self.size += len(payload)
+            self.operation = "TEXT_WRITE"
             self.text_file.write(text_payload)
             self.text_file.flush()
             os.fsync(self.text_file.fileno())
