@@ -141,6 +141,8 @@ class FinancialInput(FinancialModel):
     schema_version: Literal["agent_financial_input_v2"] = "agent_financial_input_v2"
     subject_id: str = Field(min_length=1, max_length=200)
     source_kind: SourceKind = "UNKNOWN"
+    input_file_ref: str | None = None
+    input_file_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     datums: list[FinancialDatum] = Field(min_length=1, max_length=1000)
     limitations: list[str] = Field(default_factory=list)
 

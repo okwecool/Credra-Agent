@@ -116,7 +116,8 @@ class EntryContextBuilder:
                     "registered_available": tool["available"],
                     "available_in_selected_executor": tool["available"]
                     and tool["name"] in executable,
-                    "description": "仅由已授权调查 Runtime 调用，不能作为入口工具直接执行。",
+                    "description": tool.get("description", "")
+                    + "仅由已授权调查 Runtime 调用，不能作为入口工具直接执行。",
                     "unavailable_reason": tool["unavailable_reason"]
                     or (
                         None

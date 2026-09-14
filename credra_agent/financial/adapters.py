@@ -182,3 +182,27 @@ def load_legacy_financial(case_dir: Path, *, subject_id: str) -> FinancialInput:
         source_hash="sha256:" + hashlib.sha256(content).hexdigest(),
         manifest=manifest,
     )
+
+
+def load_case_financial(case_dir: Path, *, subject_id: str) -> FinancialInput | None:
+    """Snapshot an optional declared v2 input; never infer v2 amounts from v1."""
+    root = case_dir.resolve()
+    path = root / "source" / "financial_input_v2.json"
+    # Missing is compatible with existing Cases. An invalid or escaped declared
+    # input is a preflight failure, never silently treated as missing.
+    if not path.exists() and not path.is_symlink():
+        return None
+    if path.resolve().parent != root / "source":
+        raise ValueError("FINANCIAL_SOURCE_OUTSIDE_CASE")
+    content = path.read_bytes()
+    data = FinancialInput.model_validate(
+        json.loads(content.decode("utf-8"), parse_float=Decimal)
+    )
+    if data.subject_id != subject_id:
+        raise ValueError("FINANCIAL_SUBJECT_MISMATCH")
+    return data.model_copy(
+        update={
+            "input_file_ref": "source/financial_input_v2.json",
+            "input_file_hash": "sha256:" + hashlib.sha256(content).hexdigest(),
+        }
+    )

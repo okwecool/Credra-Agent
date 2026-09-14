@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import shutil
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal, localcontext
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 from app.runtime.tasks import resume_agentic_task, run_id_for_thread, start_agentic_task
 from app.tools.artifacts import ArtifactStore
+from credra_agent.evidence.adapters import load_case_evidence
 from credra_agent.execution.executor import ExecutionContext
 from credra_agent.execution.ledger import ActionLedger
 from credra_agent.execution.models import ComputeMetricsArgs
@@ -19,6 +21,7 @@ from credra_agent.execution.registry import default_registry
 from credra_agent.financial.actions import compute_metrics
 from credra_agent.financial.adapters import (
     adapt_legacy_financial,
+    load_case_financial,
     load_legacy_financial,
     normalize_amount,
 )
@@ -439,12 +442,19 @@ def test_action_requires_visible_subject_scoped_input_and_zero_tool_budget(tmp_p
     )
 
 
+@pytest.mark.parametrize("source", ["explicit", "case"])
 @pytest.mark.parametrize("crash", [False, True])
 def test_durable_graph_exposes_inputs_saves_results_and_replays_without_cost(
-    tmp_path, crash
+    tmp_path, crash, source
 ):
     config = settings(tmp_path)
     (config.data_dir / "case_synthetic_financial/source").mkdir(parents=True)
+    input_path = (
+        config.data_dir / "case_synthetic_financial/source/financial_input_v2.json"
+    )
+    if source == "case":
+        input_path.write_text(dataset().model_dump_json(indent=2), encoding="utf-8")
+    initial = {"initial_financial_input": dataset()} if source == "explicit" else {}
     action = DecisionDraft(
         decision="ACTION",
         tool="compute_metrics",
@@ -470,8 +480,13 @@ def test_durable_graph_exposes_inputs_saves_results_and_replays_without_cost(
                 **kwargs,
                 task_spec=financial_task(),
                 authorization=authorization(),
-                initial_financial_input=dataset(),
+                **initial,
                 fault_hook=FailOnce("after_result_stored"),
+            )
+        # Resume must consume the frozen Run input even if the source Case changes.
+        if source == "case":
+            input_path.write_text(
+                '{"subject_id":"foreign","datums":[]}', encoding="utf-8"
             )
         result = resume_agentic_task(**kwargs)
     else:
@@ -479,7 +494,7 @@ def test_durable_graph_exposes_inputs_saves_results_and_replays_without_cost(
             **kwargs,
             task_spec=financial_task(),
             authorization=authorization(),
-            initial_financial_input=dataset(),
+            **initial,
         )
     store = ArtifactStore(
         config.data_dir
@@ -493,6 +508,9 @@ def test_durable_graph_exposes_inputs_saves_results_and_replays_without_cost(
     ]
     first = model.payloads[0]["evidence_context"]["financial_inputs"][0]
     assert first["reference"] == INPUT_REF and "value" not in first["fields"][0]
+    if source == "case":
+        assert first["input_file_hash"].startswith("sha256:")
+        assert first["input_file_ref"] == "source/financial_input_v2.json"
     assert (
         model.payloads[1]["evidence_context"]["financial_results"][0]["results"][-1][
             "display"
@@ -524,3 +542,310 @@ def test_foreign_initial_input_is_rejected_before_creating_run(tmp_path):
             initial_financial_input=dataset(),
         )
     assert not (config.data_dir / "case_byd_002594/runs").exists()
+
+
+def test_case_input_optional_and_snapshot_hash_is_of_raw_import_file(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    assert load_case_financial(tmp_path, subject_id="SYNTHETIC-CONTROL") is None
+    path = source / "financial_input_v2.json"
+    content = dataset().model_dump_json(indent=2).encode("utf-8")
+    path.write_bytes(content)
+    loaded = load_case_financial(tmp_path, subject_id="SYNTHETIC-CONTROL")
+    assert loaded.input_file_hash == "sha256:" + hashlib.sha256(content).hexdigest()
+    assert loaded.datums == dataset().datums
+    assert path.read_bytes() == content
+
+
+@pytest.mark.parametrize("invalid", ["json", "schema", "subject", "unit"])
+def test_invalid_declared_case_input_fails_before_model_or_run_artifacts(
+    tmp_path, invalid
+):
+    config = settings(tmp_path)
+    case = config.data_dir / "case_synthetic_financial"
+    (case / "source").mkdir(parents=True)
+    raw = dataset().model_dump(mode="json")
+    if invalid == "schema":
+        raw["schema_version"] = "unknown"
+    elif invalid == "subject":
+        raw["subject_id"] = "SYNTHETIC-OTHER"
+    elif invalid == "unit":
+        raw["datums"][0]["normalized_unit"] = "USD"
+    (case / "source/financial_input_v2.json").write_text(
+        "{" if invalid == "json" else json.dumps(raw), encoding="utf-8"
+    )
+    model = FixedModel([])
+    with pytest.raises(ValueError):
+        start_agentic_task(
+            thread_id="invalid-case-input",
+            task_spec=financial_task(),
+            authorization=authorization(),
+            settings=config,
+            model=model,
+            executor=build_agentic_executor(financial_task()),
+        )
+    assert model.payloads == [] and not (case / "runs").exists()
+
+
+def test_shared_intent_execution_automatically_imports_declared_case_input(tmp_path):
+    from credra_agent.intent.models import IntentResult
+    from credra_agent.runtime.service import execute_intent
+
+    config = settings(tmp_path)
+    source = config.data_dir / "case_synthetic_financial/source"
+    source.mkdir(parents=True)
+    (source / "financial_input_v2.json").write_text(
+        dataset().model_dump_json(), encoding="utf-8"
+    )
+    model = FixedModel([finish_decision("NEEDS_REVIEW")])
+    intent = IntentResult(
+        source_message_id="synthetic-input-message",
+        thread_id="synthetic-shared-runtime",
+        operation="start",
+        task_spec=financial_task(),
+        parser_mode="RULE_FALLBACK",
+    )
+    result = execute_intent(
+        intent=intent,
+        settings=config,
+        authorization=authorization(),
+        coordinator_model=model,
+        executor_factory=build_agentic_executor,
+    )
+    assert result.outcome == "TASK_STATE"
+    assert (
+        model.payloads[0]["evidence_context"]["financial_inputs"][0]["subject_id"]
+        == "SYNTHETIC-CONTROL"
+    )
+
+
+DEEP_CASE = "case_byd_cash_quality_v2"
+
+
+def real_task():
+    return financial_task().model_copy(
+        update={
+            "subject_id": "002594",
+            "subject_name": "比亚迪股份有限公司",
+            "case_id": DEEP_CASE,
+            "as_of": date(2026, 4, 2),
+            "source_policy": SourcePolicy(preferred=["exchange"]),
+        }
+    )
+
+
+def test_real_case_material_identity_cutoff_hashes_and_unverified_status():
+    from app.cases import validate_case
+    from credra_agent.intent.catalog import load_subject_catalog, resolve_subject
+
+    case = ROOT / "data" / DEEP_CASE
+    assert validate_case(DEEP_CASE, ROOT / "data").valid
+    bundle = load_case_evidence(case, subject_id="002594", as_of=date(2026, 4, 2))
+    data = load_case_financial(case, subject_id="002594")
+    manifest = json.loads(
+        (case / "source/source_manifest.json").read_text(encoding="utf-8")
+    )
+    sources = {item["source_id"]: item for item in manifest["sources"]}
+    assert len(bundle.documents) == 13 and not bundle.claims and not bundle.evidence
+    assert (
+        len(
+            {
+                "media_response"
+                if doc.original_publisher == "Reuters"
+                else doc.source_tags[0]
+                for doc in bundle.documents
+            }
+        )
+        == 5
+    )
+    assert all(
+        doc.source_kind == "REAL"
+        and doc.published_at <= bundle.as_of
+        and doc.fragments
+        and doc.url == sources[doc.document_id]["url"]
+        and doc.published_at.isoformat() == sources[doc.document_id]["publication_date"]
+        for doc in bundle.documents
+    )
+    assert sum(doc.hash_scope == "RESPONSE_BYTES" for doc in bundle.documents) == 12
+    extracted = next(
+        doc for doc in bundle.documents if doc.hash_scope == "EXTRACTED_TEXT"
+    )
+    assert (
+        extracted.document_hash
+        == "sha256:"
+        + hashlib.sha256(
+            "\n".join(f.text for f in extracted.fragments).encode("utf-8")
+        ).hexdigest()
+    )
+    snapshot_hash = (
+        "sha256:"
+        + hashlib.sha256(
+            (case / "source/evidence_bundle_v2.json").read_bytes()
+        ).hexdigest()
+    )
+    assert data.source_kind == "REAL" and len(data.datums) == 10
+    assert all(
+        ref.input_hash == snapshot_hash for d in data.datums for ref in d.source_refs
+    )
+    assert not load_case_financial(ROOT / "data/case_byd_002594", subject_id="002594")
+    catalog = load_subject_catalog(ROOT / "data")
+    assert resolve_subject("比亚迪", catalog).case_id == "case_byd_002594"
+    assert resolve_subject(DEEP_CASE, catalog).case_id == DEEP_CASE
+    assert resolve_subject("case_byd_002594", catalog).case_id == "case_byd_002594"
+
+
+def test_real_annual_amounts_preserve_group_profit_net_receivables_and_display():
+    data = load_case_financial(ROOT / "data" / DEEP_CASE, subject_id="002594")
+    by_field = {
+        (d.period.end.year, d.metric, d.profit_attribution): d.value
+        for d in data.datums
+    }
+    assert by_field[2025, "net_profit", "GROUP_TOTAL"] == Decimal(33760758)
+    assert by_field[2025, "net_profit", "OWNERS_OF_PARENT"] == Decimal(32619022)
+    assert by_field[2024, "net_profit", "GROUP_TOTAL"] == Decimal(41587940)
+    assert by_field[2025, "receivables", "NOT_APPLICABLE"] == Decimal(37004685)
+    assert by_field[2024, "receivables", "NOT_APPLICABLE"] == Decimal(62298988)
+    result = calculate(data, as_of=date(2026, 4, 2))
+    assert all(item.status == "COMPUTED" for item in result.values())
+    assert {key: item.display for key, item in result.items()} == {
+        "revenue_growth": "3.46%",
+        "receivables_growth": "-40.60%",
+        "growth_gap": "-44.06 个百分点",
+        "cash_profit_ratio": "1.75 倍",
+    }
+    # Independent amount cross-check, not a rounded percentage as denominator.
+    with localcontext() as context:
+        context.prec = 50
+        assert result["cash_profit_ratio"].value == Decimal(59135544) / Decimal(
+            33760758
+        )
+
+
+@pytest.mark.parametrize("crash", [False, True])
+def test_real_case_shared_runtime_reads_then_computes_and_resume_keeps_snapshot(
+    tmp_path, crash
+):
+    from credra_agent.intent.models import IntentResult
+    from credra_agent.runtime.service import execute_intent
+
+    config = settings(tmp_path)
+    case = config.data_dir / DEEP_CASE
+    shutil.copytree(ROOT / "data" / DEEP_CASE / "source", case / "source")
+    source_bytes = {
+        path.name: path.read_bytes() for path in (case / "source").iterdir()
+    }
+    read = DecisionDraft(
+        decision="ACTION",
+        tool="read_document",
+        arguments={
+            "reference_id": "artifacts/agent_evidence_v0.json",
+            "document_id": "byd-2025-annual",
+        },
+        expected_observation="读取同一冻结年报必要原文",
+        reason_summary="先核对输入来源",
+    )
+    compute = DecisionDraft(
+        decision="ACTION",
+        tool="compute_metrics",
+        arguments={
+            "metric_ids": list(FORMULAS),
+            "input_refs": [INPUT_REF],
+            "accounting_basis": "CONSOLIDATED",
+        },
+        expected_observation="计算真实年度指标并保留采信缺口",
+        reason_summary="使用同主体同口径冻结金额",
+    )
+    model = FixedModel([read, compute, finish_decision("NEEDS_REVIEW")])
+    intent = IntentResult(
+        source_message_id="real-case-message",
+        thread_id="real-case-offline",
+        operation="start",
+        task_spec=real_task(),
+        parser_mode="RULE_FALLBACK",
+    )
+    if crash:
+        with pytest.raises(RuntimeError, match="after_result_stored"):
+            start_agentic_task(
+                thread_id=intent.thread_id,
+                task_spec=intent.task_spec,
+                authorization=authorization(),
+                settings=config,
+                model=model,
+                executor=build_agentic_executor(real_task()),
+                fault_hook=FailOnce("after_result_stored"),
+            )
+        # Both declared source files become unusable; the Run remains valid.
+        for name in ["financial_input_v2.json", "evidence_bundle_v2.json"]:
+            (case / "source" / name).write_text("{", encoding="utf-8")
+        resume_agentic_task(
+            thread_id=intent.thread_id,
+            settings=config,
+            model=model,
+            executor=build_agentic_executor(real_task()),
+        )
+    else:
+        assert (
+            execute_intent(
+                intent=intent,
+                settings=config,
+                authorization=authorization(),
+                coordinator_model=model,
+                executor_factory=build_agentic_executor,
+            ).outcome
+            == "TASK_STATE"
+        )
+        assert all(
+            (case / "source" / name).read_bytes() == content
+            for name, content in source_bytes.items()
+        )
+    first = model.payloads[0]["evidence_context"]
+    assert len(first["bundles"][0]["documents"]) == 13
+    assert first["financial_inputs"][0]["source_kind"] == "REAL"
+    source_catalog = first["financial_inputs"][0]["source_catalog"]
+    assert len(source_catalog) == 1 and source_catalog[0]["source_hash"].startswith(
+        "sha256:"
+    )
+    assert len(json.dumps(first, ensure_ascii=False)) <= 18000
+    assert "text" not in first["bundles"][0]["documents"][0]
+    assert model.payloads[1]["evidence_context"]["document_reads"]
+    assert (
+        model.payloads[2]["evidence_context"]["financial_results"][0]["results"][-1][
+            "display"
+        ]
+        == "1.75 倍"
+    )
+    ledger = ActionLedger(config.checkpoint_db_path)
+    budget = ledger.budget_snapshot(intent.thread_id, authorization())
+    assert budget["external_spent"] == 3 and budget["token_spent"] == 60
+
+
+@pytest.mark.parametrize("invalid", ["json", "subject", "cutoff"])
+def test_declared_evidence_failure_blocks_run_before_model(tmp_path, invalid):
+    config = settings(tmp_path)
+    case = config.data_dir / DEEP_CASE
+    shutil.copytree(ROOT / "data" / DEEP_CASE / "source", case / "source")
+    path = case / "source/evidence_bundle_v2.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if invalid == "subject":
+        raw["entities"][0]["entity_id"] = "foreign"
+    elif invalid == "cutoff":
+        raw["as_of"] = "2026-04-03"
+    path.write_text("{" if invalid == "json" else json.dumps(raw), encoding="utf-8")
+    model = FixedModel([])
+    with pytest.raises(ValueError):
+        start_agentic_task(
+            thread_id="invalid-evidence",
+            task_spec=real_task(),
+            authorization=authorization(),
+            settings=config,
+            model=model,
+            executor=build_agentic_executor(real_task()),
+        )
+    assert not model.payloads and not (case / "runs").exists()
+
+
+def test_undeclared_evidence_snapshot_is_compatible(tmp_path):
+    assert (
+        load_case_evidence(tmp_path, subject_id="002594", as_of=date(2026, 4, 2))
+        is None
+    )

@@ -256,6 +256,16 @@ def start_agentic_task(
         if financial_input.subject_id != spec.subject_id:
             raise ValueError("FINANCIAL_SUBJECT_MISMATCH")
     case_dir = _case_dir(settings, spec.case_id)
+    if initial_financial_input is None:
+        from credra_agent.financial.adapters import load_case_financial
+
+        financial_input = load_case_financial(case_dir, subject_id=spec.subject_id)
+    if initial_evidence_bundle is None:
+        from credra_agent.evidence.adapters import load_case_evidence
+
+        initial_evidence_bundle = load_case_evidence(
+            case_dir, subject_id=spec.subject_id, as_of=spec.as_of
+        )
     run_id = run_id_for_thread(thread_id)
     run_dir = case_dir / "runs" / run_id
     # Reject the common duplicate-start path before touching immutable run artifacts.

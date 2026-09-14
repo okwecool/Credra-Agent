@@ -1,8 +1,10 @@
 """Loss-aware ingestion: a link, snippet hash or old verified flag is not proof."""
 
 import hashlib
+import json
 from collections.abc import Callable
 from datetime import date
+from pathlib import Path
 
 from app.models.case import SourceManifest
 from app.models.content import FetchedDocument
@@ -17,6 +19,24 @@ from credra_agent.evidence.models import (
     Location,
     SourceKind,
 )
+
+
+def load_case_evidence(
+    case_dir: Path, *, subject_id: str, as_of: date
+) -> EvidenceBundle | None:
+    """Read a declared local material snapshot without upgrading its evidence."""
+    root = case_dir.resolve()
+    path = root / "source" / "evidence_bundle_v2.json"
+    if not path.exists() and not path.is_symlink():
+        return None
+    if path.resolve().parent != root / "source":
+        raise ValueError("EVIDENCE_SOURCE_OUTSIDE_CASE")
+    bundle = EvidenceBundle.model_validate(json.loads(path.read_text(encoding="utf-8")))
+    if subject_id not in {entity.entity_id for entity in bundle.entities}:
+        raise ValueError("EVIDENCE_SUBJECT_MISMATCH")
+    if bundle.as_of != as_of:
+        raise ValueError("EVIDENCE_CUTOFF_MISMATCH")
+    return bundle
 
 
 def _identifier(prefix: str, text: str) -> str:

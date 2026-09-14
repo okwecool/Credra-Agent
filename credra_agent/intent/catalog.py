@@ -2,6 +2,7 @@
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
@@ -17,6 +18,9 @@ class SubjectRecord(BaseModel):
     subject_name: str
     aliases: list[str]
     available_years: list[int]
+    financial_input_declared: bool = False
+    evidence_bundle_declared: bool = False
+    material_as_of: date | None = None
 
 
 _COMMON_ALIASES = {
@@ -44,6 +48,13 @@ def load_subject_catalog(data_dir: Path) -> list[SubjectRecord]:
         manifest = _read_json(source_dir / "source_manifest.json")
         profile = _read_json(source_dir / "company_profile.json")
         financial = _read_json(source_dir / "financial_statement.json")
+        evidence_path = source_dir / "evidence_bundle_v2.json"
+        try:
+            material_as_of = date.fromisoformat(
+                _read_json(evidence_path).get("as_of", "")
+            )
+        except (TypeError, ValueError):
+            material_as_of = None
         company = (
             manifest.get("company") if isinstance(manifest.get("company"), dict) else {}
         )
@@ -77,13 +88,25 @@ def load_subject_catalog(data_dir: Path) -> list[SubjectRecord]:
                 subject_name=name,
                 aliases=list(dict.fromkeys(aliases)),
                 available_years=years,
+                financial_input_declared=(
+                    source_dir / "financial_input_v2.json"
+                ).exists()
+                or (source_dir / "financial_input_v2.json").is_symlink(),
+                evidence_bundle_declared=evidence_path.exists()
+                or evidence_path.is_symlink(),
+                material_as_of=material_as_of,
             )
         )
     return records
 
 
 def match_subjects(text: str, catalog: list[SubjectRecord]) -> list[SubjectRecord]:
-    matches = [
+    explicit = [
+        item
+        for item in catalog
+        if re.search(re.escape(item.case_id), text, flags=re.IGNORECASE)
+    ]
+    matches = explicit or [
         item
         for item in catalog
         if any(
@@ -91,7 +114,11 @@ def match_subjects(text: str, catalog: list[SubjectRecord]) -> list[SubjectRecor
             for alias in item.aliases
         )
     ]
-    unique = {item.subject_id: item for item in matches}
+    # Adding another Case must not silently replace the established default.
+    # Explicit Case IDs select their own material variant.
+    unique = {}
+    for item in matches:
+        unique.setdefault(item.subject_id, item)
     return list(unique.values())
 
 

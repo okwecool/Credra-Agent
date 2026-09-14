@@ -1,0 +1,282 @@
+{
+  "subject_id": "002594",
+  "source_kind": "REAL",
+  "datums": [
+    {
+      "metric": "revenue",
+      "period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-comparative",
+      "value": "777102455",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 127 / printed 126; 2024; revenue; NOT_APPLICABLE",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/1",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "receivables",
+      "period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "measurement": "BALANCE",
+      "receivables_basis": "NET_BOOK_VALUE",
+      "accounting_basis": "CONSOLIDATED",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-comparative",
+      "value": "62298988",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 124 / printed 123; 2024; receivables; NOT_APPLICABLE",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/0",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "net_profit",
+      "period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "profit_attribution": "GROUP_TOTAL",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-comparative",
+      "value": "41587940",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 127 / printed 126; 2024; net_profit; GROUP_TOTAL",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/1",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "net_profit",
+      "period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "profit_attribution": "OWNERS_OF_PARENT",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-comparative",
+      "value": "40254346",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 127 / printed 126; 2024; net_profit; OWNERS_OF_PARENT",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/1",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "operating_cash_flow",
+      "period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-comparative",
+      "value": "133453873",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 131 / printed 130; 2024; operating_cash_flow; NOT_APPLICABLE",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/2",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "revenue",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-original",
+      "value": "803964958",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 127 / printed 126; 2025; revenue; NOT_APPLICABLE",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/1",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "receivables",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "measurement": "BALANCE",
+      "receivables_basis": "NET_BOOK_VALUE",
+      "accounting_basis": "CONSOLIDATED",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-original",
+      "value": "37004685",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 124 / printed 123; 2025; receivables; NOT_APPLICABLE",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/0",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "net_profit",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "profit_attribution": "GROUP_TOTAL",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-original",
+      "value": "33760758",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 127 / printed 126; 2025; net_profit; GROUP_TOTAL",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/1",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "net_profit",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "profit_attribution": "OWNERS_OF_PARENT",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-original",
+      "value": "32619022",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 127 / printed 126; 2025; net_profit; OWNERS_OF_PARENT",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/1",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    },
+    {
+      "metric": "operating_cash_flow",
+      "period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "accounting_basis": "CONSOLIDATED",
+      "source_unit": "CNY_1000",
+      "revision": "2025-annual-original",
+      "value": "59135544",
+      "source_refs": [
+        {
+          "source_id": "byd-2025-annual",
+          "location": "HKEX PDF 131 / printed 130; 2025; operating_cash_flow; NOT_APPLICABLE",
+          "published_at": "2026-03-27",
+          "source_tags": [
+            "exchange",
+            "financial_report"
+          ],
+          "source_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+          "input_hash": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+          "input_location": "evidence_bundle_v2.json#/documents/0/fragments/2",
+          "reported_unit": "CNY_1000"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "VALUES_NORMALIZED_CNY_1000; NO_SECOND_UNIT_CONVERSION",
+    "2024_COMPARATIVE_SELECTED_FROM_2025_ANNUAL; GROUP_PROFIT_TABLE_LABELS_RESTATED; 2024_ANNUAL_CROSS_CHECK_MATCHES",
+    "SOURCE_METADATA_AND_AR_DECLARATION_NOT_ACCEPTED_CLAIM_EVIDENCE",
+    "BALANCE_AT_DEC_31_VS_FULL_YEAR_FLOWS; AR_NET_BOOK_VALUE_EXCLUDES_FINANCING_AND_OTHER_RECEIVABLES",
+    "13_MATERIAL_POOL_REQUIRES_AS_OF_2026-04-02; ORIGINAL_ESTIMATE_AND_PAYMENT_TRANSACTION_GAPS_REMAIN"
+  ],
+  "schema_version": "agent_financial_input_v2"
+}

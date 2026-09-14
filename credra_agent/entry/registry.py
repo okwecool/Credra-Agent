@@ -365,7 +365,7 @@ class EntryToolRegistry:
                 {
                     **record.model_dump(mode="json"),
                     "preflight_valid": checked.valid,
-                    "material_scope": "已导入 source 文件；不代表已调查或外部渠道可用",
+                    "material_scope": "已导入 source 文件；财务 v2 与证据快照声明仍需启动时校验，证据快照须匹配 material_as_of；不代表已调查或外部渠道可用",
                 }
             )
         next_cursor = (

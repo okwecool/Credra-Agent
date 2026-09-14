@@ -373,6 +373,39 @@ def test_same_enterprise_cases_are_not_silently_deduplicated(settings):
     }
 
 
+def test_case_financial_declaration_and_metric_scope_reach_entry_model(settings):
+    source = settings.data_dir / "case_byd_002594/source/financial_input_v2.json"
+    # Declaration is metadata only; malformed input is not advertised as verified.
+    source.write_text("{", encoding="utf-8")
+    (source.parent / "evidence_bundle_v2.json").write_text(
+        '{"as_of":"2026-04-02"}', encoding="utf-8"
+    )
+    reg = registry(settings)
+    result = execute(reg, "list_cases", {"subject_hint": "比亚迪"})
+    assert result.data["items"][0]["financial_input_declared"] is True
+    assert result.data["items"][0]["evidence_bundle_declared"] is True
+    assert result.data["items"][0]["material_as_of"] == "2026-04-02"
+    assert "启动时校验" in result.data["items"][0]["material_scope"]
+    with service_session("offline_entry", config_from_settings(settings)):
+        context, _ = EntryContextBuilder(reg).build(
+            message_id="financial-declaration",
+            query="有哪些资料可用于现金质量分析",
+            anchor_date=ANCHOR,
+            permissions=permissions(),
+        )
+    capability = next(
+        item
+        for item in context.investigation_capabilities
+        if item["name"] == "compute_metrics"
+    )
+    assert "cash_profit_ratio" in capability["description"]
+    assert "不能作为入口工具直接执行" in capability["description"]
+    declared = next(
+        item for item in context.imported_cases if item["case_id"] == "case_byd_002594"
+    )
+    assert declared["material_as_of"] == "2026-04-02"
+
+
 def test_history_keeps_whole_turns_and_input_limit_preserves_constraints(settings):
     reg = registry(settings)
     for turn, roles in (

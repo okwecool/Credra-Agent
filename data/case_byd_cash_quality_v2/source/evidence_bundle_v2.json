@@ -1,0 +1,526 @@
+{
+  "as_of": "2026-04-02",
+  "entities": [
+    {
+      "entity_id": "002594",
+      "legal_name": "比亚迪股份有限公司",
+      "aliases": [
+        "比亚迪",
+        "BYD"
+      ]
+    }
+  ],
+  "documents": [
+    {
+      "document_id": "byd-2025-annual",
+      "original_source_id": "byd-2025-annual",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "financial_report",
+        "exchange"
+      ],
+      "title": "比亚迪2025年度报告",
+      "url": "https://www.hkexnews.hk/listedco/listconews/sehk/2026/0327/2026032702970_c.pdf",
+      "published_at": "2026-03-27",
+      "reporting_period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "retrieved_at": "2026-09-14T08:44:48.717196Z",
+      "document_hash": "sha256:c3f3091b5b59f7450e1c0f4f6034f19c0dd390a5d9cd11c7a32612612bdc3931",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:124",
+          "physical_page": 124,
+          "printed_page": "123",
+          "text": "财务附注中报表的单位为：千元\n1、合并资产负债表\n资产 附注七 2025 年 12 月31 日 2024 年 12 月31 日\n应收账款 3 37,004,685 62,298,988"
+        },
+        {
+          "location": "page:127",
+          "physical_page": 127,
+          "printed_page": "126",
+          "text": "比亚迪股份有限公司 2025 年年度报告全文\n2、合并利润表\n附注七 2025 年 2024 年\n（经重述）\n一、 营业收入 45 803,964,958 777,102,455\n四、 净利润 33,760,758 41,587,940\n归属于母公司所有者的净利润 32,619,022 40,254,346"
+        },
+        {
+          "location": "page:131",
+          "physical_page": 131,
+          "printed_page": "130",
+          "text": "比亚迪股份有限公司 2025 年年度报告全文\n4、合并现金流量表\n附注七 2025 年 2024 年\n销售商品、提供劳务收到的现金 821,214,650 774,347,395\n经营活动现金流入小计 861,740,107 814,817,630\n购买商品、接受劳务支付的现金 579,332,669 489,866,241\n支付给职工以及为职工支付的现金 130,434,959 117,067,584\n支付其他与经营活动有关的现金 61 39,034,981 21,732,800\n经营活动现金流出小计 802,604,563 681,363,757\n经营活动产生的现金流量净额 62 59,135,544 133,453,873"
+        },
+        {
+          "location": "page:168",
+          "physical_page": 168,
+          "printed_page": "167",
+          "text": "比亚迪股份有限公司 2025 年年度报告全文\n2025 年\n合计 41,254,865 100.00 4,250,180 37,004,685\n2024 年\n合计 66,756,024 100.00 4,457,036 62,298,988\n2025 年\n于 2025 年 12 月31 日，组合计提坏账准备的应收账款情况如下：\n1 年以内(含1 年) 34,327,019 836,527 2.44\n1-2 年(含2 年) 1,814,277 322,398 17.77\n2-3 年(含3 年) 2,147,615 584,857 27.23\n3 年以上 2,156,292 1,696,736 78.69"
+        },
+        {
+          "location": "page:41",
+          "physical_page": 41,
+          "printed_page": "40",
+          "text": "经营活动产生的现金流量净额同比变动-55.69%,主要是购买商品、接受劳务支付的现金增加所致；"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "2024_COMPARATIVE_FROM_2025_ANNUAL; PROFIT_TABLE_LABELS_2024_RESTATED",
+        "AR_IS_NET_BOOK_VALUE_NOT_GROSS_BALANCE",
+        "MANAGEMENT_CAUSAL_EXPLANATION_IS_ISSUER_STATEMENT_NOT_INDEPENDENT_PROOF"
+      ]
+    },
+    {
+      "document_id": "byd-2024-annual",
+      "original_source_id": "byd-2024-annual",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "financial_report",
+        "exchange"
+      ],
+      "title": "比亚迪2024年度报告",
+      "url": "https://www.hkexnews.hk/listedco/listconews/sehk/2025/0324/2025032401124_c.pdf",
+      "published_at": "2025-03-24",
+      "reporting_period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "retrieved_at": "2026-09-14T08:44:48.717196Z",
+      "document_hash": "sha256:07bfe8d532f8912fea32c8241cafd25c0bb28948e7903d5dfe23161177073e4e",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:146",
+          "physical_page": 146,
+          "printed_page": "145",
+          "text": "比亚迪股份有限公司 2024 年年度报告全文\n2、合并利润表\n附注七 2024 年 2023 年\n一、 营业收入 44 777,102,455 602,315,354\n四、 净利润 41,587,940 31,344,070\n归属于母公司所有者的净利润 40,254,346 30,040,811"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "CROSS_CHECK_ONLY; NOT_A_SECOND_INDEPENDENT_ISSUER",
+        "2024_REVENUE_AND_GROUP_PROFIT_AGREE_WITH_2025_COMPARATIVE"
+      ]
+    },
+    {
+      "document_id": "byd-2025-interim",
+      "original_source_id": "byd-2025-interim",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "financial_report",
+        "exchange"
+      ],
+      "title": "比亚迪2025中期报告",
+      "url": "https://www.hkexnews.hk/listedco/listconews/sehk/2025/0829/2025082902252.pdf",
+      "published_at": "2025-08-29",
+      "reporting_period": {
+        "start": "2025-01-01",
+        "end": "2025-06-30"
+      },
+      "retrieved_at": "2026-09-14T08:44:48.718196Z",
+      "document_hash": "sha256:d348de363b86977c65aaf3fead1c7bb30b269649ff4b18c282c20b1b87cefdaf",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:6",
+          "physical_page": 6,
+          "printed_page": "4",
+          "text": "Revenue 23.30% to RMB371,281 million"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "SIX_MONTHS; AMOUNT_IN_RMB_MILLION_NOT_CNY_1000; NOT_AN_ANNUAL_METRIC_INPUT",
+        "CHINESE_FONT_MAPPING_UNRELIABLE; ENGLISH_PARALLEL_FACT_RETAINED"
+      ]
+    },
+    {
+      "document_id": "byd-sales-2024-12",
+      "original_source_id": "byd-sales-2024-12",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "production_sales",
+        "exchange"
+      ],
+      "title": "比亚迪2024年12月产销公告",
+      "url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2025/0101/2025010100079.pdf",
+      "published_at": "2025-01-01",
+      "reporting_period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "retrieved_at": "2026-09-14T08:44:48.718196Z",
+      "document_hash": "sha256:040bf8007e5cc4718dda0a8e2f1155792ce2df1f68ccb4c3857aa6c258b7e12b",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:1",
+          "physical_page": 1,
+          "printed_page": "1",
+          "text": "New energy vehicle 466,441 308,972 4,304,073 3,045,231 41.34% 514,809 341,043 4,272,145 3,024,417 41.26%"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "UNAUDITED_PRODUCTION_SALES_NOT_CASH_COLLECTION",
+        "ROW_UNIT_VEHICLES; FIRST_FIVE_COLUMNS_PRODUCTION; LAST_FIVE_SALES; CURRENT_MONTH_SAME_MONTH_PREVIOUS_YEAR_CURRENT_YTD_PREVIOUS_YTD_YOY; YTD_END_2024-12",
+        "SAME_ISSUER_NOT_INDEPENDENT_CORROBORATION"
+      ]
+    },
+    {
+      "document_id": "byd-sales-2025-06",
+      "original_source_id": "byd-sales-2025-06",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "production_sales",
+        "exchange"
+      ],
+      "title": "比亚迪2025年6月产销公告",
+      "url": "https://www.hkexnews.hk/listedco/listconews/sehk/2025/0701/2025070100132.pdf",
+      "published_at": "2025-07-01",
+      "reporting_period": {
+        "start": "2025-01-01",
+        "end": "2025-06-30"
+      },
+      "retrieved_at": "2026-09-14T08:44:48.718196Z",
+      "document_hash": "sha256:ca8383a79701bd26c336c3f4e753c4f351c247c774866edebb1c8bf21fcb8db0",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:1",
+          "physical_page": 1,
+          "printed_page": "1",
+          "text": "New energy vehicle 345,066 341,671 2,137,033 1,632,033 30.94% 382,585 341,658 2,145,954 1,612,983 33.04%"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "UNAUDITED_PRODUCTION_SALES_NOT_CASH_COLLECTION",
+        "ROW_UNIT_VEHICLES; FIRST_FIVE_COLUMNS_PRODUCTION; LAST_FIVE_SALES; CURRENT_MONTH_SAME_MONTH_PREVIOUS_YEAR_CURRENT_YTD_PREVIOUS_YTD_YOY; YTD_END_2025-06",
+        "SAME_ISSUER_NOT_INDEPENDENT_CORROBORATION"
+      ]
+    },
+    {
+      "document_id": "byd-sales-2025-09",
+      "original_source_id": "byd-sales-2025-09",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "production_sales",
+        "exchange"
+      ],
+      "title": "比亚迪2025年9月产销公告",
+      "url": "https://www1.hkexnews.hk/listedco/listconews/sehk/2025/1001/2025100100079.pdf",
+      "published_at": "2025-10-01",
+      "reporting_period": {
+        "start": "2025-01-01",
+        "end": "2025-09-30"
+      },
+      "retrieved_at": "2026-09-14T08:44:48.718196Z",
+      "document_hash": "sha256:1e15880c9f074933f585268ed2b0ea8a9b421dc7db1babe85fd846c114c34a9e",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:1",
+          "physical_page": 1,
+          "printed_page": "1",
+          "text": "New energy vehicle 405,554 441,052 3,213,569 2,760,910 16.40% 396,270 419,426 3,260,146 2,747,875 18.64%"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "UNAUDITED_PRODUCTION_SALES_NOT_CASH_COLLECTION",
+        "ROW_UNIT_VEHICLES; FIRST_FIVE_COLUMNS_PRODUCTION; LAST_FIVE_SALES; CURRENT_MONTH_SAME_MONTH_PREVIOUS_YEAR_CURRENT_YTD_PREVIOUS_YTD_YOY; YTD_END_2025-09",
+        "SAME_ISSUER_NOT_INDEPENDENT_CORROBORATION"
+      ]
+    },
+    {
+      "document_id": "byd-sales-2025-12",
+      "original_source_id": "byd-sales-2025-12",
+      "original_publisher": "比亚迪股份有限公司",
+      "hosting_publisher": "HKEX",
+      "source_tags": [
+        "production_sales",
+        "exchange"
+      ],
+      "title": "比亚迪2025年12月产销公告",
+      "url": "https://www.hkexnews.hk/listedco/listconews/sehk/2026/0101/2026010100129.pdf",
+      "published_at": "2026-01-01",
+      "reporting_period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "retrieved_at": "2026-09-14T08:44:49.159783Z",
+      "document_hash": "sha256:1eb2d925e14394621daf15fd4b1c4df1bf14c14a03d904a199d2d7d2d7743696",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "page:1",
+          "physical_page": 1,
+          "printed_page": "1",
+          "text": "New energy vehicle 419,804 466,441 4,537,356 4,304,073 5.42% 420,398 514,809 4,602,436 4,272,145 7.73%"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "UNAUDITED_PRODUCTION_SALES_NOT_CASH_COLLECTION",
+        "ROW_UNIT_VEHICLES; FIRST_FIVE_COLUMNS_PRODUCTION; LAST_FIVE_SALES; CURRENT_MONTH_SAME_MONTH_PREVIOUS_YEAR_CURRENT_YTD_PREVIOUS_YTD_YOY; YTD_END_2025-12",
+        "SAME_ISSUER_NOT_INDEPENDENT_CORROBORATION"
+      ]
+    },
+    {
+      "document_id": "nbs-industrial-2024",
+      "original_source_id": "nbs-industrial-2024",
+      "original_publisher": "国家统计局",
+      "hosting_publisher": "国家统计局",
+      "source_tags": [
+        "industry_statistics",
+        "government"
+      ],
+      "title": "国家统计局2024年工业企业分行业指标",
+      "url": "https://www.stats.gov.cn/sj/zxfb/202501/t20250127_1958485.html",
+      "published_at": "2025-01-27",
+      "reporting_period": {
+        "start": "2024-01-01",
+        "end": "2024-12-31"
+      },
+      "retrieved_at": "2026-09-14T08:44:49.388292Z",
+      "document_hash": "sha256:edfb07d005ead65212fd55a4d9cf6ebd3eff49f203cd1b14682f841b0f814da2",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "html:table-3:automobile-manufacturing",
+          "text": "汽车制造业 106470.1 4.1 93301.4 5.1 4622.6 -8.0"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "ABOVE_DESIGNATED_SIZE_INDUSTRY_NOT_BYD_GROUP",
+        "ROW_REVENUE_CNY_100M_YOY_PERCENT_COST_CNY_100M_YOY_PERCENT_TOTAL_PROFIT_CNY_100M_YOY_PERCENT",
+        "USE_PUBLISHED_COMPARABLE_YOY; DO_NOT_DIVIDE_CROSS_RELEASE_TOTALS; NOT_GROUP_NET_PROFIT"
+      ]
+    },
+    {
+      "document_id": "nbs-industrial-2025",
+      "original_source_id": "nbs-industrial-2025",
+      "original_publisher": "国家统计局",
+      "hosting_publisher": "国家统计局",
+      "source_tags": [
+        "industry_statistics",
+        "government"
+      ],
+      "title": "国家统计局2025年工业企业分行业指标",
+      "url": "https://www.stats.gov.cn/sj/zxfb/202601/t20260127_1962382.html",
+      "published_at": "2026-01-27",
+      "reporting_period": {
+        "start": "2025-01-01",
+        "end": "2025-12-31"
+      },
+      "retrieved_at": "2026-09-14T08:44:49.476016Z",
+      "document_hash": "sha256:07f5d7434c11154d88052119b65120f2c7c816205c7fdd003f5edde6e47d5d47",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "html:table-3:automobile-manufacturing",
+          "text": "汽车制造业 111795.6 7.1 98497.9 8.1 4610.2 0.6"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "ABOVE_DESIGNATED_SIZE_INDUSTRY_NOT_BYD_GROUP",
+        "ROW_REVENUE_CNY_100M_YOY_PERCENT_COST_CNY_100M_YOY_PERCENT_TOTAL_PROFIT_CNY_100M_YOY_PERCENT",
+        "USE_PUBLISHED_COMPARABLE_YOY; DO_NOT_DIVIDE_CROSS_RELEASE_TOTALS; NOT_GROUP_NET_PROFIT"
+      ]
+    },
+    {
+      "document_id": "sme-payment-regulation-2025",
+      "original_source_id": "sme-payment-regulation-2025",
+      "original_publisher": "国务院",
+      "hosting_publisher": "国务院",
+      "source_tags": [
+        "regulation",
+        "government"
+      ],
+      "title": "保障中小企业款项支付条例（2025修订）",
+      "url": "https://www.miit.gov.cn/xwfb/gxdt/sjdt/art/2025/art_2610a93b60554b9c81d6e37c2bc8232f.html",
+      "published_at": "2025-03-24",
+      "retrieved_at": "2026-09-14T08:44:49.775421Z",
+      "document_hash": "sha256:3ee6f8b12670faadfa0b26614079752dcda0c1d77af1caccfaf18c922699af72",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "html:article-11:noncash-payment",
+          "text": "不得强制中小企业接受商业汇票、应收账款电子凭证等非现金支付方式"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "HOST_MIIT; PROMULGATED_2025-03-17; EFFECTIVE_2025-06-01",
+        "ARTICLE_9_10_REQUIRE_CONTRACT_SCOPE_START_DATE_AND_EXCEPTIONS; SIXTY_DAYS_IS_NOT_AN_AUTOMATIC_BREACH_TEST",
+        "POLICY_CONTEXT_NOT_ENTITY_BREACH_EVIDENCE; COMPLETE_CONTRACT_AND_ARTICLES_REQUIRED_FOR_APPLICATION"
+      ]
+    },
+    {
+      "document_id": "miit-payment-window-2025",
+      "original_source_id": "miit-payment-window-2025",
+      "original_publisher": "工业和信息化部",
+      "hosting_publisher": "工业和信息化部",
+      "source_tags": [
+        "regulation",
+        "government"
+      ],
+      "title": "重点车企践行账期承诺线上问题反映窗口",
+      "url": "https://www.miit.gov.cn/xwfb/gxdt/sjdt/art/2025/art_205243a1398046dcad93ac602c45c8e8.html",
+      "published_at": "2025-07-09",
+      "retrieved_at": "2026-09-14T08:44:51.721641Z",
+      "document_hash": "sha256:91b4d99195cbab1ba2791bfefcc8cc673db93715ed5d7372a05fb06899f6cb92",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "PRIMARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "html:opening-paragraph:window",
+          "text": "受理中小企业关于重点车企践行货款支付周期承诺"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "INDUSTRY_CONTEXT; NAMED_EXAMPLES_DO_NOT_INCLUDE_BYD",
+        "NOT_A_BYD_COMPLAINT_OR_PENALTY_OR_FINDING"
+      ]
+    },
+    {
+      "document_id": "reuters-payment-pledges-2025",
+      "original_source_id": "reuters-payment-pledges-2025",
+      "original_publisher": "Reuters",
+      "hosting_publisher": "Investing.com",
+      "source_tags": [
+        "supplier_settlement",
+        "media"
+      ],
+      "title": "车企供应商付款承诺报道",
+      "url": "https://www.investing.com/news/stock-market-news/at-least-eight-chinese-automakers-pledge-to-pay-suppliers-within-60-days-4090009",
+      "published_at": "2025-06-11",
+      "event_date": "2025-06-11",
+      "retrieved_at": "2026-09-14T08:50:06.689653Z",
+      "document_hash": "sha256:faf619f94430f065cb4900cce593bd5e82c90192ebfbbc0c0e46db572d300b98",
+      "hash_scope": "EXTRACTED_TEXT",
+      "source_kind": "REAL",
+      "reliability": "SECONDARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "html:body:pledges:byd",
+          "text": "Automakers issuing pledges on Wednesday included BYD"
+        },
+        {
+          "location": "html:body:opening:payment-window",
+          "text": "payments to suppliers within 60 days"
+        }
+      ],
+      "limitations": [
+        "PUBLIC_BROWSER_EXTRACTION; DIRECT_HTTP_DENIED; HASH_IS_ONLY_JOINED_RETAINED_EXCERPTS",
+        "FIRST_DISPLAYED_PUBLISHED_JUN_10_LOCAL; RETAINED_VERSION_UPDATED_JUN_11; TIMEZONE_NOT_SUPPLIED",
+        "ISSUER_PLEDGE_REPORTED_BY_REUTERS; ORIGINAL_FULL_COMPANY_PLEDGE_NOT_RETRIEVED",
+        "PLEDGE_NOT_PROOF_OF_ACTUAL_SETTLEMENT; REPRINTS_ONE_ORIGIN"
+      ]
+    },
+    {
+      "document_id": "reuters-dilian-2025",
+      "original_source_id": "reuters-dilian-2025",
+      "original_publisher": "Reuters",
+      "hosting_publisher": "TradingView",
+      "source_tags": [
+        "supplier_settlement",
+        "media"
+      ],
+      "title": "迪链结算调整的匿名来源报道及公司回应",
+      "url": "https://www.tradingview.com/news/reuters.com,2025:newsml_L1N3WQ0CG:0-byd-shifts-away-from-in-house-payment-system-that-strained-suppliers-sources-say/",
+      "published_at": "2025-11-14",
+      "retrieved_at": "2026-09-14T08:44:52.499129Z",
+      "document_hash": "sha256:5cbcb0913d29cfc72ca3a549754bb03f650b8aef692fc8a04be6359b9f7c6b3b",
+      "hash_scope": "RESPONSE_BYTES",
+      "source_kind": "REAL",
+      "reliability": "SECONDARY",
+      "access_scope": "PARTIAL",
+      "fragments": [
+        {
+          "location": "html:body:anonymous-report:shift",
+          "text": "stop using in-house financial notes"
+        },
+        {
+          "location": "html:body:company-response:regulation",
+          "text": "BYD said in a statement to Reuters that its Dilian system falls within regulatory guidelines"
+        },
+        {
+          "location": "html:body:lower-tier:entity-limit",
+          "text": "not a BYD supplier"
+        }
+      ],
+      "limitations": [
+        "ONLY_NECESSARY_EXCERPTS_RETAINED",
+        "EXCERPT_WHITESPACE_NORMALIZED",
+        "ANONYMOUS_SOURCES_REPORT_SHIFT; SCOPE_AND_REASON_NOT_ESTABLISHED",
+        "REUTERS_RELAYED_BYD_RESPONSE_ASSERTING_COMPLIANCE_AND_FASTER_PAYMENTS; RETAINED_QUOTE_COVERS_COMPLIANCE_ONLY; NOT_INDEPENDENT_CONFIRMATION",
+        "RIVET_MANUFACTURER_IS_NOT_A_BYD_SUPPLIER; DO_NOT_ATTRIBUTE_DIRECT_SUPPLIER_EXPERIENCE",
+        "LSEG_PAYMENT_DAYS_AND_GMT_DEBT_ESTIMATES_NOT_TOOL_INPUTS; METHODS_AND_ORIGINAL_DATA_NOT_RETRIEVED",
+        "ONE_REUTERS_ORIGIN; COMPANY_RESPONSE_IN_SAME_STORY_NOT_NEW_INDEPENDENT_SOURCE"
+      ]
+    }
+  ],
+  "evidence": [],
+  "claims": [],
+  "limitations": [
+    "P24_2_FROZEN_MATERIAL_POOL_NOT_ACCEPTED_EVIDENCE; P22_VERIFICATION_REQUIRED",
+    "13_DOCUMENTS_FIVE_BUSINESS_CATEGORIES_NOT_13_INDEPENDENT_ORIGINS",
+    "CAAM_2025_YEAR_SOURCE_TIMEOUT_NOT_RETRIEVED_NOT_COUNTED",
+    "CONTRACTS_PAYMENT_START_DATES_ACTUAL_SETTLEMENT_RECORDS_DILIAN_INSTRUMENT_DETAILS_AND_ORIGINAL_ESTIMATE_METHODS_MISSING",
+    "RETRIEVED_2026-09-14; ONLY_VERSIONS_PUBLISHED_ON_OR_BEFORE_2026-04-02_RETAINED; NOT_AN_ARCHIVED_AS_OF_WEB_CAPTURE"
+  ],
+  "schema_version": "evidence_bundle_v2_p21"
+}

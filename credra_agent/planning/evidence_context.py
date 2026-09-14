@@ -65,6 +65,8 @@ def evidence_context(
                     "reference": reference,
                     "subject_id": data.subject_id,
                     "source_kind": data.source_kind,
+                    "input_file_ref": data.input_file_ref,
+                    "input_file_hash": data.input_file_hash,
                     "fields": [
                         {
                             "metric": item.metric,
@@ -116,8 +118,57 @@ def evidence_context(
 def coordinator_evidence_context(store, references, task) -> dict:
     """Bound model input separately; completion checks retain the full index."""
     import json
+    from urllib.parse import urlparse
 
     context = evidence_context(store, references, task)
+    # Shared hashes/units belong in a catalog, not repeated on every amount.
+    # The immutable input and full evidence context remain authoritative.
+    for financial in context["financial_inputs"]:
+        sources = []
+        source_indexes = {}
+        for field in financial["fields"]:
+            projected = []
+            for source in field["source_refs"]:
+                common = {
+                    key: value
+                    for key, value in source.items()
+                    if key not in {"location", "input_location", "artifact_ref"}
+                }
+                key = json.dumps(common, sort_keys=True)
+                if key not in source_indexes:
+                    source_indexes[key] = len(sources)
+                    sources.append(common)
+                projected.append(
+                    {
+                        "source_index": source_indexes[key],
+                        "source_id": source["source_id"],
+                        "location": source["location"],
+                        "input_location": source["input_location"],
+                        "artifact_ref": source["artifact_ref"],
+                    }
+                )
+            field["source_refs"] = projected
+        financial["source_catalog"] = sources
+    for bundle in context["bundles"]:
+        for document in bundle["documents"]:
+            # Fetch/read use the full URL from the selected artifact, never a
+            # planner-supplied URL. Preserve origin and scope instead of URL bulk.
+            url = document.pop("url")
+            document["has_url"] = bool(url)
+            try:
+                document["url_host"] = urlparse(url).hostname if url else None
+            except ValueError:
+                document["url_host"] = None
+            document["limitations"] = [
+                item
+                for item in document["limitations"]
+                if item
+                not in {
+                    "ONLY_NECESSARY_EXCERPTS_RETAINED",
+                    "EXCERPT_WHITESPACE_NORMALIZED",
+                }
+            ]
+    context["metadata_compacted"] = True
     truncated = len(context["bundles"]) > 10 or len(context["document_reads"]) > 3
     latest = {}
     for bundle in context["bundles"]:
