@@ -478,6 +478,7 @@ def _artifact_markdown(state: dict[str, Any]) -> list[str]:
             ("Hypotheses", state.get("hypotheses_ref")),
             ("Observation Index", state.get("observation_index_ref")),
             ("Coverage", state.get("coverage_ref")),
+            ("Financial Report", state.get("report_ref")),
             ("Budget Ledger", state.get("budget_ledger_ref")),
             ("Active Decision", state.get("active_decision_ref")),
             ("Active Action", state.get("active_action_ref")),
@@ -1024,7 +1025,9 @@ def _agent_run_markdown(result: UIRunResult) -> str:
                 f"- 停止原因：`{state.get('stop_reason') or '—'}`",
                 f"- 决策轮次：`{state.get('iteration', 0)}`",
                 "",
-                "> 当前结果为 Agent 调查与缺口记录；最终报告与报告审核尚未接入此流程。",
+                f"> 财务计算引用报告：`{state['report_ref']}`；报告尚未审核，完整调查报告留待后续验收。"
+                if state.get("report_ref")
+                else "> 当前结果为 Agent 调查与缺口记录；最终报告与报告审核尚未接入此流程。",
             ]
         )
         if state.get("status") == "WAITING_CLARIFICATION":

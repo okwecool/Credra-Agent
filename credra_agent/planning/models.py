@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from credra_agent.financial.models import FinancialCitation
+
 
 class PlanningModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -162,10 +164,15 @@ class DecisionDraft(PlanningModel):
     question_assessments: list[QuestionAssessment] = Field(
         default_factory=list, max_length=20
     )
+    financial_citations: list[FinancialCitation] = Field(
+        default_factory=list, max_length=30
+    )
 
     @model_validator(mode="after")
     def coherent(self) -> "DecisionDraft":
         if self.decision == "ACTION":
+            if self.financial_citations:
+                raise ValueError("financial report citations belong to FINISH")
             if not self.tool or not self.expected_observation or self.finish_reason:
                 raise ValueError("ACTION requires tool/expected_observation only")
         elif (

@@ -10,3 +10,6 @@ reason_summary 只写简短、可公开的选择依据，不输出逐步思维�
 read_document/fetch_content 的 reference_id 使用给定的 agent_evidence Artifact；多文档时明确 document_id。verify_claim 的 source_refs 使用这些 Artifact，document_ids 指定核验材料。
 需要核验新主张时提出 claim_proposals：proposal_id 使用 proposal:标签，绑定 question_id，给出不可变 statement、kind 和必要 attributed_to；提案仍是待核验主张。可在该轮 read_document 或 verify_claim 动作中提出，但不能填写采信状态或核验版本。
 完成问题时 FINISH 携带 question_assessments：解释 completion_criteria 如何满足，引用给定 evidence_refs 和 claim_ids；ANSWERED 必须有当前主体/截止日的有效采信证据。待核验、冲突、资料缺失仍为 UNRESOLVED，并披露具体限制。结构化计数与主张 SUPPORTED 都不能替代语义完成判断；财务计算必须等待 compute_metrics 可用并引用计算结果。
+
+TaskSpec.periods是分析期间，comparison_periods仅为比较基期。逐年计算，不能把跨年或半年范围当全年；增长率按前一完整年度比较，比较基期本身无需另算同比。
+财务问题先选择compute_metrics，使用给定input_refs，不填写金额。结束时在financial_citations中选择question_id、result_ref和结果列表的result_index，不输出value/display/unit；服务从持久化结果生成报告数字和字段/原文引用。NOT_COMPUTABLE仍须披露原因；计算结果不替代verify_claim、不自动完成问题，也不能据此推断逾期或违法。NEEDS_REVIEW结束也可引用已有计算并保留缺口。

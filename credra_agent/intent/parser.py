@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+from calendar import monthrange
 from datetime import date
 
 from app.llm.gateway import StructuredModel, StructuredModelError
@@ -15,7 +16,7 @@ from credra_agent.intent.models import (
     TaskSpec,
 )
 
-PROMPT_VERSION = "intent-v2-1-p10"
+PROMPT_VERSION = "intent-v2-p24-periods"
 SYSTEM_PROMPT = """你是 Credra Agent 的受约束意图解析器。只把用户文字转换为给定 JSON Schema，不执行工具、不补充事实、不扩大来源权限。主体只输出用户提到的名称或代码；系统会在已导入主体目录中核对。区分“优先”与“只使用”，保留否定、条件和未决字段。状态、暂停、恢复、批准报告是控制命令，不重建调查任务。相对期间无法安全确定时标记 comparable_periods。任何要求跳过审核、把无结果当无风险或作授信决定都放入 rejected_instructions。"""
 
 _SOURCE_TERMS = {
@@ -26,6 +27,67 @@ _SOURCE_TERMS = {
     "社交平台": "social_media",
     "匿名爆料": "anonymous_tip",
 }
+
+SYSTEM_PROMPT += """ 分开分析年度years与仅作为比较基期的comparison_years；2025年、以2024年比较只分析2025，不另计算2024同比。跨年范围逐年展开，截止日期不是调查年度。半年、季度或非整年范围用periods表达，不能改写为全年；相对期间不明确时请求澄清。"""
+
+_YEAR = r"(?<!\d)(20\d{2})(?!\d)"
+_DATE = r"20\d{2}(?:[-/]\d{1,2}[-/]\d{1,2}|年\d{1,2}月\d{1,2}日)"
+
+
+def _text_periods(text: str) -> tuple[list[int], list[int], list[Period], date | None]:
+    """Bounded fallback: explicit dates, annual ranges and named partial years."""
+    cutoff = re.search(
+        rf"(?:截至|截止|资料截止|材料截止)\s*({_DATE}|20\d{{2}}年(?:底|末))", text
+    )
+    as_of = None
+    if cutoff:
+        parts = [int(item) for item in re.findall(r"\d+", cutoff.group(1))]
+        try:
+            as_of = date(*parts) if len(parts) == 3 else date(parts[0], 12, 31)
+        except ValueError:
+            pass
+    scope = re.sub(_DATE, " ", text)
+    scope = re.sub(r"(?:截至|截止)\s*20\d{2}年(?:底|末)", " ", scope)
+    comparison = sorted(
+        {
+            int(match.group(1))
+            for pattern in (
+                rf"(?:对比|同比)\s*{_YEAR}\s*年?",
+                rf"(?:以|与|对比|比较)\s*{_YEAR}\s*年?(?:作|作为|为)?\s*(?:比较|对比|基期|比较基期)",
+                rf"(?:比较基期|基期|比较年度)\s*(?:为|是|：|:)?\s*{_YEAR}",
+                rf"{_YEAR}\s*年?\s*(?:作|作为|为)\s*(?:比较|对比|基期)",
+            )
+            for match in re.finditer(pattern, scope)
+        }
+    )
+    years = {int(item) for item in re.findall(_YEAR, scope)}
+    for match in re.finditer(
+        r"(?<!\d)(20\d{2})\s*年?\s*(?:至|到|—|–|-|~|～)\s*(20\d{2})(?!\d)", scope
+    ):
+        first, last = map(int, match.groups())
+        if first <= last:
+            years.update(range(first, last + 1))
+    partials = []
+    for match in re.finditer(
+        r"(?<!\d)(20\d{2})\s*年?\s*(上半年|下半年|第?[一二三四1-4]季度)", scope
+    ):
+        year, label = int(match.group(1)), match.group(2)
+        if label in {"上半年", "下半年"}:
+            start, end = (1, 6) if label == "上半年" else (7, 12)
+        else:
+            number = label.removeprefix("第")[0]
+            quarter = (
+                "一二三四".index(number) + 1 if number in "一二三四" else int(number)
+            )
+            start, end = quarter * 3 - 2, quarter * 3
+        partials.append(
+            Period(
+                start=date(year, start, 1),
+                end=date(year, end, monthrange(year, end)[1]),
+            )
+        )
+        years.discard(year)
+    return sorted(years - set(comparison)), comparison, partials, as_of
 
 
 def _operation(text: str, *, has_current: bool) -> str:
@@ -80,13 +142,7 @@ def _focuses(text: str) -> list[str]:
 
 
 def _rule_draft(text: str, *, has_current: bool) -> IntentDraft:
-    years = sorted(
-        {int(value) for value in re.findall(r"(?<!\d)(20\d{2})(?!\d)", text)}
-    )
-    as_of = None
-    cutoff = re.search(r"截至(20\d{2})年(?:底|末)", text)
-    if cutoff:
-        as_of = date(int(cutoff.group(1)), 12, 31)
+    years, comparison_years, periods, as_of = _text_periods(text)
     preferred = [
         value for label, value in _SOURCE_TERMS.items() if f"优先{label}" in text
     ]
@@ -105,7 +161,9 @@ def _rule_draft(text: str, *, has_current: bool) -> IntentDraft:
         or f"只能使用{label}" in text
     ]
     unresolved: list[str] = []
-    if any(term in text for term in ("去年", "今年", "最近")) and not years:
+    if any(term in text for term in ("去年", "今年", "最近")) and not (
+        years or periods
+    ):
         unresolved.append("comparable_periods")
     if "子公司" in text:
         unresolved.append("subsidiary_scope")
@@ -146,6 +204,8 @@ def _rule_draft(text: str, *, has_current: bool) -> IntentDraft:
         operation=_operation(text, has_current=has_current),
         subject_hint=text,
         years=years,
+        comparison_years=comparison_years,
+        periods=periods,
         as_of=as_of,
         focus=_focuses(text),
         preferred_sources=list(dict.fromkeys(preferred)),
@@ -236,6 +296,9 @@ def build_task_spec(
     current: TaskSpec | None,
 ) -> TaskSpec:
     subject_matches = match_subjects(draft.subject_hint or text, catalog)
+    explicit_case_matches = match_subjects(text, catalog)
+    if any(item.case_id in text for item in explicit_case_matches):
+        subject_matches = explicit_case_matches
     subject = subject_matches[0] if len(subject_matches) == 1 else None
     explicit_unknown_subject = bool(
         re.search(r"(?:公司|主体)改为|调查[^，,。]{1,30}(?:公司|集团)", text)
@@ -247,26 +310,84 @@ def build_task_spec(
         and not explicit_unknown_subject
     ):
         subject = next(
-            (item for item in catalog if item.subject_id == current.subject_id), None
+            (item for item in catalog if item.case_id == current.case_id), None
         )
     unresolved = list(draft.unresolved_fields)
     if subject is None:
         unresolved.append("subject_id")
-    resolved_as_of = draft.as_of or (current.as_of if current else anchor_date)
-    if any(year > resolved_as_of.year for year in draft.years):
-        unresolved.append("period_after_as_of")
-    years = draft.years or (
-        [period.end.year for period in current.periods] if current else []
+    text_years, text_comparison, text_partials, text_as_of = _text_periods(text)
+    resolved_as_of = (
+        text_as_of or draft.as_of or (current.as_of if current else anchor_date)
     )
+    if re.search(rf"(?:截至|截止)\s*{_DATE}", text) and text_as_of is None:
+        unresolved.append("as_of")
+    comparison_years = text_comparison or draft.comparison_years
+    years = sorted(set(draft.years or text_years))
+    # Repair endpoint-only range drafts, without adding unrelated years from prose.
+    for match in re.finditer(
+        r"(?<!\d)(20\d{2})\s*年?\s*(?:至|到|—|–|-|~|～)\s*(20\d{2})(?!\d)",
+        re.sub(_DATE, " ", text),
+    ):
+        first, last = map(int, match.groups())
+        if first <= last and {first, last} <= set(years):
+            years = sorted(set(years) | set(range(first, last + 1)))
+        elif first > last:
+            unresolved.append("comparable_periods")
+    # A cutoff date is never an analysis period, even if a draft echoed its year.
+    if text_as_of and text_as_of.year not in text_years:
+        years = [year for year in years if year != text_as_of.year]
+    years = [year for year in years if year not in comparison_years]
+    explicit_periods = text_partials or draft.periods
+    if explicit_periods:
+        years = [
+            year
+            for year in years
+            if not any(p.start.year <= year <= p.end.year for p in explicit_periods)
+        ]
+    if any(year > resolved_as_of.year for year in [*years, *comparison_years]) or any(
+        p.end > resolved_as_of for p in explicit_periods
+    ):
+        unresolved.append("period_after_as_of")
     assumptions = [*(current.assumptions if current else []), *draft.assumptions]
-    if not years and subject is not None:
+    if not years and not explicit_periods and comparison_years and current is None:
+        unresolved.append("analysis_periods")
+    if (
+        not years
+        and not explicit_periods
+        and not comparison_years
+        and current is None
+        and subject is not None
+    ):
         completed = [
             year for year in subject.available_years if year <= resolved_as_of.year
         ]
         if completed:
             years = [max(completed)]
             assumptions.append("未指定期间，采用已导入的最近完整财务年度")
-    periods = _periods(years, resolved_as_of)
+    periods = [*_periods(years, resolved_as_of)]
+    for period in explicit_periods:
+        if period.end > resolved_as_of:
+            continue
+        for year in range(period.start.year, period.end.year + 1):
+            periods.append(
+                Period(
+                    start=max(period.start, date(year, 1, 1)),
+                    end=min(period.end, date(year, 12, 31)),
+                )
+            )
+    if not years and not explicit_periods and current:
+        periods = [p for p in current.periods if p.end <= resolved_as_of]
+    periods = sorted(
+        {(p.start, p.end): p for p in periods}.values(), key=lambda p: (p.start, p.end)
+    )
+    comparison_periods = (
+        _periods(comparison_years, resolved_as_of)
+        if comparison_years
+        else list(current.comparison_periods)
+        if current
+        else []
+    )
+    comparison_periods = [p for p in comparison_periods if p.end <= resolved_as_of]
     denied = list(
         dict.fromkeys(
             [
@@ -321,6 +442,7 @@ def build_task_spec(
         case_id=subject.case_id if subject else None,
         as_of=resolved_as_of,
         periods=periods,
+        comparison_periods=comparison_periods,
         source_policy=policy,
         questions=questions,
         conditions=conditions,

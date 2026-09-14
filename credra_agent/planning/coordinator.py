@@ -46,7 +46,7 @@ from credra_agent.planning.models import (
     RunAuthorization,
 )
 
-PROMPT_VERSION = "coordinator-v2-p22"
+PROMPT_VERSION = "coordinator-v2-p24-report"
 PROMPT_PATH = Path(__file__).parents[1] / "prompts" / "coordinator.md"
 DecisionFallback = Callable[
     [dict[str, Any], BaseException], DecisionDraft | dict[str, Any]
@@ -374,6 +374,7 @@ class Coordinator:
                         draft.question_assessments,
                         references=available_refs,
                         task=task_spec,
+                        financial_citations=draft.financial_citations,
                     )
                 except ValueError:
                     answered, gaps = [], required
@@ -403,6 +404,49 @@ class Coordinator:
                     "agent_coverage", None, coverage.model_dump(mode="json")
                 )
                 artifact_refs.append(finish_ref)
+                report_reason = (
+                    "ANSWERED"
+                    if draft.finish_reason == "ANSWERED" and coverage.complete
+                    else "FINISH_GATE_REJECTED"
+                    if draft.finish_reason == "ANSWERED"
+                    else draft.finish_reason or "NEEDS_REVIEW"
+                )
+                if draft.financial_citations or any(
+                    ref.startswith("artifacts/agent_financial_input_v")
+                    for ref in available_refs
+                ):
+                    from app.report import write_agent_report
+
+                    try:
+                        artifact_refs.extend(
+                            write_agent_report(
+                                self.artifacts,
+                                task=task_spec,
+                                references=available_refs,
+                                citations=draft.financial_citations,
+                                coverage=coverage,
+                                status="COMPLETED"
+                                if report_reason == "ANSWERED"
+                                else "LIMITED",
+                                stop_reason=report_reason,
+                                limitations=draft.limitations,
+                                version=decision_number,
+                            )
+                        )
+                    except ValueError:
+                        return self._result(
+                            status="LIMITED",
+                            stop_reason="INVALID_FINANCIAL_CITATION",
+                            actions=actions,
+                            observations=observations,
+                            hypotheses=list(hypothesis_map.values()),
+                            coverage=coverage,
+                            artifact_refs=artifact_refs,
+                            limitations=[
+                                *draft.limitations,
+                                "INVALID_FINANCIAL_CITATION",
+                            ],
+                        )
                 if draft.finish_reason == "ANSWERED" and coverage.complete:
                     emit("STOP", status="SUCCESS", finish_reason="stop")
                     return self._result(

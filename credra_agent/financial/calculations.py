@@ -26,6 +26,7 @@ def calculate_metrics(
     accounting_basis: str,
     as_of: date,
     source_policy: SourcePolicy,
+    comparison_periods: list[Period] | None = None,
 ) -> list[MetricResult]:
     """Never infer profit attribution, choose a revision, or mix periods/bases."""
     if set(metric_ids) - FORMULAS.keys():
@@ -136,6 +137,12 @@ def calculate_metrics(
                     raise NotComputable("ANNUAL_PERIOD_REQUIRED")
                 if period.end > as_of:
                     raise NotComputable("PERIOD_AFTER_AS_OF")
+                if (
+                    metric != "cash_profit_ratio"
+                    and comparison_periods
+                    and previous not in comparison_periods
+                ):
+                    raise NotComputable("COMPARISON_PERIOD_UNSUPPORTED")
                 with localcontext() as context:
                     context.prec = 50
                     context.rounding = ROUND_HALF_UP

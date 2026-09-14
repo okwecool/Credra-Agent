@@ -94,7 +94,16 @@ def evidence_context(
             if payload.get("schema_version") == "document_read_v2_p22":
                 reads.append({"reference": reference, **payload})
             elif payload.get("schema_version") == "agent_financial_result_v2":
-                financial_results.append({"reference": reference, **payload})
+                financial_results.append(
+                    {
+                        "reference": reference,
+                        **payload,
+                        "results": [
+                            {"result_index": index, **item}
+                            for index, item in enumerate(payload["results"])
+                        ],
+                    }
+                )
         elif reference.startswith("artifacts/agent_claim_proposals_v"):
             payload = store.read_json(reference)
             for item in payload["proposals"]:
@@ -274,11 +283,17 @@ def assess_questions(
     *,
     references: set[str],
     task: TaskSpec,
+    financial_citations=(),
 ) -> tuple[list[str], list[str]]:
     """Validate a model's semantic answer; counts alone cannot create an answer."""
     question_ids = {item.question_id for item in task.questions}
     answered, unresolved = [], []
     context = evidence_context(store, references, task)
+    from credra_agent.financial.actions import resolve_financial_citations
+
+    financial = resolve_financial_citations(
+        store, financial_citations, references=references, task=task
+    )
     latest = {}
     for item in context["bundles"]:
         if item["eligible_for_current_task"]:
@@ -327,6 +342,26 @@ def assess_questions(
                     located[claim.claim_id] = claim
         if set(located) != set(assessment.claim_ids):
             raise ValueError("assessment claims cannot be resolved")
+        question = next(
+            q for q in task.questions if q.question_id == assessment.question_id
+        )
+        if (
+            assessment.status == "ANSWERED"
+            and context["financial_inputs"]
+            and question.focus in {"cash_quality", "receivables"}
+        ):
+            eligible = (
+                {"cash_profit_ratio"}
+                if question.focus == "cash_quality"
+                else {"receivables_growth", "growth_gap"}
+            )
+            if not any(
+                item["question_id"] == question.question_id
+                and item["metric"]["status"] == "COMPUTED"
+                and item["metric"]["metric_id"] in eligible
+                for item in financial
+            ):
+                raise ValueError("financial completion needs a valid computed citation")
         (answered if assessment.status == "ANSWERED" else unresolved).append(
             assessment.question_id
         )

@@ -164,3 +164,22 @@ class FinancialInput(FinancialModel):
                 "duplicate financial field, period, basis, attribution and revision"
             )
         return self
+
+
+class FinancialCitation(FinancialModel):
+    """The model selects a stored result; it cannot supply a number or unit."""
+
+    question_id: str = Field(min_length=1)
+    result_ref: str = Field(pattern=r"^artifacts/agent_tool_result_v[0-9]+\.json$")
+    result_index: int = Field(ge=0, le=999)
+
+
+class FinancialCalculationResult(FinancialModel):
+    schema_version: Literal["agent_financial_result_v2"] = "agent_financial_result_v2"
+    subject_id: str = Field(min_length=1)
+    task_spec_version: int | None = Field(default=None, ge=1)
+    as_of: date | None = None
+    source_kinds: list[SourceKind]
+    results: list[MetricResult] = Field(min_length=1)
+    limitations: list[str] = Field(default_factory=list)
+    input_refs: list[str] = Field(min_length=1)

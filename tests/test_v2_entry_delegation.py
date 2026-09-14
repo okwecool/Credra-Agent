@@ -188,6 +188,98 @@ def test_actual_runtime_and_tool_keep_entry_and_task_budgets_separate(settings):
     assert "offline-secret-placeholder" not in logs and "仅限交易所公告" not in logs
 
 
+def test_entry_llm_draft_reaches_real_financial_report_without_intent_reparse(settings):
+    from credra_agent.financial.models import FinancialCitation
+    from credra_agent.runtime.executors import build_agentic_executor
+    from tests.test_v2_coordinator import finish_decision
+
+    settings = settings.model_copy(update={"analysis_llm_max_input_chars": 30000})
+    case = "case_byd_cash_quality_v2"
+    shutil.copytree(
+        ROOT / "data" / case / "source", settings.data_dir / case / "source"
+    )
+    runtime = Runtime(settings)
+
+    class ReportModel(Models):
+        def generate(self, **kwargs):
+            task = kwargs["payload"]["task_spec"]
+            assert [p["start"] for p in task["periods"]] == ["2025-01-01"]
+            assert [p["start"] for p in task["comparison_periods"]] == ["2024-01-01"]
+            if not kwargs["payload"]["observation_index"]:
+                output = DecisionDraft(
+                    decision="ACTION",
+                    tool="compute_metrics",
+                    arguments={
+                        "metric_ids": ["cash_profit_ratio"],
+                        "input_refs": ["artifacts/agent_financial_input_v1.json"],
+                        "accounting_basis": "CONSOLIDATED",
+                    },
+                    expected_observation="计算合并现金利润比",
+                    reason_summary="读取冻结输入",
+                )
+            else:
+                output = finish_decision("NEEDS_REVIEW").model_copy(
+                    update={
+                        "financial_citations": [
+                            FinancialCitation(
+                                question_id=task["questions"][0]["question_id"],
+                                result_ref="artifacts/agent_tool_result_v1.json",
+                                result_index=0,
+                            )
+                        ]
+                    }
+                )
+            self.decisions.append(output)
+            return super().generate(**kwargs)
+
+    runtime.model = ReportModel()
+    runtime.executor = lambda settings, spec, model: build_agentic_executor(spec)
+    model = decision(
+        "prepare_investigation",
+        {
+            "case_id": case,
+            "draft": draft(
+                years=[2024, 2025, 2026],
+                comparison_years=[2024],
+                focus=["cash_quality"],
+                allowed_sources=None,
+                as_of="2026-04-02",
+            ),
+        },
+    )
+    accepted = runtime.run(
+        model, text="调查比亚迪2025年现金质量，以2024年作比较，资料截止2026-04-02"
+    )
+    view = runtime.finish(accepted)
+    assert view.result_refs["report_ref"] == "artifacts/agent_report_v2.md"
+    assert runtime.model.calls == ["coordinate_investigation"] * 2
+    assert len(model.calls) == 1 and accepted.budget["external_spent"] == 1
+    assert view.budget["external_spent"] == 2
+    contracts = json.dumps(model.calls[0]["tool_contracts"])
+    assert "comparison_years" in contracts and "periods" in contracts
+    followup = Model(
+        lambda context: (
+            {
+                "decision": "call_tool",
+                "tool": "get_task_status",
+                "arguments": {"task_id": view.summary.task_id},
+                "reason": "读取实际状态",
+            }
+            if not context["turn_events"]
+            else {
+                "decision": "reply",
+                "content_kind": "task_facts",
+                "text": "实际状态",
+                "fact_refs": context["turn_events"][-1]["payload"]["fact_refs"],
+            }
+        )
+    )
+    status = runtime.run(
+        followup, message="financial-status-default", text="现在是什么状态"
+    )
+    assert status.status == "REPLY" and len(followup.calls) == 2
+
+
 def test_missing_subject_clarifies_same_draft_and_authorization(settings):
     runtime = Runtime(settings)
     first = runtime.run(

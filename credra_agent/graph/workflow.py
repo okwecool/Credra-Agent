@@ -415,6 +415,7 @@ class AgenticGraphRuntime:
                     draft.question_assessments,
                     references=set(refs),
                     task=task,
+                    financial_citations=draft.financial_citations,
                 )
             except ValueError:
                 semantic_answered, semantic_gaps = [], required
@@ -460,14 +461,42 @@ class AgenticGraphRuntime:
                 if draft.finish_reason == "ANSWERED"
                 else draft.finish_reason or "NEEDS_REVIEW"
             )
+            report_refs = []
+            if draft.financial_citations or any(
+                ref.startswith("artifacts/agent_financial_input_v") for ref in refs
+            ):
+                from app.report import write_agent_report
+
+                try:
+                    report_refs = write_agent_report(
+                        self.artifacts,
+                        task=task,
+                        references=set(refs),
+                        citations=draft.financial_citations,
+                        coverage=coverage,
+                        status="COMPLETED" if completed else "LIMITED",
+                        stop_reason=reason,
+                        limitations=draft.limitations,
+                        version=plan_version,
+                    )
+                except ValueError:
+                    return {
+                        **self._limited(
+                            state, "INVALID_FINANCIAL_CITATION", budget_ref
+                        ),
+                        "iteration": plan_version,
+                        "coverage_ref": coverage_ref,
+                        "artifact_refs": [*refs, coverage_ref],
+                    }
             return {
                 "status": "COMPLETED" if completed else "LIMITED",
                 "current_node": "decide",
                 "iteration": plan_version,
                 "stop_reason": reason,
                 "coverage_ref": coverage_ref,
+                "report_ref": report_refs[-1] if report_refs else None,
                 "budget_ledger_ref": budget_ref,
-                "artifact_refs": [*refs, coverage_ref],
+                "artifact_refs": [*refs, coverage_ref, *report_refs],
                 "limitations": draft.limitations,
             }
 

@@ -254,3 +254,101 @@ def test_unconfigured_llm_mode_degrades_to_rules(tmp_path) -> None:
 
     assert result.parser_mode == "RULE_FALLBACK"
     assert result.warnings == ["LLM_INTENT_FALLBACK"]
+
+
+@pytest.mark.parametrize(
+    "scope,expected,comparison",
+    [
+        ("2023至2025年", [(2023, 1, 12), (2024, 1, 12), (2025, 1, 12)], []),
+        ("2024—2025年", [(2024, 1, 12), (2025, 1, 12)], []),
+        ("2025年，以2024年作比较", [(2025, 1, 12)], [2024]),
+        ("2025年，比较基期为2024年", [(2025, 1, 12)], [2024]),
+        ("2025年，对比2024年", [(2025, 1, 12)], [2024]),
+        ("2025年上半年", [(2025, 1, 6)], []),
+        ("2025年第一季度", [(2025, 1, 3)], []),
+        ("2025年第4季度", [(2025, 10, 12)], []),
+    ],
+)
+def test_explicit_scope_excludes_cutoff_year_and_preserves_period_roles(
+    tmp_path, scope, expected, comparison
+):
+    result = parse(
+        tmp_path,
+        thread="periods",
+        message="periods-1",
+        text=f"调查case_byd_cash_quality_v2的{scope}现金质量，资料截止2026-04-02",
+    )
+    spec = result.task_spec
+    assert spec.case_id == "case_byd_cash_quality_v2"
+    assert spec.as_of == date(2026, 4, 2)
+    assert [
+        (p.start.year, p.start.month, p.end.month) for p in spec.periods
+    ] == expected
+    assert [p.start.year for p in spec.comparison_periods] == comparison
+    assert all(
+        p.end.day == (31 if p.end.month in {3, 12} else 30) for p in spec.periods
+    )
+    assert spec.readiness == "READY"
+
+
+def test_llm_period_draft_is_normalized_once_and_amendment_keeps_case_scope(tmp_path):
+    from credra_agent.intent.models import Period, TaskSpec
+
+    model = DraftModel(
+        IntentDraft(operation="start", subject_hint="比亚迪", years=[2024, 2025, 2026])
+    )
+    initial = parse(
+        tmp_path,
+        thread="roles",
+        message="roles-1",
+        text="调查case_byd_cash_quality_v2 2025年，以2024年作为比较，截止2026年4月2日",
+        model=model,
+    )
+    assert [p.start.year for p in initial.task_spec.periods] == [2025]
+    assert [p.start.year for p in initial.task_spec.comparison_periods] == [2024]
+    assert initial.task_spec.readiness == "READY"
+    amended = parse(
+        tmp_path, thread="roles", message="roles-2", text="不要媒体，只核对现金质量"
+    )
+    assert amended.task_spec.case_id == initial.task_spec.case_id
+    assert amended.task_spec.periods == initial.task_spec.periods
+    assert amended.task_spec.comparison_periods == initial.task_spec.comparison_periods
+    cross = parse(
+        tmp_path,
+        thread="cross",
+        message="cross-1",
+        text="调查上汽现金质量",
+        model=DraftModel(
+            IntentDraft(
+                operation="start",
+                subject_hint="上汽",
+                periods=[Period(start=date(2024, 7, 1), end=date(2025, 6, 30))],
+            )
+        ),
+    )
+    assert [
+        (p.start.isoformat(), p.end.isoformat()) for p in cross.task_spec.periods
+    ] == [("2024-07-01", "2024-12-31"), ("2025-01-01", "2025-06-30")]
+    changed = parse(tmp_path, thread="cross", message="cross-2", text="不要媒体")
+    assert changed.task_spec.periods == cross.task_spec.periods
+    legacy = initial.task_spec.model_dump(mode="json")
+    legacy.pop("comparison_periods")
+    assert TaskSpec.model_validate(legacy).comparison_periods == []
+
+
+def test_invalid_cutoff_or_future_partial_scope_requires_clarification(tmp_path):
+    invalid = parse(
+        tmp_path,
+        thread="invalid-date",
+        message="invalid-date-1",
+        text="调查上汽2025年现金质量，截至2026-02-30",
+    )
+    assert "as_of" in invalid.task_spec.unresolved_fields
+    future = parse(
+        tmp_path,
+        thread="future-period",
+        message="future-period-1",
+        text="调查上汽2026年上半年现金质量，截止2026-04-02",
+    )
+    assert "period_after_as_of" in future.task_spec.unresolved_fields
+    assert future.task_spec.readiness == "NEEDS_CLARIFICATION"

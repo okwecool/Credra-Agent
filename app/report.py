@@ -26,6 +26,137 @@ def _references(values: list[str]) -> str:
     return ", ".join(_safe_inline(value) for value in values) or "无"
 
 
+def write_agent_report(
+    store,
+    *,
+    task,
+    references,
+    citations,
+    coverage,
+    status,
+    stop_reason,
+    limitations,
+    version,
+):
+    """Financial report projection; prose never supplies calculated numbers."""
+    from credra_agent.financial.actions import resolve_financial_citations
+
+    resolved = resolve_financial_citations(
+        store, citations, references=references, task=task
+    )
+    questions = {item.question_id: item for item in task.questions}
+    selected = {(item.result_ref, item.result_index) for item in citations}
+    uncited = []
+    for reference in sorted(references):
+        if reference.startswith("artifacts/agent_tool_result_v"):
+            value = store.read_json(reference)
+            if value.get("schema_version") == "agent_financial_result_v2":
+                uncited.extend(
+                    f"{reference}#/results/{index}"
+                    for index in range(len(value["results"]))
+                    if (reference, index) not in selected
+                )
+    payload = {
+        "schema_version": "agent_report_v2_p24",
+        "subject_id": task.subject_id,
+        "subject_name": task.subject_name,
+        "task_spec_version": task.version,
+        "as_of": task.as_of.isoformat(),
+        "periods": [item.model_dump(mode="json") for item in task.periods],
+        "comparison_periods": [
+            item.model_dump(mode="json") for item in task.comparison_periods
+        ],
+        "status": status,
+        "stop_reason": stop_reason,
+        "approval_status": "NOT_REVIEWED",
+        "scope": "FINANCIAL_RESULTS_AND_INVESTIGATION_GAPS",
+        "coverage": coverage.model_dump(mode="json"),
+        "financial_citations": resolved,
+        "uncited_result_refs": uncited,
+        "limitations": [
+            *limitations,
+            "CALCULATION_IS_NOT_EVIDENCE_VERIFICATION",
+            "FULL_INVESTIGATION_REPORT_PENDING_P23",
+        ],
+    }
+    lines = [
+        "# Credra Agent 调查报告 · 财务计算与缺口",
+        "",
+        f"- 主体：{_safe_inline(task.subject_name)}（{_safe_inline(task.subject_id)}）",
+        f"- 资料截止：{task.as_of.isoformat()}",
+        f"- TaskSpec：v{task.version}；调查状态：{_safe_inline(status)}；停止原因：{_safe_inline(stop_reason)}",
+        "- 报告审核：未审核",
+        "",
+        "> 以下数字来自已保存的 Python 计算结果。原文定位不代表输入已采信，计算不证明逾期、违法或现金危机。",
+        "",
+        "## 财务计算引用",
+        "",
+    ]
+    labels = {
+        "revenue_growth": "营收增长率",
+        "receivables_growth": "应收账款净额增长率",
+        "growth_gap": "应收与营收增速差",
+        "cash_profit_ratio": "经营现金流/合并净利润",
+    }
+    if not resolved:
+        lines.append("本次结束决策未选择计算引用。")
+    for citation in resolved:
+        metric = citation["metric"]
+        lines.extend(
+            [
+                f"### {_safe_inline(labels[metric['metric_id']])}",
+                "",
+                f"- 对应问题：{_safe_inline(questions[citation['question_id']].text)}",
+                f"- 期间：{metric['period']['start']} 至 {metric['period']['end']}；口径：{metric['accounting_basis']}",
+                f"- 结果：{_safe_inline(metric['display'])}"
+                if metric["status"] == "COMPUTED"
+                else f"- 不可计算：{_safe_inline(metric['reason'])}",
+                f"- 计算引用：`{citation['result_ref']}#/results/{citation['result_index']}`",
+                f"- 公式：`{_safe_inline(metric['formula'])}`；版本：`{_safe_inline(metric['formula_version'])}`",
+                f"- 材料性质：{_references(citation['source_kinds'])}；输入采信：未核验",
+                "",
+            ]
+        )
+        if metric["comparison_period"]:
+            comparison = metric["comparison_period"]
+            lines.append(f"- 比较基期：{comparison['start']} 至 {comparison['end']}")
+        for field in citation["fields"]:
+            datum = field["datum"]
+            lines.append(
+                f"- 字段引用：`{field['input_ref']}`；{datum['metric']} / {datum['profit_attribution']} / {datum['period']['end']}；金额：{_safe_inline(datum['value'])} 千元；修订：{_safe_inline(datum['revision'])}"
+            )
+            for binding in field["source_bindings"]:
+                source = binding["declared_source"]
+                lines.append(
+                    f"  - 来源：{_safe_inline(source['source_id'])}；声明位置：{_safe_inline(source['location'])}"
+                )
+                if not binding["matches"]:
+                    lines.append("  - 原文片段：未在当前运行材料中定位；保留声明血缘。")
+                for match in binding["matches"]:
+                    location = match["location"]
+                    lines.append(
+                        f"  - 原文引用：`{match['fragment_ref']}`；物理页：{_safe_inline(location['physical_page'])}；印刷页：{_safe_inline(location['printed_page'])}；哈希范围：{match['hash_scope']}"
+                    )
+        lines.append("")
+    lines.extend(["## 调查缺口与限制", ""])
+    for question_id in coverage.gap_question_ids:
+        question = questions.get(question_id)
+        lines.append(
+            f"- 未完成问题：{_safe_inline(question.text if question else question_id)}"
+        )
+    lines.extend(
+        f"- 未决冲突：{_safe_inline(item)}" for item in coverage.unresolved_conflict_ids
+    )
+    if uncited:
+        lines.append(f"- 已保存但未选择引用的计算项：{len(uncited)} 项。")
+    lines.extend(f"- {_safe_inline(item)}" for item in payload["limitations"])
+    json_ref = store.write_json(f"artifacts/agent_report_v{version}.json", payload)
+    markdown_ref = store.write_markdown(
+        f"artifacts/agent_report_v{version}.md", "\n".join(lines) + "\n"
+    )
+    return [json_ref, markdown_ref]
+
+
 def _render_report_draft_expression(
     expression: ReportExpressionArtifact | None,
 ) -> str:

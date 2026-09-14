@@ -2,7 +2,7 @@
 
 制定日期：2026-09-07。产品名称：Credra Agent。代码基线：`ce7dede`。计划依据：[自主调查架构与演进路线 v2.0](Credra%20Agent%20自主调查架构与演进路线%20v2.0（提案）.md)。
 
-**状态说明：制定时仅交付开发计划，工作包从 `NOT_STARTED` 开始；后续实施事实不追溯改写初始验收记录。2026-09-14 当前进展：P25/P26 分节点成果及 P24-1 已提交，当前基线为 `0fde7db`；P26-4/E01–E09 技术验证及真实入口探索见第 6.2.16 节，E10 正式人工评分仍单独待验收。P24-1 输入与计算底座见第 6.3 节；D04 已确认比亚迪2025/2024、资料截止2026-04-02，P24-2 独立材料 Case 与共享入口接入见第 6.4 节。P24/P23 联合验收、P25/U09 的真实调查质量验证及 G2 尚未完成。**
+**状态说明：制定时仅交付开发计划，工作包从 `NOT_STARTED` 开始；后续实施事实不追溯改写初始验收记录。2026-09-14 当前进展：P25/P26 及 P24-1/P24-2 已提交，当前基线为 `0d836ab`；P26-4/E01–E09 技术验证及真实入口探索见第 6.2.16 节，E10 正式人工评分仍单独待验收。P24-1 输入与计算底座见第 6.3 节；D04 已确认比亚迪2025/2024、资料截止2026-04-02，P24-2 独立材料 Case 与共享入口接入见第 6.4 节。P24-3 年度范围与报告计算引用见第 6.5 节。P24/P23 联合验收、P25/U09 的真实调查质量验证及 G2 尚未完成。**
 
 后续入口、日志优化和对应使用/验收记录统一维护在本计划：P25 见第 6.1.1–6.1.2 节，P26 见第 6.2 节，文本日志见第 10.5 节；实施事实与设计偏差继续记入既有《开发日志》。
 
@@ -913,6 +913,60 @@ Case 可以可选声明 `source/financial_input_v2.json`，内容采用第 6.3 �
 新增仅为独立Case的六个必要资料文件，.gitignore按既有精选Case方式放行此Case资料，其他私有Case规则不改。无新增代码模块或独立方案文档；.env、原页面/按钮、依赖及旧财务路径不改。建议提交信息：`V2-2：冻结比亚迪深化材料并接通 Case 输入`；待用户人工审核，不自行暂存、commit或push。
 
 **后续边界：** D04及第一轮材料/输入交付已落实，P24-2本轮技术状态VERIFIED，待本次人工审核。下一轮完成跨年自然语言范围展开为逐年期间，以及计算结果→证据/报告数值引用；再以同一冻结材料开展P23 baseline/agentic联合验收。当前不标P24/P23/G2整体完成，不动默认运行授权或使用前序真实入口剩余额度。本轮未调用真实LLM、付费搜索或抓取Provider。
+
+### 6.5 P24-3：年度范围解析与报告计算引用（2026-09-14）
+
+本轮对应已认可的后三轮拆分第二轮。开始时工作区干净，上一轮已提交为`0d836ab`。复核本计划第6节、6.3–6.4节和原P01/P02契约后，实现自然语言→逐年期间→计算结果→报告引用；不扩展公式、财务字段、季度计算或真实模型预算。
+
+#### 6.5.1 入口期间语义
+
+IntentDraft新增默认空的`comparison_years`及`periods`；TaskSpec新增默认空的`comparison_periods`。已有保存数据缺这些字段时仍可读取，不迁移旧Artifact。`years`是分析年度，`comparison_years`只表示比较基期；基期本身不另算同比。可信构造器处理明确的范围、比较角色及截止日期，入口仍由LLM一次生成草稿，不新增intent_parse调用。
+
+| 用户范围 | 实际分析期间 | 比较期间/限制 |
+|---|---|---|
+| 2023至2025年，截止2026-04-02 | 2023、2024、2025三个完整年度 | 截止日期不产生2026分析年度；缺少某年度金额时不补值 |
+| 2025年，以2024年作比较 | 2025-01-01至2025-12-31 | comparison_periods为2024全年；只算2025同比，不额外要求2023数据 |
+| 2024年和2025年 | 两个分析年度 | 两年分别计算；2024同比缺2023时保留NOT_COMPUTABLE，不静默当比较基期 |
+| 2025年上半年、第一季度 | 对应半年/季度起止日期 | 仅准确表达范围，P24仍拒绝以非全年期间计算年度指标 |
+| draft.periods跨越年度 | 按自然年边界分段，保留非完整年端点 | 不延长成完整年度；未指定新期间的补充保持原范围 |
+
+无效显式截止日期、超截止日的显式期间及倒序年度范围保留未决字段。未指定分析年度、只给比较基期时请求分析期间。显式Case ID在可信主体核对中保留；同任务补充未提主体时保持当前Case，避免因同企业两份Case切换回原例。原规则fallback也使用同一期间语义。相对期间无法可靠确定时沿用澄清规则，不承诺通用自然语言时间表达覆盖。
+
+本轮沿用已冻结的年度同比公式和50位Decimal精度、两位ROUND_HALF_UP展示。若用户指定的比较基期不是前一完整年度，增长类返回`COMPARISON_PERIOD_UNSUPPORTED`，不擅自换基期或新定义多年度增长公式；同期现金利润比可独立计算。
+
+#### 6.5.2 计算与报告引用
+
+`compute_metrics`结果继续为`agent_financial_result_v2`，新增可选TaskSpec版本及截止日元数据。Coordinator索引给每个结果明确`result_index`。FINISH可携带`financial_citations`，每项只接受question_id/result_ref/result_index；模型不能通过此接口填写金额、展示值或单位，也不新开报告模型请求。
+
+引用门禁核对当前可见Artifact、问题、主体、TaskSpec版本、截止日、分析期间和输入引用，再用同一Python计算函数复算所选保存结果。原值、展示、单位、公式、计算精度及字段引用不一致均拒绝；旧结果缺版本/日期元数据时仍须通过当前范围和复算校验。输入的REAL/SYNTHETIC性质从所引用FinancialInput读取，不接受结果自行替换。
+
+字段血缘从`#/datums/N`回到冻结输入。来源ID、原文响应哈希、发布日期和声明的Document/Fragment指针能与当前Run EvidenceBundle一致时保存实际片段引用、物理/印刷页及哈希范围；缺少相应资料时明确UNLOCATED，不重新抓取Case或网页、不伪造位置。匹配声明血缘只是LOCATED，**不是**输入金额语义核验或ACCEPTED Evidence；报告保留`verification_status=NOT_VERIFIED`，不升级采信状态。
+
+原`app/report.py`增加共享投影，持久化`agent_report_vN.json`和`agent_report_vN.md`。范围明确为“财务计算与调查缺口”，数字由保存结果填写，包含对应用户问题、实际期间/比较期间、合并和利润归属、公式版本、输入/原文引用、材料性质、不可计算原因及未引用计算项。报告状态与FINISH实际覆盖门禁一致，始终`NOT_REVIEWED`；缺口、冲突及局限保留，不冒充完整P23调查报告、风险结论或审核批准。
+
+有财务输入时，财务问题的ANSWERED还须有对应的有效COMPUTED引用，继续要求P22当前有效采信主张和语义完成评估；仅有支持主张或计算结果都不自动完成问题。错误引用使结束受限为`INVALID_FINANCIAL_CITATION`，不重试模型。版本化Graph与原内存Coordinator共用门禁和报告投影。Graph保存`report_ref`，现有入口get_task_result安全引用索引直接可见；现有UI只补财务报告引用及未审核提示，不新增按钮、布局或报告正文读取工具。
+
+FINISH模型响应沿用原决策账本，报告JSON已保存、Markdown未保存时故障恢复复用已结算决策和冻结输入，补齐相同报告，不重新计费或读取变化后的Case。Artifact读写沿用现有全服务日志记录；报告不是新的LLM节点。未改`.env`、`.env.example`、依赖、旧案例、材料文件、默认授权及前序真实调用额度。
+
+#### 6.5.3 验证与提交范围
+
+首轮财务/意图/证据定向106项通过（22.21秒），同期lint发现两项导入排序及一项dict字面量问题，已修复。扩展入口委派、原UI兼容、计算引用拒绝和完成门禁后，组合137项通过（57.01秒），只出现第三方Traceloop既有Pydantic弃用警告；随后补“对比2024”表达，纳入最终全量门禁。首轮普通标准脚本597通过/1失败（422.03秒）：创建任务后状态反馈的完整请求触发CONTEXT_LIMITED。仅输出字符计数的离线诊断显示缩减可选历史/分页后仍为30,016，超过既有30,000上限16字符。合并入口Prompt重复说明至1,678字符，保留query、工具契约、任务/来源/权限及事实引用门禁；不扩大容量，也不删除必要上下文。深化Case报告后的状态反馈补入同一默认容量回归。修复后定向与最终标准脚本结果见下。
+
+容量修复后，入口集成/委派/对话/上下文**81项通过**（76.51秒），覆盖默认30,000容量下原任务及深化Case报告后的实际状态工具反馈和第二轮模型回复。最终普通标准脚本通过：Ruff lint、218文件format、**598项pytest通过**（407.20秒）、pip check及独立MCP stdio Mock smoke（document → financial → research → risk；research COMPLETE），脚本退出0；仅第三方Traceloop既有Pydantic弃用警告。首轮失败和修复记录保留，不以定向替代最终全量。
+
+实际入口验证使用真实本地Case/SQLite/Graph、固定离线模型：入口一次决策→prepare_investigation→冻结输入→compute_metrics→FINISH选择引用→报告Artifact可查询；入口占一次/30模拟Token，调查占两次/60模拟Token，本地计算和报告零外调，未调用intent_parse。另一自然语言共享Runtime验证报告JSON保存后故障，损坏源Case两份声明再恢复仍成功，调查两次/40模拟Token不重复。这些验证不等于真实模型语义试跑或P23完整UI验收。
+
+本次拟提交19个既有文件，无新增代码模块、独立方案文档或Case材料：
+
+- `app/report.py`、`app/chainlit_app.py`。
+- `credra_agent/intent/models.py`、`credra_agent/intent/parser.py`。
+- `credra_agent/financial/models.py`、`credra_agent/financial/calculations.py`、`credra_agent/financial/actions.py`。
+- `credra_agent/planning/models.py`、`credra_agent/planning/coordinator.py`、`credra_agent/planning/evidence_context.py`。
+- `credra_agent/graph/state.py`、`credra_agent/graph/workflow.py`、`credra_agent/prompts/entry.py`、`credra_agent/prompts/coordinator.md`。
+- `tests/test_v2_financial.py`、`tests/test_v2_intent_entry.py`、`tests/test_v2_entry_delegation.py`。
+- 本开发计划、`docs/开发日志.md`。
+
+建议提交信息：`V2-2：接通年度范围解析与财务报告引用`。P24-3本轮技术VERIFIED，待本次人工审核，不自行暂存、commit或push。下一轮以相同冻结材料开展P23人工答案、baseline/agentic对照及证据/计算/报告的联合验收；P24/P23/G2整体状态不在本轮提前关闭。
 
 ## 7. V2-3：财务分析深度与扩展案例
 

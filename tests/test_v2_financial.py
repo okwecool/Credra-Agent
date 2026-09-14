@@ -28,6 +28,7 @@ from credra_agent.financial.adapters import (
 from credra_agent.financial.calculations import FORMULAS, calculate_metrics
 from credra_agent.financial.models import (
     BALANCE_FIELDS,
+    FinancialCitation,
     FinancialDatum,
     FinancialInput,
     FinancialSourceRef,
@@ -632,6 +633,469 @@ def real_task():
             "source_policy": SourcePolicy(preferred=["exchange"]),
         }
     )
+
+
+def report_fixture(tmp_path, data=None, task=None):
+    from credra_agent.evidence.artifacts import write_evidence_artifacts
+
+    task = task or real_task()
+    store = ArtifactStore(tmp_path)
+    store.write_json(
+        INPUT_REF,
+        data or load_case_financial(ROOT / "data" / DEEP_CASE, subject_id="002594"),
+    )
+    refs = {INPUT_REF}
+    if task.subject_id == "002594":
+        refs.update(
+            write_evidence_artifacts(
+                store,
+                load_case_evidence(
+                    ROOT / "data" / DEEP_CASE, subject_id="002594", as_of=task.as_of
+                ),
+                0,
+                as_of=task.as_of,
+                subject_id=task.subject_id,
+            )
+        )
+    context = ExecutionContext(store, task, authorization().limits, refs)
+    outcome = compute_metrics(
+        ComputeMetricsArgs(
+            metric_ids=list(FORMULAS),
+            input_refs=[INPUT_REF],
+            accounting_basis="CONSOLIDATED",
+        ),
+        context,
+    )
+    result_ref = store.write_json(
+        "artifacts/agent_tool_result_v1.json", outcome.payload
+    )
+    refs.add(result_ref)
+    return store, task, refs, result_ref
+
+
+def test_report_citations_recompute_and_locate_real_input_without_acceptance(tmp_path):
+    from app.report import write_agent_report
+    from credra_agent.financial.models import FinancialCitation
+    from credra_agent.planning.models import Coverage
+
+    store, task, refs, result_ref = report_fixture(tmp_path)
+    citations = [
+        FinancialCitation(
+            question_id="q-cash", result_ref=result_ref, result_index=index
+        )
+        for index in range(4)
+    ]
+    reports = write_agent_report(
+        store,
+        task=task,
+        references=refs,
+        citations=citations,
+        coverage=Coverage(
+            required_question_ids=["q-cash"], gap_question_ids=["q-cash"]
+        ),
+        status="LIMITED",
+        stop_reason="NEEDS_REVIEW",
+        limitations=[],
+        version=2,
+    )
+    payload = store.read_json(reports[0])
+    markdown = store.read_markdown(reports[1])
+    assert (
+        payload["approval_status"] == "NOT_REVIEWED" and payload["status"] == "LIMITED"
+    )
+    assert [item["metric"]["display"] for item in payload["financial_citations"]] == [
+        "3.46%",
+        "-40.60%",
+        "-44.06 个百分点",
+        "1.75 倍",
+    ]
+    assert all(
+        item["verification_status"] == "NOT_VERIFIED"
+        for item in payload["financial_citations"]
+    )
+    assert all(
+        binding["lineage_status"] == "LOCATED"
+        for item in payload["financial_citations"]
+        for field in item["fields"]
+        for binding in field["source_bindings"]
+    )
+    assert (
+        "物理页：131；印刷页：130" in markdown
+        and "#/datums/" in markdown
+        and "#/results/3" in markdown
+    )
+    assert "合并净利润" in markdown and "NOT_REVIEWED" not in markdown
+    assert not store.read_json("artifacts/agent_evidence_v0.json")["evidence"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "hidden",
+        "index",
+        "question",
+        "subject",
+        "version",
+        "cutoff",
+        "value",
+        "display",
+        "unit",
+        "lineage",
+        "input_hidden",
+        "period",
+        "duplicate",
+    ],
+)
+def test_financial_report_refuses_foreign_stale_or_modified_results(tmp_path, change):
+    from credra_agent.financial.actions import resolve_financial_citations
+    from credra_agent.financial.models import FinancialCitation
+
+    store, task, refs, result_ref = report_fixture(tmp_path)
+    args = {"question_id": "q-cash", "result_ref": result_ref, "result_index": 3}
+    raw = store.read_json(result_ref)
+    if change == "hidden":
+        refs.remove(result_ref)
+    elif change == "index":
+        args["result_index"] = 100
+    elif change == "question":
+        args["question_id"] = "foreign"
+    elif change == "subject":
+        raw["subject_id"] = "foreign"
+    elif change == "version":
+        raw["task_spec_version"] = 99
+    elif change == "cutoff":
+        raw["as_of"] = "2026-04-01"
+    elif change == "value":
+        raw["results"][3]["value"] = "999"
+    elif change == "display":
+        raw["results"][3]["display"] = "999.00 倍"
+    elif change == "unit":
+        raw["results"][3]["display_unit"] = "percent"
+    elif change == "lineage":
+        raw["results"][3]["input_refs"] = [INPUT_REF + "#/datums/999"]
+    elif change == "input_hidden":
+        refs.remove(INPUT_REF)
+    elif change == "period":
+        task = task.model_copy(update={"periods": [annual(2024)]})
+    # Deliberate immutable-artifact corruption models disk tampering, not ingestion.
+    (store.run_dir / result_ref).write_text(json.dumps(raw), encoding="utf-8")
+    citation = FinancialCitation(**args)
+    with pytest.raises(ValueError):
+        resolve_financial_citations(
+            store,
+            [citation, citation] if change == "duplicate" else [citation],
+            references=refs,
+            task=task,
+        )
+
+
+def test_not_computable_and_missing_source_location_remain_visible_in_report(tmp_path):
+    from app.report import write_agent_report
+    from credra_agent.financial.models import FinancialCitation
+    from credra_agent.planning.models import Coverage
+
+    data = patch_field(
+        dataset(),
+        "net_profit",
+        attribution="GROUP_TOTAL",
+        value=None,
+        missing_reason="MISSING_CONSOLIDATED_PROFIT",
+    )
+    store, task, refs, ref = report_fixture(tmp_path, data=data, task=financial_task())
+    result = store.read_json(ref)
+    result.pop("task_spec_version")
+    result.pop("as_of")
+    (store.run_dir / ref).write_text(json.dumps(result), encoding="utf-8")
+    reports = write_agent_report(
+        store,
+        task=task,
+        references=refs,
+        citations=[
+            FinancialCitation(question_id="q-cash", result_ref=ref, result_index=3),
+            FinancialCitation(question_id="q-cash", result_ref=ref, result_index=0),
+        ],
+        coverage=Coverage(gap_question_ids=["q-cash"]),
+        status="LIMITED",
+        stop_reason="NEEDS_REVIEW",
+        limitations=[],
+        version=2,
+    )
+    text = store.read_markdown(reports[1])
+    assert "不可计算：MISSING" in text and "原文片段：未在当前运行材料中定位" in text
+    assert (
+        store.read_json(reports[0])["financial_citations"][0]["metric"]["value"] is None
+    )
+    assert len(store.read_json(reports[0])["uncited_result_refs"]) == 2
+
+
+def test_explicit_nonannual_or_nonprior_comparison_is_not_rewritten_for_calculation(
+    tmp_path,
+):
+    context = ExecutionContext(
+        ArtifactStore(tmp_path),
+        real_task().model_copy(update={"comparison_periods": [annual(2023)]}),
+        authorization().limits,
+        {INPUT_REF},
+    )
+    context.artifacts.write_json(
+        INPUT_REF, load_case_financial(ROOT / "data" / DEEP_CASE, subject_id="002594")
+    )
+    outcome = compute_metrics(
+        ComputeMetricsArgs(
+            metric_ids=list(FORMULAS),
+            input_refs=[INPUT_REF],
+            accounting_basis="CONSOLIDATED",
+        ),
+        context,
+    )
+    assert [r["reason"] for r in outcome.payload["results"][:3]] == [
+        "COMPARISON_PERIOD_UNSUPPORTED"
+    ] * 3
+    assert outcome.payload["results"][3]["display"] == "1.75 倍"
+
+
+def test_citation_schema_disallows_model_supplied_amount_or_display():
+    with pytest.raises(ValidationError):
+        FinancialCitation(
+            question_id="q-cash",
+            result_ref="artifacts/agent_tool_result_v1.json",
+            result_index=0,
+            value="999",
+            display="999 倍",
+        )
+
+
+def test_invalid_finish_citation_stops_without_report_or_extra_model_cost(tmp_path):
+    config = settings(tmp_path)
+    (config.data_dir / "case_synthetic_financial/source").mkdir(parents=True)
+    action = DecisionDraft(
+        decision="ACTION",
+        tool="compute_metrics",
+        arguments={
+            "metric_ids": list(FORMULAS),
+            "input_refs": [INPUT_REF],
+            "accounting_basis": "CONSOLIDATED",
+        },
+        expected_observation="读取合成计算",
+        reason_summary="验证引用门禁",
+    )
+    finish = finish_decision("ANSWERED").model_copy(
+        update={
+            "financial_citations": [
+                FinancialCitation(
+                    question_id="q-cash",
+                    result_ref="artifacts/agent_tool_result_v1.json",
+                    result_index=99,
+                )
+            ]
+        }
+    )
+    model = FixedModel([action, finish])
+    result = start_agentic_task(
+        thread_id="bad-report-citation",
+        task_spec=financial_task(),
+        authorization=authorization(),
+        settings=config,
+        model=model,
+        executor=build_agentic_executor(financial_task()),
+        initial_financial_input=dataset(),
+    )
+    assert (
+        result["state"]["status"] == "LIMITED"
+        and result["state"]["stop_reason"] == "INVALID_FINANCIAL_CITATION"
+    )
+    assert result["state"].get("report_ref") is None
+    assert len(model.payloads) == 2 and not any(
+        "agent_report" in ref for ref in result["state"]["artifact_refs"]
+    )
+
+
+def test_supported_claim_without_computation_cannot_complete_financial_question(
+    tmp_path,
+):
+    from credra_agent.evidence.artifacts import write_evidence_artifacts
+    from credra_agent.evidence.models import Entity
+    from credra_agent.evidence.service import assemble_bundle
+    from credra_agent.planning.evidence_context import assess_questions
+    from credra_agent.planning.models import QuestionAssessment
+    from tests.test_v2_evidence import claim, document, verified
+
+    store, task, refs, result_ref = report_fixture(
+        tmp_path, data=dataset(), task=financial_task()
+    )
+    asserted = claim(
+        subject_id=task.subject_id,
+        statement="合成控制样本经营现金流为80、合并净利润为100。",
+    )
+    doc = document(text=asserted.statement)
+    grounded = assemble_bundle(
+        as_of=task.as_of,
+        entities=[Entity(entity_id=task.subject_id, legal_name=task.subject_name)],
+        documents=[doc],
+        evidence=[verified(doc, asserted=asserted)],
+        claims=[asserted],
+    )
+    receipts = write_evidence_artifacts(
+        store, grounded, 1, as_of=task.as_of, subject_id=task.subject_id
+    )
+    refs.update(receipts)
+    assessment = QuestionAssessment(
+        question_id="q-cash",
+        status="ANSWERED",
+        conclusion="已核对现金质量",
+        evidence_refs=[receipts[0]],
+        claim_ids=[asserted.claim_id],
+    )
+    with pytest.raises(ValueError, match="valid computed citation"):
+        assess_questions(store, [assessment], references=refs, task=task)
+    answer, gaps = assess_questions(
+        store,
+        [assessment],
+        references=refs,
+        task=task,
+        financial_citations=[
+            FinancialCitation(
+                question_id="q-cash", result_ref=result_ref, result_index=3
+            )
+        ],
+    )
+    assert answer == ["q-cash"] and gaps == []
+
+
+def test_non_durable_coordinator_uses_same_financial_report_projection(tmp_path):
+    from credra_agent.planning.coordinator import Coordinator
+
+    store, task, refs, result_ref = report_fixture(tmp_path)
+    model = FixedModel(
+        [
+            finish_decision("NEEDS_REVIEW").model_copy(
+                update={
+                    "financial_citations": [
+                        FinancialCitation(
+                            question_id="q-cash", result_ref=result_ref, result_index=3
+                        )
+                    ]
+                }
+            )
+        ]
+    )
+    result = Coordinator(
+        model=model,
+        executor=build_agentic_executor(task),
+        authorization=authorization(),
+        run_dir=store.run_dir,
+    ).run(task, initial_refs=refs)
+    assert (
+        result.status == "LIMITED"
+        and "artifacts/agent_report_v1.md" in result.artifact_refs
+    )
+    assert "1.75 倍" in store.read_markdown("artifacts/agent_report_v1.md")
+
+
+@pytest.mark.parametrize("crash", [False, True])
+def test_real_natural_language_to_report_and_resume_reuses_paid_decision(
+    tmp_path, monkeypatch, crash
+):
+    from credra_agent.entry.query import TaskQueryService
+    from credra_agent.intent.service import interpret_message
+    from credra_agent.runtime.service import execute_intent
+
+    config = settings(tmp_path)
+    case = config.data_dir / DEEP_CASE
+    shutil.copytree(ROOT / "data" / DEEP_CASE / "source", case / "source")
+    intent = interpret_message(
+        thread_id="nl-financial-report",
+        source_message_id="report-message",
+        text=f"调查{DEEP_CASE}的2025年现金质量，以2024年作为比较，资料截止2026-04-02",
+        as_of=date(2026, 9, 14),
+        data_dir=config.data_dir,
+        database_path=config.checkpoint_db_path,
+    )
+    assert intent.task_spec.periods == [
+        annual(2025)
+    ] and intent.task_spec.comparison_periods == [annual(2024)]
+    question_id = intent.task_spec.questions[0].question_id
+    compute = DecisionDraft(
+        decision="ACTION",
+        tool="compute_metrics",
+        arguments={
+            "metric_ids": list(FORMULAS),
+            "input_refs": [INPUT_REF],
+            "accounting_basis": "CONSOLIDATED",
+        },
+        expected_observation="取得年度同口径计算",
+        reason_summary="引用冻结财务输入",
+    )
+    finish = finish_decision("NEEDS_REVIEW").model_copy(
+        update={
+            "financial_citations": [
+                FinancialCitation(
+                    question_id=question_id,
+                    result_ref="artifacts/agent_tool_result_v1.json",
+                    result_index=index,
+                )
+                for index in range(4)
+            ]
+        }
+    )
+    model = FixedModel([compute, finish])
+    original_write = ArtifactStore.write_markdown
+    failed = False
+
+    def fail_report_once(self, ref, content):
+        nonlocal failed
+        if crash and not failed and ref.startswith("artifacts/agent_report_v"):
+            failed = True
+            raise RuntimeError("report-json-stored")
+        return original_write(self, ref, content)
+
+    monkeypatch.setattr(ArtifactStore, "write_markdown", fail_report_once)
+    kwargs = {
+        "thread_id": intent.thread_id,
+        "settings": config,
+        "model": model,
+        "executor": build_agentic_executor(intent.task_spec),
+    }
+    if crash:
+        with pytest.raises(RuntimeError, match="report-json-stored"):
+            start_agentic_task(
+                **kwargs, task_spec=intent.task_spec, authorization=authorization()
+            )
+        (case / "source/financial_input_v2.json").write_text("broken", encoding="utf-8")
+        (case / "source/evidence_bundle_v2.json").write_text("broken", encoding="utf-8")
+        result = resume_agentic_task(**kwargs)
+    else:
+        result = execute_intent(
+            intent=intent,
+            settings=config,
+            execution_mode="agentic",
+            authorization=authorization(),
+            coordinator_model=model,
+            executor_factory=build_agentic_executor,
+        ).task
+    assert result["state"]["status"] == "LIMITED"
+    assert result["state"]["report_ref"] == "artifacts/agent_report_v2.md"
+    store = ArtifactStore(case / "runs" / run_id_for_thread(intent.thread_id))
+    assert "1.75 倍" in store.read_markdown(result["state"]["report_ref"])
+    assert (
+        len(model.payloads) == 2
+        and model.payloads[1]["evidence_context"]["financial_results"][0]["results"][3][
+            "result_index"
+        ]
+        == 3
+    )
+    assert (
+        ActionLedger(config.checkpoint_db_path).budget_snapshot(
+            intent.thread_id, authorization()
+        )["external_spent"]
+        == 2
+    )
+    query = TaskQueryService(config, allowed_subject_ids=["002594"])
+    assert (
+        query.get(intent.thread_id).result_refs["report_ref"]
+        == result["state"]["report_ref"]
+    )
+    assert resume_agentic_task(**kwargs)["state"] == result["state"]
 
 
 def test_real_case_material_identity_cutoff_hashes_and_unverified_status():

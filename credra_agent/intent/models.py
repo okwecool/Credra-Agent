@@ -77,6 +77,7 @@ class TaskSpec(IntentModel):
     case_id: str | None = None
     as_of: date
     periods: list[Period]
+    comparison_periods: list[Period] = Field(default_factory=list)
     source_policy: SourcePolicy
     questions: list[Question] = Field(min_length=1)
     conditions: list[ConditionalInstruction] = Field(default_factory=list)
@@ -94,7 +95,10 @@ class TaskSpec(IntentModel):
             )
         if self.readiness == "NEEDS_CLARIFICATION" and not self.unresolved_fields:
             raise ValueError("clarification needs named unresolved fields")
-        if any(period.end > self.as_of for period in self.periods):
+        if any(
+            period.end > self.as_of
+            for period in [*self.periods, *self.comparison_periods]
+        ):
             raise ValueError("period extends beyond as_of")
         question_ids = [item.question_id for item in self.questions]
         if len(question_ids) != len(set(question_ids)):
@@ -133,6 +137,8 @@ class IntentDraft(IntentModel):
     operation: Operation
     subject_hint: str | None = None
     years: list[int] = Field(default_factory=list)
+    comparison_years: list[int] = Field(default_factory=list)
+    periods: list[Period] = Field(default_factory=list)
     as_of: date | None = None
     focus: list[
         Literal[
