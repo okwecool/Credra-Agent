@@ -409,9 +409,28 @@ def _execute_locked(
                     "ASK_USER", decision.question + "\n" + "\n".join(decision.options)
                 )
             if decision.decision == "reply":
-                public = _ground_reply(
-                    decision, json.loads(row["payload_json"]), results
-                )
+                try:
+                    public = _ground_reply(
+                        decision, json.loads(row["payload_json"]), results
+                    )
+                except EntryConflict:
+                    if decision.content_kind != "conversation" or _needs_grounding(
+                        text
+                    ):
+                        raise
+                    emit(
+                        "ROUTE",
+                        status="REJECTED",
+                        call_id=operation,
+                        error_code="ENTRY_UNSUPPORTED_CONVERSATION_CONTENT_REMOVED",
+                    )
+                    require_logging()
+                    store.pending(conversation_id, workspace, None)
+                    return respond(
+                        "REPLY",
+                        _safe_conversation_reply(text),
+                        ["ENTRY_UNSUPPORTED_CONVERSATION_CONTENT_REMOVED"],
+                    )
                 require_logging()
                 store.pending(conversation_id, workspace, None)
                 return respond("REPLY", public)
@@ -539,6 +558,26 @@ def _investigation_receipt(result):
     return text
 
 
+_GROUNDED_FACT_PATTERN = re.compile(
+    r"任务|调查|报告|授信|完成|批准|拒绝|贷款|金额|利润|现金流|收入|债务|应收|担保|处罚|比亚迪|上汽|\b(?:RUNNING|COMPLETED|READY|LIMITED)\b"
+)
+
+
+def _needs_grounding(text: str) -> bool:
+    return bool(_GROUNDED_FACT_PATTERN.search(text))
+
+
+def _safe_conversation_reply(text: str) -> str:
+    if re.fullmatch(
+        r"\s*(?:你好|您好|嗨|hi|hello|hey)[！!。.，,\s]*", text, re.IGNORECASE
+    ):
+        return "你好！我是 Credra Agent。你可以直接告诉我想讨论的问题。"
+    return (
+        "刚才的回复包含未由当前上下文支持的任务或企业事实，相关内容已省略。"
+        "你可以继续描述想讨论的问题；涉及工作区事实时，我会先查询再回答。"
+    )
+
+
 def _ground_reply(reply, payload, results):
     if reply.content_kind == "capabilities":
         available = [item["name"] for item in payload["tools"] if item["available"]]
@@ -577,10 +616,7 @@ def _ground_reply(reply, payload, results):
         elif result.tool == "get_task_result":
             scopes.update({ref: result for ref in result.fact_refs})
     if reply.content_kind == "conversation":
-        if reply.fact_refs or re.search(
-            r"任务|调查|报告|授信|完成|批准|拒绝|贷款|金额|利润|现金流|收入|债务|应收|担保|处罚|比亚迪|上汽|\b(?:RUNNING|COMPLETED|READY|LIMITED)\b",
-            reply.text,
-        ):
+        if reply.fact_refs or _needs_grounding(reply.text):
             raise EntryConflict("ENTRY_UNREFERENCED_TASK_CLAIM")
         return reply.text
     if not reply.fact_refs or any(

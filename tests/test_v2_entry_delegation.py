@@ -278,6 +278,11 @@ def test_entry_llm_draft_reaches_real_financial_report_without_intent_reparse(se
         followup, message="financial-status-default", text="现在是什么状态"
     )
     assert status.status == "REPLY" and len(followup.calls) == 2
+    assert followup.calls[1]["current_task"] is None
+    assert (
+        followup.calls[1]["turn_events"][-1]["payload"]["data"]["summary"]["task_id"]
+        == view.summary.task_id
+    )
 
 
 def test_missing_subject_clarifies_same_draft_and_authorization(settings):

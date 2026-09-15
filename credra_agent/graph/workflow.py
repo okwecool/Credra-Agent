@@ -32,6 +32,7 @@ from credra_agent.execution.model_budget import external_usage, model_reservatio
 from credra_agent.execution.models import Action, AskUserArgs
 from credra_agent.execution.policy import ActionPolicy, PolicyViolation
 from credra_agent.execution.registry import ActionRegistry, default_registry
+from credra_agent.financial.actions import resolve_financial_citations
 from credra_agent.graph.state import AgenticState
 from credra_agent.intent.models import TaskSpec
 from credra_agent.observability.events import log_context
@@ -45,6 +46,7 @@ from credra_agent.planning.evidence_context import (
     assess_questions,
     coordinator_evidence_context,
     current_conflicts,
+    incomplete_completion_requirements,
     store_proposals,
 )
 from credra_agent.planning.models import (
@@ -255,6 +257,9 @@ class AgenticGraphRuntime:
             for item in self.registry.catalog()
             if item["name"] in executable and item["available"]
         ]
+        evidence_context = coordinator_evidence_context(
+            self.artifacts, set(state["artifact_refs"]), task
+        )
         payload = {
             "task_spec": task.model_dump(mode="json"),
             "hypotheses": [item.model_dump(mode="json") for item in hypotheses],
@@ -273,9 +278,7 @@ class AgenticGraphRuntime:
             "available_references": sorted(state["artifact_refs"]),
             "available_tools": catalog,
             "budget": self.ledger.budget_snapshot(state["task_id"], authorization),
-            "evidence_context": coordinator_evidence_context(
-                self.artifacts, set(state["artifact_refs"]), task
-            ),
+            "evidence_context": evidence_context,
             "policy_rejections": state["policy_rejections"][-10:],
             "no_progress_locked": state["no_progress_count"]
             >= authorization.limits.no_progress_limit,
@@ -405,10 +408,56 @@ class AgenticGraphRuntime:
             refs.append(proposal_ref)
 
         if draft.decision == "FINISH":
+            completion_gaps = incomplete_completion_requirements(evidence_context)
+            already_replanned = any(
+                item["code"] == "INCOMPLETE_COMPLETION_REQUIREMENTS"
+                for item in state["policy_rejections"]
+            )
+            if (
+                completion_gaps
+                and not already_replanned
+                and not payload["no_progress_locked"]
+                and draft.finish_reason not in {"BUDGET_EXHAUSTED", "NO_PROGRESS"}
+            ):
+                rejection = {
+                    "code": "INCOMPLETE_COMPLETION_REQUIREMENTS",
+                    "message": "; ".join(completion_gaps)[:200],
+                }
+                emit(
+                    "PLAN_CHANGED",
+                    status="REJECTED",
+                    plan_version=plan_version,
+                    error_code="INCOMPLETE_COMPLETION_REQUIREMENTS",
+                )
+                return {
+                    "status": "RUNNING",
+                    "current_node": "decide",
+                    "iteration": plan_version,
+                    "budget_ledger_ref": budget_ref,
+                    "no_progress_count": state["no_progress_count"] + 1,
+                    "artifact_refs": refs,
+                    "policy_rejections": [
+                        *state["policy_rejections"],
+                        rejection,
+                    ],
+                }
             coverage.unresolved_conflict_ids = current_conflicts(
                 self.artifacts, set(refs), task, coverage.unresolved_conflict_ids
             )
             coverage.review_required = bool(coverage.unresolved_conflict_ids)
+            try:
+                resolve_financial_citations(
+                    self.artifacts,
+                    draft.financial_citations,
+                    references=set(refs),
+                    task=task,
+                )
+            except ValueError:
+                return {
+                    **self._limited(state, "INVALID_FINANCIAL_CITATION", budget_ref),
+                    "iteration": plan_version,
+                    "artifact_refs": refs,
+                }
             try:
                 semantic_answered, semantic_gaps = assess_questions(
                     self.artifacts,
@@ -417,8 +466,29 @@ class AgenticGraphRuntime:
                     task=task,
                     financial_citations=draft.financial_citations,
                 )
-            except ValueError:
-                semantic_answered, semantic_gaps = [], required
+            except ValueError as exc:
+                rejection = {
+                    "code": "INVALID_QUESTION_ASSESSMENT",
+                    "message": str(exc)[:200],
+                }
+                emit(
+                    "PLAN_CHANGED",
+                    status="REJECTED",
+                    plan_version=plan_version,
+                    error_code="INVALID_QUESTION_ASSESSMENT",
+                )
+                return {
+                    "status": "RUNNING",
+                    "current_node": "decide",
+                    "iteration": plan_version,
+                    "budget_ledger_ref": budget_ref,
+                    "no_progress_count": state["no_progress_count"] + 1,
+                    "artifact_refs": refs,
+                    "policy_rejections": [
+                        *state["policy_rejections"],
+                        rejection,
+                    ],
+                }
             answered = set(coverage.answered_question_ids) | set(semantic_answered)
             coverage = _coverage(required, observations).model_copy(
                 update={
@@ -462,8 +532,12 @@ class AgenticGraphRuntime:
                 else draft.finish_reason or "NEEDS_REVIEW"
             )
             report_refs = []
-            if draft.financial_citations or any(
-                ref.startswith("artifacts/agent_financial_input_v") for ref in refs
+            if (
+                draft.question_assessments
+                or draft.financial_citations
+                or any(
+                    ref.startswith("artifacts/agent_financial_input_v") for ref in refs
+                )
             ):
                 from app.report import write_agent_report
 
@@ -511,6 +585,7 @@ class AgenticGraphRuntime:
                 "current_node": "decide",
                 "iteration": plan_version,
                 "budget_ledger_ref": budget_ref,
+                "no_progress_count": state["no_progress_count"] + 1,
                 "artifact_refs": refs,
                 "policy_rejections": [*state["policy_rejections"], rejection],
             }
@@ -521,6 +596,7 @@ class AgenticGraphRuntime:
                 "current_node": "decide",
                 "iteration": plan_version,
                 "budget_ledger_ref": budget_ref,
+                "no_progress_count": state["no_progress_count"] + 1,
                 "artifact_refs": refs,
                 "policy_rejections": [*state["policy_rejections"], rejection],
             }
@@ -542,6 +618,7 @@ class AgenticGraphRuntime:
                 "current_node": "decide",
                 "iteration": plan_version,
                 "budget_ledger_ref": budget_ref,
+                "no_progress_count": state["no_progress_count"] + 1,
                 "artifact_refs": refs,
                 "policy_rejections": [
                     *state["policy_rejections"],

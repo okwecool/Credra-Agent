@@ -26,6 +26,7 @@ from credra_agent.execution.model_budget import external_usage, model_reservatio
 from credra_agent.execution.models import Action, AskUserArgs
 from credra_agent.execution.policy import ActionPolicy, PolicyViolation
 from credra_agent.execution.registry import ActionRegistry, default_registry
+from credra_agent.financial.actions import resolve_financial_citations
 from credra_agent.intent.models import TaskSpec
 from credra_agent.observability.events import log_context
 from credra_agent.observability.runtime import emit, require_logging
@@ -33,6 +34,7 @@ from credra_agent.planning.evidence_context import (
     assess_questions,
     coordinator_evidence_context,
     current_conflicts,
+    incomplete_completion_requirements,
     store_proposals,
 )
 from credra_agent.planning.models import (
@@ -46,7 +48,7 @@ from credra_agent.planning.models import (
     RunAuthorization,
 )
 
-PROMPT_VERSION = "coordinator-v2-p24-report"
+PROMPT_VERSION = "coordinator-v2-finish-recovery"
 PROMPT_PATH = Path(__file__).parents[1] / "prompts" / "coordinator.md"
 DecisionFallback = Callable[
     [dict[str, Any], BaseException], DecisionDraft | dict[str, Any]
@@ -163,6 +165,9 @@ class Coordinator:
 
         for decision_number in range(1, self.limits.max_decisions + 1):
             coverage = self._coverage(required, observations)
+            evidence_context = coordinator_evidence_context(
+                self.artifacts, available_refs, task_spec
+            )
             payload = {
                 "task_spec": task_spec.model_dump(mode="json"),
                 "hypotheses": [
@@ -175,9 +180,7 @@ class Coordinator:
                 "available_references": sorted(available_refs),
                 "available_tools": catalog,
                 "budget": self.budget.snapshot().model_dump(mode="json"),
-                "evidence_context": coordinator_evidence_context(
-                    self.artifacts, available_refs, task_spec
-                ),
+                "evidence_context": evidence_context,
                 "policy_rejections": rejections[-10:],
                 "no_progress_locked": no_progress_count
                 >= self.limits.no_progress_limit,
@@ -358,6 +361,31 @@ class Coordinator:
                 available_refs.add(proposal_ref)
 
             if draft.decision == "FINISH":
+                completion_gaps = incomplete_completion_requirements(evidence_context)
+                already_replanned = any(
+                    item["code"] == "INCOMPLETE_COMPLETION_REQUIREMENTS"
+                    for item in rejections
+                )
+                if (
+                    completion_gaps
+                    and not already_replanned
+                    and not payload["no_progress_locked"]
+                    and draft.finish_reason not in {"BUDGET_EXHAUSTED", "NO_PROGRESS"}
+                ):
+                    rejections.append(
+                        {
+                            "code": "INCOMPLETE_COMPLETION_REQUIREMENTS",
+                            "message": "; ".join(completion_gaps)[:200],
+                        }
+                    )
+                    emit(
+                        "PLAN_CHANGED",
+                        status="REJECTED",
+                        plan_version=decision_number,
+                        error_code="INCOMPLETE_COMPLETION_REQUIREMENTS",
+                    )
+                    no_progress_count += 1
+                    continue
                 coverage = self._coverage(required, observations, draft=draft)
                 coverage.unresolved_conflict_ids = current_conflicts(
                     self.artifacts,
@@ -369,6 +397,27 @@ class Coordinator:
                     bool(coverage.unresolved_conflict_ids) or draft.review_required
                 )
                 try:
+                    resolve_financial_citations(
+                        self.artifacts,
+                        draft.financial_citations,
+                        references=available_refs,
+                        task=task_spec,
+                    )
+                except ValueError:
+                    return self._result(
+                        status="LIMITED",
+                        stop_reason="INVALID_FINANCIAL_CITATION",
+                        actions=actions,
+                        observations=observations,
+                        hypotheses=list(hypothesis_map.values()),
+                        coverage=coverage,
+                        artifact_refs=artifact_refs,
+                        limitations=[
+                            *draft.limitations,
+                            "INVALID_FINANCIAL_CITATION",
+                        ],
+                    )
+                try:
                     answered, gaps = assess_questions(
                         self.artifacts,
                         draft.question_assessments,
@@ -376,8 +425,21 @@ class Coordinator:
                         task=task_spec,
                         financial_citations=draft.financial_citations,
                     )
-                except ValueError:
-                    answered, gaps = [], required
+                except ValueError as exc:
+                    rejections.append(
+                        {
+                            "code": "INVALID_QUESTION_ASSESSMENT",
+                            "message": str(exc)[:200],
+                        }
+                    )
+                    emit(
+                        "PLAN_CHANGED",
+                        status="REJECTED",
+                        plan_version=decision_number,
+                        error_code="INVALID_QUESTION_ASSESSMENT",
+                    )
+                    no_progress_count += 1
+                    continue
                 coverage.answered_question_ids = sorted(
                     set(coverage.answered_question_ids) | set(answered)
                 )
@@ -411,12 +473,17 @@ class Coordinator:
                     if draft.finish_reason == "ANSWERED"
                     else draft.finish_reason or "NEEDS_REVIEW"
                 )
-                if draft.financial_citations or any(
-                    ref.startswith("artifacts/agent_financial_input_v")
-                    for ref in available_refs
+                if (
+                    draft.question_assessments
+                    or draft.financial_citations
+                    or any(
+                        ref.startswith("artifacts/agent_financial_input_v")
+                        for ref in available_refs
+                    )
                 ):
                     from app.report import write_agent_report
 
+                    available_refs.update(artifact_refs)
                     try:
                         artifact_refs.extend(
                             write_agent_report(
@@ -479,11 +546,13 @@ class Coordinator:
                 rejections.append(
                     {"code": "UNKNOWN_HYPOTHESIS", "message": "unknown hypothesis id"}
                 )
+                no_progress_count += 1
                 continue
             if not set(draft.evidence_refs) <= available_refs:
                 rejections.append(
                     {"code": "UNKNOWN_EVIDENCE", "message": "unknown evidence ref"}
                 )
+                no_progress_count += 1
                 continue
             try:
                 authorized = self.policy.authorize(
@@ -499,6 +568,7 @@ class Coordinator:
             except PolicyViolation as exc:
                 rejections.append({"code": exc.code, "message": str(exc)[:200]})
                 emit("ACTION_STATE", status="REJECTED", error_code=exc.code)
+                no_progress_count += 1
                 continue
 
             action_id = f"action-{decision_number}-{uuid4().hex[:12]}"

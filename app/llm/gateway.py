@@ -24,6 +24,14 @@ from credra_agent.observability.runtime import emit
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_REPAIR_OUTPUT_MAX_CHARS = 4000
+_SAFE_REPAIR_CONSTRAINTS = {
+    "Value error, claim proposal must be the matching verify_claim target": (
+        "A new claim_proposals item is allowed only on verify_claim; provide exactly "
+        "the arguments.claim_id proposal and include its source_document_ids in "
+        "arguments.document_ids. Omit claim_proposals on other actions and FINISH."
+    ),
+}
 _PROCESS_PROMPT_VERSION = "m4e-public-process-v1"
 _PROCESS_SYSTEM_PROMPT = """你是受约束的分析过程助手。请在内部完成分析，但不要在最终可见文本中输出逐步思维链。分析结束后，只输出一段简短的公开过程摘要：说明核对了哪些输入类别或引用 ID、发现了哪些需要关注的方向以及有哪些限制。不得新增输入中不存在的事实、数字、URL、证据 ID 或授信决定。不要输出 JSON、Markdown 标题或代码块。"""
 
@@ -172,6 +180,57 @@ class OpenAICompatibleStructuredModel:
             with_options(timeout=timeout_seconds) if callable(with_options) else client
         )
 
+    @staticmethod
+    def _repair_turn(
+        content: str,
+        *,
+        validation_issues: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, str]]:
+        """Return a bounded repair turn without writing raw output to logs."""
+
+        previous = content[:_REPAIR_OUTPUT_MAX_CHARS]
+        if len(content) > _REPAIR_OUTPUT_MAX_CHARS:
+            previous += "\n[previous output truncated for bounded repair]"
+        instruction = (
+            "上一回答不是完整、有效的 JSON。请缩短文本字段并重新返回一个完整 JSON 对象；"
+            "只保留必需字段和非默认字段，省略值为 null、{} 或 [] 的可选字段；"
+            "不要解释，也不要使用 Markdown。"
+        )
+        if validation_issues:
+            diagnostics = json.dumps(
+                validation_issues,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            instruction = (
+                "上一回答已是 JSON，但未通过输出 Schema 校验。请根据以下有界诊断修正，"
+                "并重新返回完整 JSON；保留符合要求的内容，不要解释或使用 Markdown。"
+                f"诊断：{diagnostics}"
+            )
+        return [
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": instruction},
+        ]
+
+    @staticmethod
+    def _repair_schema_issues(
+        error: ValidationError,
+        validation_issues: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Add only allowlisted, code-owned cross-field constraints."""
+
+        repaired = [dict(issue) for issue in validation_issues]
+        raw_errors = error.errors(
+            include_url=False,
+            include_context=False,
+            include_input=False,
+        )
+        for issue, raw in zip(repaired, raw_errors, strict=False):
+            constraint = _SAFE_REPAIR_CONSTRAINTS.get(raw.get("msg"))
+            if constraint:
+                issue["constraint"] = constraint
+        return repaired
+
     @model_attempt
     def _stream_completion(
         self,
@@ -202,6 +261,12 @@ class OpenAICompatibleStructuredModel:
         content_parts: list[str] = []
         usage: Any | None = None
         for chunk in stream:
+            elapsed_seconds = perf_counter() - started
+            if first_token_seen and elapsed_seconds > timeout_seconds:
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
+                raise TimeoutError("model stream timeout")
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage is not None:
                 usage = chunk_usage
@@ -218,7 +283,7 @@ class OpenAICompatibleStructuredModel:
             if isinstance(content, str) and content:
                 content_parts.append(content)
             if not first_token_seen and (reasoning or content):
-                elapsed_ms = max(0, round((perf_counter() - started) * 1000))
+                elapsed_ms = max(0, round(elapsed_seconds * 1000))
                 if elapsed_ms > round(timeout_seconds * 1000):
                     raise TimeoutError("model first token timeout")
                 first_token_seen = True
@@ -417,7 +482,7 @@ class OpenAICompatibleStructuredModel:
                     request_usage.append(None)
                 request: dict[str, Any] = {
                     "model": self.model_name,
-                    "messages": messages,
+                    "messages": list(messages),
                     "temperature": 0,
                     "max_tokens": (
                         max_output_tokens
@@ -465,6 +530,8 @@ class OpenAICompatibleStructuredModel:
                         purpose=purpose,
                         attempt=attempt,
                     )
+                    if attempt < self._max_attempts:
+                        messages.extend(self._repair_turn(content))
                     raise
                 emit(
                     "LLM_VALIDATION",
@@ -480,6 +547,7 @@ class OpenAICompatibleStructuredModel:
                 except ValidationError as exc:
                     from credra_agent.observability.validation import schema_issues
 
+                    issue_summary = schema_issues(exc, output_schema)
                     emit(
                         "LLM_VALIDATION",
                         validation_stage="schema",
@@ -488,8 +556,17 @@ class OpenAICompatibleStructuredModel:
                         purpose=purpose,
                         attempt=attempt,
                         output_chars=len(content),
-                        **schema_issues(exc, output_schema),
+                        **issue_summary,
                     )
+                    if attempt < self._max_attempts:
+                        messages.extend(
+                            self._repair_turn(
+                                content,
+                                validation_issues=self._repair_schema_issues(
+                                    exc, issue_summary["validation_issues"]
+                                ),
+                            )
+                        )
                     raise
                 emit(
                     "LLM_VALIDATION",

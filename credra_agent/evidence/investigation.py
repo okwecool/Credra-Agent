@@ -60,13 +60,7 @@ class VerificationDraft(EvidenceModel):
 
 
 def _allowed(document: Document, context: ExecutionContext) -> bool:
-    policy = context.task_spec.source_policy
-    tags = set(document.source_tags)
-    return bool(
-        not tags.intersection(policy.denied)
-        and (not policy.denied or tags)
-        and (policy.allowed is None or tags.intersection(policy.allowed))
-    )
+    return context.task_spec.source_policy.permits(document.source_tags)
 
 
 def _bundles(context: ExecutionContext) -> list[EvidenceBundle]:

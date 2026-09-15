@@ -334,6 +334,23 @@ def test_unsupported_refs_and_unreferenced_claims_fail_closed(settings):
     assert run(settings, model, message="unsupported-2").status == "LIMITED"
 
 
+def test_smalltalk_with_unsupported_workspace_claim_returns_safe_reply(settings):
+    model = Model(
+        lambda p: {
+            "decision": "reply",
+            "content_kind": "conversation",
+            "text": "你好！当前工作区已有比亚迪调查和报告。",
+            "fact_refs": [],
+        }
+    )
+    result = run(settings, model, text="你好", message="safe-smalltalk")
+    assert result.status == "REPLY" and result.text == (
+        "你好！我是 Credra Agent。你可以直接告诉我想讨论的问题。"
+    )
+    assert result.limitations == ["ENTRY_UNSUPPORTED_CONVERSATION_CONTENT_REMOVED"]
+    assert len(model.calls) == 1 and result.budget["external_spent"] == 1
+
+
 def test_model_result_saved_before_settlement_is_replayed(settings, monkeypatch):
     model = Model(lambda p: {"decision": "reply", "text": "你好"})
     original = EntryBudgetStore.settle

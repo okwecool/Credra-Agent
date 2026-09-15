@@ -94,15 +94,7 @@ def calculate_metrics(
                         raise NotComputable("SOURCE_PUBLICATION_DATE_UNKNOWN")
                     if source.published_at > as_of:
                         raise NotComputable("SOURCE_AFTER_AS_OF")
-                    tags = set(source.source_tags)
-                    if (
-                        tags.intersection(source_policy.denied)
-                        or (source_policy.denied and not tags)
-                        or (
-                            source_policy.allowed is not None
-                            and not tags.intersection(source_policy.allowed)
-                        )
-                    ):
+                    if not source_policy.permits(source.source_tags):
                         raise NotComputable("SOURCE_POLICY_MISMATCH")
                 return datum.value
 

@@ -927,7 +927,7 @@ def test_supported_claim_without_computation_cannot_complete_financial_question(
         subject_id=task.subject_id,
         statement="合成控制样本经营现金流为80、合并净利润为100。",
     )
-    doc = document(text=asserted.statement)
+    doc = document(text=asserted.statement, source_tags=["exchange"])
     grounded = assemble_bundle(
         as_of=task.as_of,
         entities=[Entity(entity_id=task.subject_id, legal_name=task.subject_name)],

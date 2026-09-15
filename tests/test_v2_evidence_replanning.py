@@ -203,6 +203,7 @@ class EvidenceDrivenCoordinator:
             question_id="q-regulatory",
             statement=claim().statement,
             kind="HYPOTHESIS",
+            source_document_ids=["original"],
         )
         if "original" not in read_ids:
             tool, arguments = (
@@ -284,7 +285,9 @@ class EvidenceDrivenCoordinator:
                 arguments=arguments,
                 expected_observation="取得原文、核验关系或独立来源缺口。",
                 reason_summary="根据当前原文及主张状态选择下一步。",
-                claim_proposals=[proposal] if not ctx["claim_proposals"] else [],
+                claim_proposals=[proposal]
+                if tool == "verify_claim" and not ctx["claim_proposals"]
+                else [],
             )
         )
 
@@ -402,6 +405,7 @@ def test_model_cannot_forge_receipt_or_rebind_proposal(tmp_path):
         question_id="q-regulatory",
         statement="合成断言",
         kind="HYPOTHESIS",
+        source_document_ids=["original"],
     )
     ref = store_proposals(
         ctx.artifacts,
@@ -546,7 +550,33 @@ def test_source_policy_blocks_fetch_before_callback_and_read_truncates(tmp_path)
         ctx.artifacts, ctx.available_refs, ctx.task_spec
     )
     assert visible["context_truncated"]
+    assert visible["document_reads"]
+    assert visible["read_document_ids"] == ["original"]
+    assert all(
+        read["repeat_read_adds_content"] is False for read in visible["document_reads"]
+    )
     assert len(json.dumps(visible, ensure_ascii=False)) <= 18000
+
+
+def test_coordinator_distinguishes_bundle_ref_from_verifier_evidence_ids(tmp_path):
+    source = doc()
+    asserted = claim(supporting_evidence_ids=["evidence-original"])
+    ctx = context(
+        tmp_path,
+        bundle(
+            [source],
+            [verified(source, asserted=asserted)],
+            asserted=asserted,
+        ),
+    )
+
+    visible = coordinator_evidence_context(
+        ctx.artifacts, ctx.available_refs, ctx.task_spec
+    )
+
+    projected = visible["bundles"][0]["claims"][0]
+    assert projected["supporting_evidence_ids"] == ["evidence-original"]
+    assert visible["bundles"][0]["reference"].startswith("artifacts/agent_evidence_v")
 
 
 def test_fetch_preserves_hash_scope_and_unknown_http_usage(tmp_path):

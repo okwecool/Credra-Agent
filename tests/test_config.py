@@ -15,6 +15,7 @@ def test_settings_have_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.delenv("ANALYSIS_LLM_THINKING_BUDGET_TOKENS", raising=False)
     monkeypatch.delenv("ANALYSIS_LLM_PROCESS_SUMMARY_MAX_CHARS", raising=False)
     monkeypatch.delenv("ANALYSIS_LLM_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("ANALYSIS_LLM_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("ANALYSIS_LLM_RESEARCH_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("MODEL_BASE_URL", raising=False)
     monkeypatch.delenv("MODEL_NAME", raising=False)

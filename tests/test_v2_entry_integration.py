@@ -88,10 +88,12 @@ def test_schema_compaction_preserves_title_field_and_constraints():
 
 
 @pytest.mark.parametrize(
-    "reply,status",
-    [("Oct 31 == Dec 25", "REPLY"), ("已有999个已完成任务", "LIMITED")],
+    "reply,removed_unsupported_content",
+    [("Oct 31 == Dec 25", False), ("已有999个已完成任务", True)],
 )
-def test_ordinary_digits_do_not_bypass_task_fact_guard(settings, reply, status):
+def test_ordinary_digits_do_not_bypass_task_fact_guard(
+    settings, reply, removed_unsupported_content
+):
     from tests.test_v2_entry_dialogue import Model
 
     result = Runtime(settings).run(
@@ -104,8 +106,11 @@ def test_ordinary_digits_do_not_bypass_task_fact_guard(settings, reply, status):
         ),
         text="讲个笑话",
     )
-    assert result.status == status
+    assert result.status == "REPLY"
     assert not result.tools and result.budget["external_spent"] == 1
+    assert (
+        "ENTRY_UNSUPPORTED_CONVERSATION_CONTENT_REMOVED" in result.limitations
+    ) is removed_unsupported_content
 
 
 def test_rejected_arguments_supply_safe_feedback_and_can_be_corrected(settings):

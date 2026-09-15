@@ -16,6 +16,7 @@ from credra_agent.planning.coordinator import Coordinator
 from credra_agent.planning.models import (
     CoordinatorLimits,
     DecisionDraft,
+    QuestionAssessment,
     RunAuthorization,
 )
 
@@ -262,6 +263,35 @@ def test_duplicate_action_is_not_dispatched_or_charged_as_tool_call(tmp_path):
     assert runner.budget.snapshot().external_spent == 4  # 3 model + 1 tool
 
 
+def test_repeated_policy_rejections_activate_no_progress_lock(tmp_path):
+    calls = []
+
+    def handler(arguments):
+        calls.append(arguments)
+        return ExecutionOutcome(
+            status="SUCCESS",
+            summary="首次动作返回一条新材料。",
+            novelty_keys=["evidence-1"],
+            actual_external_requests=1,
+        )
+
+    same = search_decision("比亚迪 新增监管消息")
+    model = FixedModel(
+        [
+            same,
+            same.model_copy(deep=True),
+            same.model_copy(deep=True),
+            finish_decision("NEEDS_REVIEW"),
+        ]
+    )
+    result = coordinator(tmp_path, model, handler, no_progress=2).run(
+        task_spec(allowed=["exchange", "regulator"])
+    )
+
+    assert result.status == "LIMITED" and len(calls) == 1
+    assert model.payloads[3]["no_progress_locked"] is True
+
+
 def test_no_result_cannot_pass_answered_finish_gate(tmp_path):
     model = FixedModel([search_decision("比亚迪 无结果检索"), finish_decision()])
 
@@ -279,6 +309,36 @@ def test_no_result_cannot_pass_answered_finish_gate(tmp_path):
     assert result.stop_reason == "FINISH_GATE_REJECTED"
     assert result.coverage.gap_question_ids == ["q-regulatory"]
     assert not result.coverage.complete
+
+
+def test_invalid_finish_assessment_is_returned_to_model_for_replanning(tmp_path):
+    invalid_finish = DecisionDraft(
+        decision="FINISH",
+        finish_reason="NEEDS_REVIEW",
+        review_required=True,
+        reason_summary="错误地把财务结果当作证据包引用。",
+        question_assessments=[
+            QuestionAssessment(
+                question_id="q-regulatory",
+                status="UNRESOLVED",
+                conclusion="当前材料不足。",
+                evidence_refs=["artifacts/agent_tool_result_v1.json"],
+            )
+        ],
+    )
+    model = FixedModel([invalid_finish, finish_decision("NEEDS_REVIEW")])
+
+    result = coordinator(tmp_path, model, lambda _: None).run(
+        task_spec(allowed=["exchange", "regulator"])
+    )
+
+    assert result.status == "LIMITED" and len(model.payloads) == 2
+    assert model.payloads[1]["policy_rejections"] == [
+        {
+            "code": "INVALID_QUESTION_ASSESSMENT",
+            "message": "unknown question or evidence reference",
+        }
+    ]
 
 
 def test_budget_is_reserved_before_tool_dispatch(tmp_path):

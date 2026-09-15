@@ -28,14 +28,29 @@ class SourcePolicy(IntentModel):
     allowed: list[str] | None = None
     denied: list[str] = Field(default_factory=list)
 
+    @staticmethod
+    def canonical_tags(values) -> set[str]:
+        """One declared synonym; retain all other channel and category tags."""
+        return {
+            "exchange_disclosure" if value == "exchange" else value for value in values
+        }
+
+    def permits(self, values) -> bool:
+        tags = self.canonical_tags(values)
+        return bool(
+            not tags & self.canonical_tags(self.denied)
+            and (not self.denied or tags)
+            and (self.allowed is None or tags & self.canonical_tags(self.allowed))
+        )
+
     @model_validator(mode="after")
     def unambiguous(self) -> "SourcePolicy":
-        preferred = set(self.preferred)
-        denied = set(self.denied)
+        preferred = self.canonical_tags(self.preferred)
+        denied = self.canonical_tags(self.denied)
         if preferred & denied:
             raise ValueError("preferred source is denied")
         if self.allowed is not None:
-            allowed = set(self.allowed)
+            allowed = self.canonical_tags(self.allowed)
             if not allowed or allowed & denied:
                 raise ValueError("empty or contradictory source scope")
             if not preferred <= allowed:
@@ -48,6 +63,8 @@ class Question(IntentModel):
     text: str = Field(min_length=1)
     priority: Literal["REQUIRED", "OPTIONAL"] = "REQUIRED"
     completion_criteria: str = Field(min_length=1)
+    required_metric_ids: list[str] = Field(default_factory=list, max_length=20)
+    minimum_verified_findings: int = Field(default=0, ge=0, le=20)
     focus: Literal[
         "cash_quality",
         "receivables",

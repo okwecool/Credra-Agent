@@ -79,6 +79,7 @@ class ClaimProposal(PlanningModel):
     statement: str = Field(min_length=1, max_length=1200)
     kind: Literal["HYPOTHESIS", "REPORTED_FACT", "PARTY_STATEMENT", "ANALYST_ESTIMATE"]
     attributed_to: str | None = Field(default=None, min_length=1)
+    source_document_ids: list[str] = Field(min_length=1, max_length=5)
 
     @model_validator(mode="after")
     def attribution(self) -> "ClaimProposal":
@@ -96,8 +97,8 @@ class QuestionAssessment(PlanningModel):
     question_id: str = Field(min_length=1)
     status: Literal["ANSWERED", "UNRESOLVED"]
     conclusion: str = Field(min_length=1, max_length=1600)
-    evidence_refs: list[str] = Field(min_length=1, max_length=20)
-    claim_ids: list[str] = Field(min_length=1, max_length=20)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+    claim_ids: list[str] = Field(default_factory=list, max_length=20)
     limitations: list[str] = Field(default_factory=list, max_length=20)
 
 
@@ -182,6 +183,22 @@ class DecisionDraft(PlanningModel):
             or not self.finish_reason
         ):
             raise ValueError("FINISH requires finish_reason and no action fields")
+        if self.claim_proposals:
+            target = self.arguments.get("claim_id")
+            documents = set(self.arguments.get("document_ids", []))
+            proposal = (
+                self.claim_proposals[0] if len(self.claim_proposals) == 1 else None
+            )
+            if (
+                self.decision != "ACTION"
+                or self.tool != "verify_claim"
+                or proposal is None
+                or proposal.proposal_id != target
+                or not set(proposal.source_document_ids) <= documents
+            ):
+                raise ValueError(
+                    "claim proposal must be the matching verify_claim target"
+                )
         return self
 
 

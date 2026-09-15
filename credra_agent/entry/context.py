@@ -2,7 +2,7 @@
 
 import hashlib
 
-from credra_agent.entry.models import EntryContext, ListCasesArgs
+from credra_agent.entry.models import EntryContext, ListCasesArgs, TaskView
 from credra_agent.entry.store import EntryConflict, now
 from credra_agent.execution.registry import default_registry
 from credra_agent.observability.events import log_context
@@ -172,6 +172,16 @@ class EntryContextBuilder:
                 context.limitations.append(
                     "上下文任务摘要已缩减；通过 list_tasks 从第一页读取。"
                 )
+        # A same-turn task tool result can contain the exact current TaskView.
+        # Keep that authoritative result once instead of failing the whole turn
+        # because the selected task is duplicated in two context fields.
+        if (
+            self.input_measurer(context) > self.max_input_chars
+            and context.current_task is not None
+            and _turn_contains_task_view(context.turn_events, context.current_task)
+        ):
+            context.current_task = None
+            context.limitations.append("当前任务详情已包含在本轮工具结果中。")
         if self.input_measurer(context) > self.max_input_chars:
             raise ContextLimited(
                 "CONTEXT_LIMITED: 必需上下文超过容量，未保存快照或调用模型"
@@ -185,3 +195,19 @@ class EntryContextBuilder:
         ):
             emit("REQUEST_ACCEPTED", status="ACCEPTED")
         return context, context_id
+
+
+def _turn_contains_task_view(events: list[dict], current: TaskView) -> bool:
+    for event in events:
+        if event.get("role") != "tool":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+            continue
+        try:
+            candidate = TaskView.model_validate(payload["data"])
+        except (TypeError, ValueError):
+            continue
+        if candidate == current:
+            return True
+    return False

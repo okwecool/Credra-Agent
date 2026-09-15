@@ -49,6 +49,8 @@ def evidence_context(
                             if item.published_at
                             else None,
                             "source_kind": item.source_kind,
+                            "access_scope": item.access_scope,
+                            "hash_scope": item.hash_scope,
                             "has_local_text": bool(item.fragments),
                             "limitations": item.limitations[:10],
                         }
@@ -130,6 +132,13 @@ def coordinator_evidence_context(store, references, task) -> dict:
     from urllib.parse import urlparse
 
     context = evidence_context(store, references, task)
+    context["read_document_ids"] = sorted(
+        {read["document_id"] for read in context["document_reads"]}
+    )
+    for read in context["document_reads"]:
+        # A read exposes every retained fragment available for that document in
+        # the immutable run input. Repeating it cannot page through more text.
+        read["repeat_read_adds_content"] = False
     # Shared hashes/units belong in a catalog, not repeated on every amount.
     # The immutable input and full evidence context remain authoritative.
     for financial in context["financial_inputs"]:
@@ -177,6 +186,37 @@ def coordinator_evidence_context(store, references, task) -> dict:
                     "EXCERPT_WHITESPACE_NORMALIZED",
                 }
             ]
+    latest_claims = {}
+    for bundle in context["bundles"]:
+        if bundle["eligible_for_current_task"]:
+            for claim in bundle["claims"]:
+                latest_claims[claim["claim_id"]] = claim
+    proposal_questions = {
+        item["proposal_id"]: item["question_id"] for item in context["claim_proposals"]
+    }
+    computed_metrics = {
+        item["metric_id"]
+        for result in context["financial_results"]
+        for item in result["results"]
+    }
+    context["completion_progress"] = [
+        {
+            "question_id": question.question_id,
+            "required_metric_ids": question.required_metric_ids,
+            "missing_metric_ids": sorted(
+                set(question.required_metric_ids) - computed_metrics
+            ),
+            "minimum_verified_findings": question.minimum_verified_findings,
+            "verified_finding_claim_ids": sorted(
+                claim_id
+                for claim_id, bound_question in proposal_questions.items()
+                if bound_question == question.question_id
+                and latest_claims.get(claim_id, {}).get("status")
+                in {"SUPPORTED", "REFUTED", "CONFLICTING"}
+            ),
+        }
+        for question in task.questions
+    ]
     context["metadata_compacted"] = True
     truncated = len(context["bundles"]) > 10 or len(context["document_reads"]) > 3
     latest = {}
@@ -195,6 +235,48 @@ def coordinator_evidence_context(store, references, task) -> dict:
         for bundle in context["bundles"][-10:]
     ]
     context["document_reads"] = context["document_reads"][-3:]
+    # Verification versions retain the full source corpus on disk. Do not send
+    # that identical catalog once per receipt or discard the only usable catalog.
+    seen_documents = set()
+    for bundle in reversed(context["bundles"]):
+        unique = []
+        for document in bundle["documents"]:
+            key = (bundle["eligible_for_current_task"], document["document_id"])
+            if key not in seen_documents:
+                unique.append(document)
+                seen_documents.add(key)
+        bundle["documents"] = unique
+    context["bundles"] = [
+        bundle
+        for bundle in context["bundles"]
+        if bundle["documents"] or bundle["claims"]
+    ]
+    if len(json.dumps(context, ensure_ascii=False)) > 18000:
+        truncated = True
+        for bundle in context["bundles"]:
+            for document in bundle["documents"]:
+                limits = document["limitations"]
+                document["limitation_count"] = len(limits)
+                document["limitations"] = []
+                document["metadata_details_omitted"] = bool(limits)
+        if context["financial_results"]:
+            for financial in context["financial_inputs"]:
+                financial["fields"] = [
+                    {
+                        key: field[key]
+                        for key in (
+                            "metric",
+                            "period",
+                            "profit_attribution",
+                            "accounting_basis",
+                            "receivables_basis",
+                            "missing",
+                            "missing_reason",
+                        )
+                    }
+                    for field in financial["fields"]
+                ]
+                financial["full_lineage_in_input_artifact"] = True
     context["context_truncated"] = truncated
     while len(json.dumps(context, ensure_ascii=False)) > 18000:
         context["context_truncated"] = True
@@ -211,6 +293,22 @@ def coordinator_evidence_context(store, references, task) -> dict:
         else:
             break
     return context
+
+
+def incomplete_completion_requirements(context: dict) -> list[str]:
+    """Return compact, model-visible gaps without turning a limited run unbounded."""
+    gaps = []
+    for item in context.get("completion_progress", []):
+        if item["missing_metric_ids"]:
+            gaps.append(
+                f"{item['question_id']}:missing_metrics="
+                + ",".join(item["missing_metric_ids"])
+            )
+        actual = len(item["verified_finding_claim_ids"])
+        required = item["minimum_verified_findings"]
+        if actual < required:
+            gaps.append(f"{item['question_id']}:verified_findings={actual}/{required}")
+    return gaps
 
 
 def current_conflicts(store, references, task, historical) -> list[str]:
@@ -310,6 +408,10 @@ def assess_questions(
             or not set(assessment.evidence_refs) <= references
         ):
             raise ValueError("unknown question or evidence reference")
+        if bool(assessment.evidence_refs) != bool(assessment.claim_ids):
+            raise ValueError(
+                "assessment evidence and claims must be referenced together"
+            )
         located = {}
         for reference in assessment.evidence_refs:
             if not reference.startswith("artifacts/agent_evidence_v"):
@@ -335,34 +437,165 @@ def assess_questions(
                         raise ValueError(
                             "pending or conflicting claim cannot complete a question"
                         )
-                    if assessment.status == "ANSWERED" and not active_evidence(
-                        bundle, claim.claim_id
-                    ):
-                        raise ValueError("assessment has no active grounded evidence")
+                    if claim.status in {"SUPPORTED", "REFUTED", "CONFLICTING"}:
+                        documents = {
+                            item.document_id: item for item in bundle.documents
+                        }
+                        evidence = active_evidence(bundle, claim.claim_id)
+                        permitted = bool(evidence) and not any(
+                            not task.source_policy.permits(
+                                documents[item.document_id].source_tags
+                            )
+                            for item in evidence
+                        )
+                        if not permitted and assessment.status == "ANSWERED":
+                            raise ValueError(
+                                "assessment has no permitted active grounded evidence"
+                            )
                     located[claim.claim_id] = claim
         if set(located) != set(assessment.claim_ids):
             raise ValueError("assessment claims cannot be resolved")
         question = next(
             q for q in task.questions if q.question_id == assessment.question_id
         )
+        eligible_financial = (
+            {"cash_profit_ratio"}
+            if question.focus == "cash_quality"
+            else {"receivables_growth", "growth_gap"}
+            if question.focus == "receivables"
+            else set()
+        )
+        financially_supported = any(
+            item["question_id"] == question.question_id
+            and item["metric"]["status"] == "COMPUTED"
+            and item["metric"]["metric_id"] in eligible_financial
+            for item in financial
+        )
+        if (
+            assessment.status == "ANSWERED"
+            and not assessment.claim_ids
+            and not financially_supported
+        ):
+            raise ValueError(
+                "answered assessment needs a verified claim or financial citation"
+            )
         if (
             assessment.status == "ANSWERED"
             and context["financial_inputs"]
             and question.focus in {"cash_quality", "receivables"}
+            and not financially_supported
         ):
-            eligible = (
-                {"cash_profit_ratio"}
-                if question.focus == "cash_quality"
-                else {"receivables_growth", "growth_gap"}
-            )
-            if not any(
-                item["question_id"] == question.question_id
-                and item["metric"]["status"] == "COMPUTED"
-                and item["metric"]["metric_id"] in eligible
-                for item in financial
-            ):
-                raise ValueError("financial completion needs a valid computed citation")
+            raise ValueError("financial completion needs a valid computed citation")
         (answered if assessment.status == "ANSWERED" else unresolved).append(
             assessment.question_id
         )
     return answered, unresolved
+
+
+def report_evidence(store, references, task, financial_citations=()) -> dict:
+    """Project latest verifier receipts separately from a planner's inference."""
+    context = evidence_context(store, references, task)
+    bindings = {
+        item["proposal_id"]: item["question_id"] for item in context["claim_proposals"]
+    }
+    latest = {}
+    for item in context["bundles"]:
+        if item["eligible_for_current_task"]:
+            bundle = EvidenceBundle.model_validate(store.read_json(item["reference"]))
+            for claim in bundle.claims:
+                latest[claim.claim_id] = (item["reference"], bundle, claim)
+    findings = []
+    for claim_id, (reference, bundle, claim) in latest.items():
+        documents = {item.document_id: item for item in bundle.documents}
+        receipts = []
+        for evidence in active_evidence(bundle, claim_id):
+            document = documents[evidence.document_id]
+            if not task.source_policy.permits(document.source_tags):
+                continue
+            fragment_index = next(
+                (
+                    i
+                    for i, fragment in enumerate(document.fragments)
+                    if fragment.location == evidence.location
+                ),
+                None,
+            )
+            if fragment_index is None:
+                continue
+            receipts.append(
+                {
+                    "evidence_ref": f"{reference}#/evidence/{bundle.evidence.index(evidence)}",
+                    "fragment_ref": f"{reference}#/documents/{bundle.documents.index(document)}/fragments/{fragment_index}",
+                    "document_id": document.document_id,
+                    "original_source_id": document.original_source_id,
+                    "original_publisher": document.original_publisher,
+                    "url": document.url,
+                    "published_at": document.published_at.isoformat()
+                    if document.published_at
+                    else None,
+                    "source_kind": document.source_kind,
+                    "document_hash": document.document_hash,
+                    "hash_scope": document.hash_scope,
+                    "location": document.fragments[fragment_index].model_dump(
+                        mode="json", exclude={"text"}
+                    ),
+                    "relation": evidence.relation,
+                    "verifier_version": evidence.verifier_version,
+                    "limitations": [*document.limitations, *evidence.limitations],
+                }
+            )
+        findings.append(
+            {
+                "claim_id": claim_id,
+                "question_id": bindings.get(claim_id),
+                "claim_ref": f"{reference}#/claims/{bundle.claims.index(claim)}",
+                "statement": claim.statement,
+                "kind": claim.kind,
+                "attributed_to": claim.attributed_to,
+                "source_kind": claim.source_kind,
+                "status": claim.status if receipts else "UNRESOLVED",
+                "receipts": receipts,
+                "assertion_scope": "STATEMENT_WAS_MADE"
+                if claim.kind in {"PARTY_STATEMENT", "ANALYST_ESTIMATE"}
+                else "CLAIM_SPECIFIC_VERIFICATION",
+            }
+        )
+    answers = []
+    assessment_refs = sorted(
+        (
+            ref
+            for ref in references
+            if ref.startswith("artifacts/agent_question_assessment_v")
+        ),
+        key=_version,
+    )
+    if assessment_refs:
+        reference = assessment_refs[-1]
+        payload = store.read_json(reference)
+        assessments = [
+            QuestionAssessment.model_validate(item) for item in payload["assessments"]
+        ]
+        try:
+            accepted, unresolved = assess_questions(
+                store,
+                assessments,
+                references=references,
+                task=task,
+                financial_citations=financial_citations,
+            )
+        except ValueError:
+            accepted, unresolved = [], []
+        for index, item in enumerate(assessments):
+            answers.append(
+                {
+                    **item.model_dump(mode="json"),
+                    "assessment_ref": f"{reference}#/assessments/{index}",
+                    "acceptance": "ACCEPTED"
+                    if item.question_id in accepted
+                    or item.question_id in unresolved
+                    and item.status == "UNRESOLVED"
+                    else "REJECTED",
+                    "expression_kind": "MODEL_INFERENCE",
+                }
+            )
+    return {"findings": findings, "question_answers": answers}

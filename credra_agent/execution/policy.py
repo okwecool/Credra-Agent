@@ -25,6 +25,11 @@ class PolicyViolation(ValueError):
 
 
 def canonical_action_signature(tool: str, arguments: dict) -> str:
+    if tool == "verify_claim":
+        arguments = {
+            "claim_id": arguments.get("claim_id"),
+            "document_ids": sorted(set(arguments.get("document_ids", []))),
+        }
     body = json.dumps(
         {"tool": tool, "arguments": arguments},
         ensure_ascii=False,
@@ -90,17 +95,18 @@ class ActionPolicy:
 
         task_policy = task_spec.source_policy
         action_policy = args.source_policy
-        task_denied = set(task_policy.denied)
-        action_denied = set(action_policy.denied)
+        canonical = task_policy.canonical_tags
+        task_denied = canonical(task_policy.denied)
+        action_denied = canonical(action_policy.denied)
         if not task_denied <= action_denied:
             raise PolicyViolation("SOURCE_DENYLIST_WIDENED", "denied")
-        if set(action_policy.preferred) & task_denied:
+        if canonical(action_policy.preferred) & task_denied:
             raise PolicyViolation("SOURCE_POLICY_VIOLATION", "preferred")
-        if not set(task_policy.preferred) <= set(action_policy.preferred):
+        if not canonical(task_policy.preferred) <= canonical(action_policy.preferred):
             raise PolicyViolation("SOURCE_PREFERENCE_DROPPED", "preferred")
         if task_policy.allowed is not None and (
             action_policy.allowed is None
-            or not set(action_policy.allowed) <= set(task_policy.allowed)
+            or not canonical(action_policy.allowed) <= canonical(task_policy.allowed)
         ):
             raise PolicyViolation("SOURCE_ALLOWLIST_WIDENED", "allowed")
 

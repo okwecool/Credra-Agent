@@ -32,6 +32,7 @@ from credra_agent.intent.models import Period, Question, SourcePolicy, TaskSpec
 from credra_agent.planning.models import (
     CoordinatorLimits,
     DecisionDraft,
+    QuestionAssessment,
     RunAuthorization,
 )
 from credra_agent.runtime.executors import build_agentic_executor
@@ -145,6 +146,42 @@ def finish_decision() -> DecisionDraft:
         finish_reason="ANSWERED",
         reason_summary="必答问题已经由观察覆盖。",
     )
+
+
+def test_durable_graph_replans_after_invalid_finish_assessment(tmp_path):
+    invalid_finish = DecisionDraft(
+        decision="FINISH",
+        finish_reason="NEEDS_REVIEW",
+        review_required=True,
+        reason_summary="错误地把普通结果当作证据包引用。",
+        question_assessments=[
+            QuestionAssessment(
+                question_id="q-regulatory",
+                status="UNRESOLVED",
+                conclusion="当前材料不足。",
+                evidence_refs=["artifacts/agent_tool_result_v1.json"],
+            )
+        ],
+    )
+    model = FixedModel([invalid_finish, finish_decision()])
+
+    result = start_agentic_task(
+        thread_id="invalid-finish-replan",
+        task_spec=task_spec(),
+        authorization=authorization(),
+        model=model,
+        executor=executor([]),
+        settings=settings(tmp_path),
+    )
+
+    state = result["state"]
+    assert state["status"] == "LIMITED" and model.calls == 2
+    assert state["policy_rejections"] == [
+        {
+            "code": "INVALID_QUESTION_ASSESSMENT",
+            "message": "unknown question or evidence reference",
+        }
+    ]
 
 
 def ask_decision() -> DecisionDraft:

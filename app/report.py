@@ -44,6 +44,12 @@ def write_agent_report(
     resolved = resolve_financial_citations(
         store, citations, references=references, task=task
     )
+    from credra_agent.planning.evidence_context import report_evidence
+
+    investigation = report_evidence(store, references, task, citations)
+    has_investigation = bool(
+        investigation["findings"] or investigation["question_answers"]
+    )
     questions = {item.question_id: item for item in task.questions}
     selected = {(item.result_ref, item.result_index) for item in citations}
     uncited = []
@@ -57,7 +63,9 @@ def write_agent_report(
                     if (reference, index) not in selected
                 )
     payload = {
-        "schema_version": "agent_report_v2_p24",
+        "schema_version": "agent_investigation_report_v1"
+        if has_investigation
+        else "agent_report_v2_p24",
         "subject_id": task.subject_id,
         "subject_name": task.subject_name,
         "task_spec_version": task.version,
@@ -69,18 +77,25 @@ def write_agent_report(
         "status": status,
         "stop_reason": stop_reason,
         "approval_status": "NOT_REVIEWED",
-        "scope": "FINANCIAL_RESULTS_AND_INVESTIGATION_GAPS",
+        "scope": "EVIDENCE_FINANCIAL_AND_MODEL_ASSESSMENTS"
+        if has_investigation
+        else "FINANCIAL_RESULTS_AND_INVESTIGATION_GAPS",
         "coverage": coverage.model_dump(mode="json"),
         "financial_citations": resolved,
+        **investigation,
         "uncited_result_refs": uncited,
         "limitations": [
             *limitations,
             "CALCULATION_IS_NOT_EVIDENCE_VERIFICATION",
-            "FULL_INVESTIGATION_REPORT_PENDING_P23",
+            *(
+                ["MODEL_ASSESSMENT_IS_NOT_A_VERIFICATION_RECEIPT"]
+                if has_investigation
+                else ["FULL_INVESTIGATION_REPORT_PENDING"]
+            ),
         ],
     }
     lines = [
-        "# Credra Agent 调查报告 · 财务计算与缺口",
+        "# Credra Agent 调查报告 · 证据、财务计算与缺口",
         "",
         f"- 主体：{_safe_inline(task.subject_name)}（{_safe_inline(task.subject_id)}）",
         f"- 资料截止：{task.as_of.isoformat()}",
@@ -138,6 +153,64 @@ def write_agent_report(
                         f"  - 原文引用：`{match['fragment_ref']}`；物理页：{_safe_inline(location['physical_page'])}；印刷页：{_safe_inline(location['printed_page'])}；哈希范围：{match['hash_scope']}"
                     )
         lines.append("")
+    if has_investigation:
+        lines.extend(
+            [
+                "## 主张核验与来源",
+                "",
+                "> 声明核验仅证明声明曾作出；模型假设与推断保留其性质。来源网址数量不等于独立印证。",
+                "",
+            ]
+        )
+        for finding in investigation["findings"]:
+            lines.extend(
+                [
+                    f"### {_safe_inline(finding['claim_id'])}",
+                    "",
+                    f"- 主张：{_safe_inline(finding['statement'])}",
+                    f"- 性质：{finding['kind']}；归属：{_safe_inline(finding['attributed_to'] or '无')}；状态：{finding['status']}；材料：{finding['source_kind']}",
+                    f"- 核验范围：{finding['assertion_scope']}；主张引用：`{finding['claim_ref']}`",
+                ]
+            )
+            for receipt in finding["receipts"]:
+                lines.extend(
+                    [
+                        f"- [{receipt['relation']}] 原始来源：{_safe_inline(receipt['original_source_id'])}；原发布者：{_safe_inline(receipt['original_publisher'])}；发布日：{_safe_inline(receipt['published_at'])}",
+                        f"- 原文引用：`{receipt['fragment_ref']}`；位置：{_safe_inline(receipt['location']['location'])}；核验版本：{_safe_inline(receipt['verifier_version'])}；哈希范围：{receipt['hash_scope']}",
+                        *[
+                            f"- 来源限制：{_safe_inline(value)}"
+                            for value in receipt["limitations"]
+                        ],
+                    ]
+                )
+            if not finding["receipts"]:
+                lines.append(
+                    "- 当前任务没有可定位且符合来源权限的有效核验回执，不能作为已确认事实。"
+                )
+            lines.append("")
+        lines.extend(
+            [
+                "## 逐问题模型研判",
+                "",
+                "> 以下是模型研判，门禁接受不代表每句话经过独立语义核验，也不代表人工审核或授信批准。",
+                "",
+            ]
+        )
+        for answer in investigation["question_answers"]:
+            question = questions.get(answer["question_id"])
+            lines.extend(
+                [
+                    f"### {_safe_inline(question.text if question else answer['question_id'])}",
+                    "",
+                    f"- 模型研判 [{answer['acceptance']}/{answer['status']}]：{_safe_inline(answer['conclusion'])}",
+                    f"- 研判引用：`{answer['assessment_ref']}`；主张：{_references(answer['claim_ids'])}",
+                    *[
+                        f"- 研判限制：{_safe_inline(value)}"
+                        for value in answer["limitations"]
+                    ],
+                    "",
+                ]
+            )
     lines.extend(["## 调查缺口与限制", ""])
     for question_id in coverage.gap_question_ids:
         question = questions.get(question_id)

@@ -67,6 +67,7 @@ def settings(tmp_path):
         checkpoint_db_path=tmp_path / "tasks.db",
         trace_dir=tmp_path / "traces",
         service_log_dir=tmp_path / "logs",
+        agent_entry_policy_path=None,
         agent_ui_execution_enabled=True,
         agent_ui_policy_path=path,
         analysis_mode="llm",

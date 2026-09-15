@@ -53,6 +53,7 @@ def build_agentic_executor(
     content_fetcher: Callable[[str], FetchedDocument] | None = None,
     fetch_external_requests: int = 0,
     fetch_actual_external_requests: int | None = None,
+    search_enabled: bool = True,
 ) -> ActionExecutor:
     """Expose only handlers that are connected to real application services."""
 
@@ -134,11 +135,12 @@ def build_agentic_executor(
     )
     handlers = {
         "compute_metrics": HandlerDefinition(compute_metrics, contextual=True),
-        "search_evidence": HandlerDefinition(
-            search_evidence, external_request_reservation=1
-        ),
         "read_document": HandlerDefinition(services.read, contextual=True),
     }
+    if search_enabled:
+        handlers["search_evidence"] = HandlerDefinition(
+            search_evidence, external_request_reservation=1
+        )
     if content_fetcher is not None:
         handlers["fetch_content"] = HandlerDefinition(
             services.fetch,
