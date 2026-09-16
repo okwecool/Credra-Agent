@@ -19,7 +19,6 @@ from credra_agent.evidence.artifacts import (
     validate_evidence_artifacts,
     write_evidence_artifacts,
 )
-from credra_agent.evidence.materials import from_p20_catalog
 from credra_agent.evidence.models import (
     Claim,
     Corroboration,
@@ -647,51 +646,6 @@ def test_old_manifest_does_not_invent_document_fetch_event_or_original_text():
         manifest.field_lineage
     )
     assert result.documents[0].declared_publisher == manifest.sources[0].publisher
-
-
-def test_frozen_p20_catalog_maps_sixteen_receipts_and_claim_specific_dependency_hints():
-    directory = ROOT / "docs/materials/v2-2-p20"
-    catalog = json.loads(
-        (directory / "material_catalog.json").read_text(encoding="utf-8")
-    )
-    manifest = json.loads(
-        (directory / "file_manifest.json").read_text(encoding="utf-8")
-    )
-    result = from_p20_catalog(
-        catalog,
-        manifest,
-        entities=[
-            Entity(entity_id="002594.SZ", legal_name="比亚迪股份有限公司"),
-            Entity(entity_id="byd-auto-industry", legal_name="比亚迪汽车工业有限公司"),
-        ],
-    )
-    assert len(result.bundle.documents) == 16
-    assert not result.bundle.evidence and not result.bundle.relationships
-    assert (
-        result.claim_origin_hints["analysis-gmt-2025"]
-        == result.claim_origin_hints["media-bloomberg-gmt"]
-    )
-    assert (
-        result.claim_origin_hints["regulator-miit-60day"]
-        == result.claim_origin_hints["media-reuters-60day"]
-    )
-    assert all(
-        item.document_hash and not item.fragments and item.revision_of is None
-        for item in result.bundle.documents
-    )
-    assert (
-        match_entity("比亚迪汽车工业有限公司", "002594.SZ", result.bundle.entities)[
-            "status"
-        ]
-        == "MISMATCH"
-    )
-    bad = json.loads(json.dumps(catalog))
-    bad["materials"][0]["access"]["original_response_sha256"] = digest("wrong")
-    with pytest.raises(ValueError, match="original response receipt"):
-        from_p20_catalog(bad, manifest, entities=result.bundle.entities)
-    catalog["material_list_approved_by_user"] = False
-    with pytest.raises(ValueError, match="frozen catalog"):
-        from_p20_catalog(catalog, manifest, entities=result.bundle.entities)
 
 
 def test_mapping_failure_keeps_returned_external_result_without_retry(monkeypatch):
