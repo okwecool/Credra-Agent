@@ -11,12 +11,14 @@ from app.llm.gateway import StructuredModel
 from app.runtime.tasks import (
     amend_agentic_task,
     get_task_status,
+    graph_config,
+    open_checkpointer,
     resume_agentic_task,
     start_agentic_task,
     start_task,
 )
 from credra_agent.execution.executor import ActionExecutor
-from credra_agent.intent.models import TaskSpec
+from credra_agent.intent.models import IntentResult, TaskSpec
 from credra_agent.intent.service import interpret_message
 from credra_agent.planning.coordinator import DecisionFallback
 from credra_agent.planning.models import RunAuthorization
@@ -52,6 +54,32 @@ def interpret_and_execute(
         database_path=settings.checkpoint_db_path,
         model=intent_model,
     )
+
+    return execute_intent(
+        intent=intent,
+        settings=settings,
+        execution_mode=execution_mode,
+        authorization=authorization,
+        coordinator_model=coordinator_model,
+        executor_factory=executor_factory,
+        fallback=fallback,
+    )
+
+
+def execute_intent(
+    *,
+    intent: IntentResult,
+    settings: Settings,
+    execution_mode: str = "agentic",
+    authorization: RunAuthorization | dict | None = None,
+    coordinator_model: StructuredModel | None = None,
+    executor_factory: ExecutorFactory | None = None,
+    fallback: DecisionFallback | None = None,
+) -> NaturalLanguageRunResult:
+    """Execute an already persisted interpretation without a second model parse."""
+    if execution_mode not in {"baseline", "shadow", "agentic"}:
+        raise ValueError("execution_mode must be baseline, shadow or agentic")
+    thread_id = intent.thread_id
 
     if intent.operation == "status":
         return NaturalLanguageRunResult(
@@ -128,7 +156,10 @@ def interpret_and_execute(
             limitations=["agentic/shadow 执行需要绑定当前 TaskSpec 的运行授权。"],
         )
     approved = RunAuthorization.model_validate(authorization)
-    if approved.task_spec_version != spec.version:
+    if approved.task_spec_version != spec.version or approved.task_id not in (
+        None,
+        thread_id,
+    ):
         raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
     if coordinator_model is None or executor_factory is None:
         return NaturalLanguageRunResult(
@@ -139,7 +170,9 @@ def interpret_and_execute(
         )
     executor = executor_factory(spec)
 
-    if intent.operation == "amend":
+    with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
+        existing = checkpointer.get_tuple(graph_config(thread_id)) is not None
+    if intent.operation == "amend" and existing:
         task = amend_agentic_task(
             thread_id=thread_id,
             task_spec=spec,

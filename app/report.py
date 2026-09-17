@@ -26,6 +26,210 @@ def _references(values: list[str]) -> str:
     return ", ".join(_safe_inline(value) for value in values) or "无"
 
 
+def write_agent_report(
+    store,
+    *,
+    task,
+    references,
+    citations,
+    coverage,
+    status,
+    stop_reason,
+    limitations,
+    version,
+):
+    """Financial report projection; prose never supplies calculated numbers."""
+    from credra_agent.financial.actions import resolve_financial_citations
+
+    resolved = resolve_financial_citations(
+        store, citations, references=references, task=task
+    )
+    from credra_agent.planning.evidence_context import report_evidence
+
+    investigation = report_evidence(store, references, task, citations)
+    has_investigation = bool(
+        investigation["findings"] or investigation["question_answers"]
+    )
+    questions = {item.question_id: item for item in task.questions}
+    selected = {(item.result_ref, item.result_index) for item in citations}
+    uncited = []
+    for reference in sorted(references):
+        if reference.startswith("artifacts/agent_tool_result_v"):
+            value = store.read_json(reference)
+            if value.get("schema_version") == "agent_financial_result_v2":
+                uncited.extend(
+                    f"{reference}#/results/{index}"
+                    for index in range(len(value["results"]))
+                    if (reference, index) not in selected
+                )
+    payload = {
+        "schema_version": "agent_investigation_report_v1"
+        if has_investigation
+        else "agent_report_v2_p24",
+        "subject_id": task.subject_id,
+        "subject_name": task.subject_name,
+        "task_spec_version": task.version,
+        "as_of": task.as_of.isoformat(),
+        "periods": [item.model_dump(mode="json") for item in task.periods],
+        "comparison_periods": [
+            item.model_dump(mode="json") for item in task.comparison_periods
+        ],
+        "status": status,
+        "stop_reason": stop_reason,
+        "approval_status": "NOT_REVIEWED",
+        "scope": "EVIDENCE_FINANCIAL_AND_MODEL_ASSESSMENTS"
+        if has_investigation
+        else "FINANCIAL_RESULTS_AND_INVESTIGATION_GAPS",
+        "coverage": coverage.model_dump(mode="json"),
+        "financial_citations": resolved,
+        **investigation,
+        "uncited_result_refs": uncited,
+        "limitations": [
+            *limitations,
+            "CALCULATION_IS_NOT_EVIDENCE_VERIFICATION",
+            *(
+                ["MODEL_ASSESSMENT_IS_NOT_A_VERIFICATION_RECEIPT"]
+                if has_investigation
+                else ["FULL_INVESTIGATION_REPORT_PENDING"]
+            ),
+        ],
+    }
+    lines = [
+        "# Credra Agent 调查报告 · 证据、财务计算与缺口",
+        "",
+        f"- 主体：{_safe_inline(task.subject_name)}（{_safe_inline(task.subject_id)}）",
+        f"- 资料截止：{task.as_of.isoformat()}",
+        f"- TaskSpec：v{task.version}；调查状态：{_safe_inline(status)}；停止原因：{_safe_inline(stop_reason)}",
+        "- 报告审核：未审核",
+        "",
+        "> 以下数字来自已保存的 Python 计算结果。原文定位不代表输入已采信，计算不证明逾期、违法或现金危机。",
+        "",
+        "## 财务计算引用",
+        "",
+    ]
+    labels = {
+        "revenue_growth": "营收增长率",
+        "receivables_growth": "应收账款净额增长率",
+        "growth_gap": "应收与营收增速差",
+        "cash_profit_ratio": "经营现金流/合并净利润",
+    }
+    if not resolved:
+        lines.append("本次结束决策未选择计算引用。")
+    for citation in resolved:
+        metric = citation["metric"]
+        lines.extend(
+            [
+                f"### {_safe_inline(labels[metric['metric_id']])}",
+                "",
+                f"- 对应问题：{_safe_inline(questions[citation['question_id']].text)}",
+                f"- 期间：{metric['period']['start']} 至 {metric['period']['end']}；口径：{metric['accounting_basis']}",
+                f"- 结果：{_safe_inline(metric['display'])}"
+                if metric["status"] == "COMPUTED"
+                else f"- 不可计算：{_safe_inline(metric['reason'])}",
+                f"- 计算引用：`{citation['result_ref']}#/results/{citation['result_index']}`",
+                f"- 公式：`{_safe_inline(metric['formula'])}`；版本：`{_safe_inline(metric['formula_version'])}`",
+                f"- 材料性质：{_references(citation['source_kinds'])}；输入采信：未核验",
+                "",
+            ]
+        )
+        if metric["comparison_period"]:
+            comparison = metric["comparison_period"]
+            lines.append(f"- 比较基期：{comparison['start']} 至 {comparison['end']}")
+        for field in citation["fields"]:
+            datum = field["datum"]
+            lines.append(
+                f"- 字段引用：`{field['input_ref']}`；{datum['metric']} / {datum['profit_attribution']} / {datum['period']['end']}；金额：{_safe_inline(datum['value'])} 千元；修订：{_safe_inline(datum['revision'])}"
+            )
+            for binding in field["source_bindings"]:
+                source = binding["declared_source"]
+                lines.append(
+                    f"  - 来源：{_safe_inline(source['source_id'])}；声明位置：{_safe_inline(source['location'])}"
+                )
+                if not binding["matches"]:
+                    lines.append("  - 原文片段：未在当前运行材料中定位；保留声明血缘。")
+                for match in binding["matches"]:
+                    location = match["location"]
+                    lines.append(
+                        f"  - 原文引用：`{match['fragment_ref']}`；物理页：{_safe_inline(location['physical_page'])}；印刷页：{_safe_inline(location['printed_page'])}；哈希范围：{match['hash_scope']}"
+                    )
+        lines.append("")
+    if has_investigation:
+        lines.extend(
+            [
+                "## 主张核验与来源",
+                "",
+                "> 声明核验仅证明声明曾作出；模型假设与推断保留其性质。来源网址数量不等于独立印证。",
+                "",
+            ]
+        )
+        for finding in investigation["findings"]:
+            lines.extend(
+                [
+                    f"### {_safe_inline(finding['claim_id'])}",
+                    "",
+                    f"- 主张：{_safe_inline(finding['statement'])}",
+                    f"- 性质：{finding['kind']}；归属：{_safe_inline(finding['attributed_to'] or '无')}；状态：{finding['status']}；材料：{finding['source_kind']}",
+                    f"- 核验范围：{finding['assertion_scope']}；主张引用：`{finding['claim_ref']}`",
+                ]
+            )
+            for receipt in finding["receipts"]:
+                lines.extend(
+                    [
+                        f"- [{receipt['relation']}] 原始来源：{_safe_inline(receipt['original_source_id'])}；原发布者：{_safe_inline(receipt['original_publisher'])}；发布日：{_safe_inline(receipt['published_at'])}",
+                        f"- 原文引用：`{receipt['fragment_ref']}`；位置：{_safe_inline(receipt['location']['location'])}；核验版本：{_safe_inline(receipt['verifier_version'])}；哈希范围：{receipt['hash_scope']}",
+                        *[
+                            f"- 来源限制：{_safe_inline(value)}"
+                            for value in receipt["limitations"]
+                        ],
+                    ]
+                )
+            if not finding["receipts"]:
+                lines.append(
+                    "- 当前任务没有可定位且符合来源权限的有效核验回执，不能作为已确认事实。"
+                )
+            lines.append("")
+        lines.extend(
+            [
+                "## 逐问题模型研判",
+                "",
+                "> 以下是模型研判，门禁接受不代表每句话经过独立语义核验，也不代表人工审核或授信批准。",
+                "",
+            ]
+        )
+        for answer in investigation["question_answers"]:
+            question = questions.get(answer["question_id"])
+            lines.extend(
+                [
+                    f"### {_safe_inline(question.text if question else answer['question_id'])}",
+                    "",
+                    f"- 模型研判 [{answer['acceptance']}/{answer['status']}]：{_safe_inline(answer['conclusion'])}",
+                    f"- 研判引用：`{answer['assessment_ref']}`；主张：{_references(answer['claim_ids'])}",
+                    *[
+                        f"- 研判限制：{_safe_inline(value)}"
+                        for value in answer["limitations"]
+                    ],
+                    "",
+                ]
+            )
+    lines.extend(["## 调查缺口与限制", ""])
+    for question_id in coverage.gap_question_ids:
+        question = questions.get(question_id)
+        lines.append(
+            f"- 未完成问题：{_safe_inline(question.text if question else question_id)}"
+        )
+    lines.extend(
+        f"- 未决冲突：{_safe_inline(item)}" for item in coverage.unresolved_conflict_ids
+    )
+    if uncited:
+        lines.append(f"- 已保存但未选择引用的计算项：{len(uncited)} 项。")
+    lines.extend(f"- {_safe_inline(item)}" for item in payload["limitations"])
+    json_ref = store.write_json(f"artifacts/agent_report_v{version}.json", payload)
+    markdown_ref = store.write_markdown(
+        f"artifacts/agent_report_v{version}.md", "\n".join(lines) + "\n"
+    )
+    return [json_ref, markdown_ref]
+
+
 def _render_report_draft_expression(
     expression: ReportExpressionArtifact | None,
 ) -> str:

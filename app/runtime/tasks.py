@@ -225,6 +225,8 @@ def start_agentic_task(
     execution_mode: str = "agentic",
     fallback: Any | None = None,
     fault_hook: Any | None = None,
+    initial_evidence_bundle: Any | None = None,
+    initial_financial_input: Any | None = None,
 ) -> dict[str, Any]:
     """Start agentic_v2 explicitly; baseline remains the default start entry."""
 
@@ -239,9 +241,31 @@ def start_agentic_task(
     approved = RunAuthorization.model_validate(authorization)
     if execution_mode not in {"agentic", "shadow"}:
         raise ValueError("execution_mode must be agentic or shadow")
+    if approved.task_spec_version != spec.version or approved.task_id not in (
+        None,
+        thread_id,
+    ):
+        raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
     if spec.case_id is None:
         raise ValueError("agentic task requires a bound case_id")
+    financial_input = None
+    if initial_financial_input is not None:
+        from credra_agent.financial.models import FinancialInput
+
+        financial_input = FinancialInput.model_validate(initial_financial_input)
+        if financial_input.subject_id != spec.subject_id:
+            raise ValueError("FINANCIAL_SUBJECT_MISMATCH")
     case_dir = _case_dir(settings, spec.case_id)
+    if initial_financial_input is None:
+        from credra_agent.financial.adapters import load_case_financial
+
+        financial_input = load_case_financial(case_dir, subject_id=spec.subject_id)
+    if initial_evidence_bundle is None:
+        from credra_agent.evidence.adapters import load_case_evidence
+
+        initial_evidence_bundle = load_case_evidence(
+            case_dir, subject_id=spec.subject_id, as_of=spec.as_of
+        )
     run_id = run_id_for_thread(thread_id)
     run_dir = case_dir / "runs" / run_id
     # Reject the common duplicate-start path before touching immutable run artifacts.
@@ -254,6 +278,25 @@ def start_agentic_task(
     authorization_ref = artifacts.write_json(
         "artifacts/agent_run_authorization_v1.json", approved
     )
+    initial_evidence_refs = []
+    initial_financial_refs = []
+    if financial_input is not None:
+        initial_financial_refs = [
+            artifacts.write_json(
+                "artifacts/agent_financial_input_v1.json", financial_input
+            )
+        ]
+    if initial_evidence_bundle is not None:
+        from credra_agent.evidence.artifacts import write_evidence_artifacts
+        from credra_agent.evidence.models import EvidenceBundle
+
+        initial_evidence_refs = write_evidence_artifacts(
+            artifacts,
+            EvidenceBundle.model_validate(initial_evidence_bundle),
+            0,
+            as_of=spec.as_of,
+            subject_id=spec.subject_id,
+        )
     hypotheses = [
         HypothesisState(
             hypothesis_id=f"hyp-{question.question_id}",
@@ -274,7 +317,15 @@ def start_agentic_task(
         "artifacts/agent_budget_ledger_v1.json",
         ledger.budget_snapshot(thread_id, approved),
     )
-    refs = [task_ref, authorization_ref, hypotheses_ref, index_ref, budget_ref]
+    refs = [
+        task_ref,
+        authorization_ref,
+        hypotheses_ref,
+        index_ref,
+        budget_ref,
+        *initial_evidence_refs,
+        *initial_financial_refs,
+    ]
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         config = graph_config(thread_id)
         if checkpointer.get_tuple(config) is not None:
@@ -326,7 +377,10 @@ def amend_agentic_task(
 
     spec = TaskSpec.model_validate(task_spec)
     approved = RunAuthorization.model_validate(authorization)
-    if approved.task_spec_version != spec.version:
+    if approved.task_spec_version != spec.version or approved.task_id not in (
+        None,
+        thread_id,
+    ):
         raise ValueError("AUTHORIZATION_SCOPE_MISMATCH")
     with open_checkpointer(settings.checkpoint_db_path) as checkpointer:
         config = graph_config(thread_id)

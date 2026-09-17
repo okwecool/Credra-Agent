@@ -24,6 +24,14 @@ from credra_agent.observability.runtime import emit
 
 OutputT = TypeVar("OutputT", bound=BaseModel)
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_REPAIR_OUTPUT_MAX_CHARS = 4000
+_SAFE_REPAIR_CONSTRAINTS = {
+    "Value error, claim proposal must be the matching verify_claim target": (
+        "A new claim_proposals item is allowed only on verify_claim; provide exactly "
+        "the arguments.claim_id proposal and include its source_document_ids in "
+        "arguments.document_ids. Omit claim_proposals on other actions and FINISH."
+    ),
+}
 _PROCESS_PROMPT_VERSION = "m4e-public-process-v1"
 _PROCESS_SYSTEM_PROMPT = """你是受约束的分析过程助手。请在内部完成分析，但不要在最终可见文本中输出逐步思维链。分析结束后，只输出一段简短的公开过程摘要：说明核对了哪些输入类别或引用 ID、发现了哪些需要关注的方向以及有哪些限制。不得新增输入中不存在的事实、数字、URL、证据 ID 或授信决定。不要输出 JSON、Markdown 标题或代码块。"""
 
@@ -55,10 +63,12 @@ class StructuredModelError(RuntimeError):
         message: str,
         *,
         attempts: int = 0,
+        external_requests: int | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.attempts = attempts
+        self.external_requests = external_requests
 
 
 @dataclass(frozen=True)
@@ -71,6 +81,7 @@ class StructuredModelResult(Generic[OutputT]):
     output_tokens: int | None = None
     call_id: str | None = None
     accounting_complete: bool = False
+    external_requests: int | None = None
 
 
 @runtime_checkable
@@ -106,6 +117,8 @@ class OpenAICompatibleStructuredModel:
         enable_thinking: bool | None = None,
         thinking_ttft_seconds: float = 30.0,
         thinking_budget_tokens: int = 800,
+        process_max_output_tokens: int | None = None,
+        aggregate_accounting: bool = False,
         process_summary_max_chars: int = 400,
         client: Any | None = None,
     ) -> None:
@@ -126,6 +139,8 @@ class OpenAICompatibleStructuredModel:
         self._enable_thinking = enable_thinking
         self._thinking_ttft_seconds = thinking_ttft_seconds
         self._thinking_budget_tokens = thinking_budget_tokens
+        self._process_max_output_tokens = process_max_output_tokens
+        self._aggregate_accounting = aggregate_accounting
         self._process_summary_max_chars = process_summary_max_chars
         self._structured_timeout_seconds = timeout_seconds
         self._client = client or OpenAI(
@@ -165,6 +180,57 @@ class OpenAICompatibleStructuredModel:
             with_options(timeout=timeout_seconds) if callable(with_options) else client
         )
 
+    @staticmethod
+    def _repair_turn(
+        content: str,
+        *,
+        validation_issues: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, str]]:
+        """Return a bounded repair turn without writing raw output to logs."""
+
+        previous = content[:_REPAIR_OUTPUT_MAX_CHARS]
+        if len(content) > _REPAIR_OUTPUT_MAX_CHARS:
+            previous += "\n[previous output truncated for bounded repair]"
+        instruction = (
+            "上一回答不是完整、有效的 JSON。请缩短文本字段并重新返回一个完整 JSON 对象；"
+            "只保留必需字段和非默认字段，省略值为 null、{} 或 [] 的可选字段；"
+            "不要解释，也不要使用 Markdown。"
+        )
+        if validation_issues:
+            diagnostics = json.dumps(
+                validation_issues,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            instruction = (
+                "上一回答已是 JSON，但未通过输出 Schema 校验。请根据以下有界诊断修正，"
+                "并重新返回完整 JSON；保留符合要求的内容，不要解释或使用 Markdown。"
+                f"诊断：{diagnostics}"
+            )
+        return [
+            {"role": "assistant", "content": previous},
+            {"role": "user", "content": instruction},
+        ]
+
+    @staticmethod
+    def _repair_schema_issues(
+        error: ValidationError,
+        validation_issues: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Add only allowlisted, code-owned cross-field constraints."""
+
+        repaired = [dict(issue) for issue in validation_issues]
+        raw_errors = error.errors(
+            include_url=False,
+            include_context=False,
+            include_input=False,
+        )
+        for issue, raw in zip(repaired, raw_errors, strict=False):
+            constraint = _SAFE_REPAIR_CONSTRAINTS.get(raw.get("msg"))
+            if constraint:
+                issue["constraint"] = constraint
+        return repaired
+
     @model_attempt
     def _stream_completion(
         self,
@@ -195,6 +261,12 @@ class OpenAICompatibleStructuredModel:
         content_parts: list[str] = []
         usage: Any | None = None
         for chunk in stream:
+            elapsed_seconds = perf_counter() - started
+            if first_token_seen and elapsed_seconds > timeout_seconds:
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
+                raise TimeoutError("model stream timeout")
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage is not None:
                 usage = chunk_usage
@@ -211,7 +283,7 @@ class OpenAICompatibleStructuredModel:
             if isinstance(content, str) and content:
                 content_parts.append(content)
             if not first_token_seen and (reasoning or content):
-                elapsed_ms = max(0, round((perf_counter() - started) * 1000))
+                elapsed_ms = max(0, round(elapsed_seconds * 1000))
                 if elapsed_ms > round(timeout_seconds * 1000):
                     raise TimeoutError("model first token timeout")
                 first_token_seen = True
@@ -249,6 +321,14 @@ class OpenAICompatibleStructuredModel:
                 )
         return "".join(content_parts), usage, reasoning_chars
 
+    @property
+    def request_reservation_multiplier(self) -> int:
+        return 2 if self._enable_thinking is True else 1
+
+    @property
+    def token_reservation_multiplier(self) -> int:
+        return self.request_reservation_multiplier
+
     def _public_process_summary(
         self,
         *,
@@ -256,6 +336,7 @@ class OpenAICompatibleStructuredModel:
         prompt_version: str,
         payload: dict[str, Any],
         progress_callback: ModelProgressCallback | None,
+        request_usage: list | None = None,
     ) -> str | None:
         if self._enable_thinking is not True:
             return None
@@ -285,12 +366,15 @@ class OpenAICompatibleStructuredModel:
                 ),
             )
             try:
-                content, _, reasoning_chars = self._stream_completion(
+                if request_usage is not None:
+                    request_usage.append(None)
+                content, usage, reasoning_chars = self._stream_completion(
                     request={
                         "model": self.model_name,
                         "messages": process_messages,
                         "temperature": 0,
-                        "max_tokens": max(
+                        "max_tokens": self._process_max_output_tokens
+                        or max(
                             self._max_output_tokens,
                             self._thinking_budget_tokens + 400,
                         ),
@@ -305,6 +389,8 @@ class OpenAICompatibleStructuredModel:
                     phase="PROCESS",
                     progress_callback=progress_callback,
                 )
+                if request_usage is not None:
+                    request_usage[-1] = usage
                 summary = " ".join(_CONTROL_CHARS.sub("", content).split())
                 summary = summary[: self._process_summary_max_chars]
                 if not summary:
@@ -354,12 +440,15 @@ class OpenAICompatibleStructuredModel:
             raise StructuredModelError(
                 "INPUT_TOO_LARGE",
                 "structured model input exceeds configured limit",
+                external_requests=0 if self._aggregate_accounting else None,
             )
+        request_usage = [] if self._aggregate_accounting else None
         process_summary = self._public_process_summary(
             purpose=purpose,
             prompt_version=prompt_version,
             payload=payload,
             progress_callback=progress_callback,
+            request_usage=request_usage,
         )
         user_payload = json.dumps(
             {
@@ -389,9 +478,11 @@ class OpenAICompatibleStructuredModel:
                 ),
             )
             try:
+                if request_usage is not None:
+                    request_usage.append(None)
                 request: dict[str, Any] = {
                     "model": self.model_name,
-                    "messages": messages,
+                    "messages": list(messages),
                     "temperature": 0,
                     "max_tokens": (
                         max_output_tokens
@@ -402,7 +493,7 @@ class OpenAICompatibleStructuredModel:
                 }
                 if self._enable_thinking is not None:
                     request["extra_body"] = {"enable_thinking": False}
-                content, usage, _ = self._stream_completion(
+                content, usage, reasoning_chars = self._stream_completion(
                     request=request,
                     timeout_seconds=self._structured_timeout_seconds,
                     purpose=purpose,
@@ -410,25 +501,37 @@ class OpenAICompatibleStructuredModel:
                     phase="STRUCTURED",
                     progress_callback=progress_callback,
                 )
+                if request_usage is not None:
+                    request_usage[-1] = usage
                 if not isinstance(content, str) or not content.strip():
                     emit(
                         "LLM_VALIDATION",
                         validation_stage="json",
                         status="INVALID_JSON",
+                        level="WARNING",
+                        error_code="EMPTY_CONTENT",
                         purpose=purpose,
                         attempt=attempt,
                     )
                     raise ValueError("model returned empty content")
                 try:
                     json.loads(content)
-                except (ValueError, TypeError):
+                except (ValueError, TypeError) as exc:
                     emit(
                         "LLM_VALIDATION",
                         validation_stage="json",
                         status="INVALID_JSON",
+                        level="WARNING",
+                        output_chars=len(content),
+                        reasoning_chars=reasoning_chars,
+                        json_error_position=getattr(exc, "pos", None),
+                        json_error_line=getattr(exc, "lineno", None),
+                        json_error_column=getattr(exc, "colno", None),
                         purpose=purpose,
                         attempt=attempt,
                     )
+                    if attempt < self._max_attempts:
+                        messages.extend(self._repair_turn(content))
                     raise
                 emit(
                     "LLM_VALIDATION",
@@ -436,17 +539,34 @@ class OpenAICompatibleStructuredModel:
                     status="SUCCESS",
                     purpose=purpose,
                     attempt=attempt,
+                    output_chars=len(content),
+                    reasoning_chars=reasoning_chars,
                 )
                 try:
                     output = output_schema.model_validate_json(content)
-                except ValidationError:
+                except ValidationError as exc:
+                    from credra_agent.observability.validation import schema_issues
+
+                    issue_summary = schema_issues(exc, output_schema)
                     emit(
                         "LLM_VALIDATION",
                         validation_stage="schema",
                         status="INVALID_SCHEMA",
+                        level="WARNING",
                         purpose=purpose,
                         attempt=attempt,
+                        output_chars=len(content),
+                        **issue_summary,
                     )
+                    if attempt < self._max_attempts:
+                        messages.extend(
+                            self._repair_turn(
+                                content,
+                                validation_issues=self._repair_schema_issues(
+                                    exc, issue_summary["validation_issues"]
+                                ),
+                            )
+                        )
                     raise
                 emit(
                     "LLM_VALIDATION",
@@ -455,16 +575,38 @@ class OpenAICompatibleStructuredModel:
                     purpose=purpose,
                     attempt=attempt,
                 )
+                input_tokens = getattr(usage, "prompt_tokens", None)
+                output_tokens = getattr(usage, "completion_tokens", None)
+                complete = self._enable_thinking is not True and attempt == 1
+                if request_usage is not None:
+                    complete = all(
+                        item is not None
+                        and getattr(item, "prompt_tokens", None) is not None
+                        and getattr(item, "completion_tokens", None) is not None
+                        for item in request_usage
+                    )
+                    input_tokens = (
+                        sum(item.prompt_tokens for item in request_usage)
+                        if complete
+                        else None
+                    )
+                    output_tokens = (
+                        sum(item.completion_tokens for item in request_usage)
+                        if complete
+                        else None
+                    )
                 return StructuredModelResult(
                     output=output,
                     model_name=self.model_name,
                     attempts=attempt,
                     latency_ms=max(0, round((perf_counter() - started) * 1000)),
                     call_id=(CONTEXT.get() or {}).get("call_id"),
-                    input_tokens=getattr(usage, "prompt_tokens", None),
-                    output_tokens=getattr(usage, "completion_tokens", None),
-                    accounting_complete=self._enable_thinking is not True
-                    and attempt == 1,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    accounting_complete=complete,
+                    external_requests=len(request_usage)
+                    if request_usage is not None
+                    else None,
                 )
             except (ValidationError, ValueError, IndexError, AttributeError) as exc:
                 last_error = exc
@@ -492,11 +634,16 @@ class OpenAICompatibleStructuredModel:
             last_code,
             message,
             attempts=self._max_attempts,
+            external_requests=len(request_usage) if request_usage is not None else None,
         ) from last_error
 
 
 def build_analysis_model(
-    settings: Settings, *, client: Any | None = None
+    settings: Settings,
+    *,
+    client: Any | None = None,
+    process_max_output_tokens: int | None = None,
+    aggregate_accounting: bool = False,
 ) -> StructuredModel | None:
     if settings.analysis_mode == "deterministic":
         return None
@@ -511,6 +658,8 @@ def build_analysis_model(
         enable_thinking=settings.analysis_llm_enable_thinking,
         thinking_ttft_seconds=settings.analysis_llm_thinking_ttft_seconds,
         thinking_budget_tokens=settings.analysis_llm_thinking_budget_tokens,
+        process_max_output_tokens=process_max_output_tokens,
+        aggregate_accounting=aggregate_accounting,
         process_summary_max_chars=settings.analysis_llm_process_summary_max_chars,
         client=client,
     )

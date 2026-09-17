@@ -378,6 +378,7 @@ class HTTPContentFetcher:
         snapshot_store: ContentSnapshotStore,
         client: httpx.Client | None = None,
         resolver: HostResolver = _default_resolver,
+        restrict_redirect_host: bool = False,
     ) -> None:
         self._max_bytes = max_bytes
         self._max_redirects = max_redirects
@@ -386,6 +387,7 @@ class HTTPContentFetcher:
         self._snapshot_store = snapshot_store
         self._client = client or httpx.Client(timeout=timeout_seconds)
         self._resolver = resolver
+        self._restrict_redirect_host = restrict_redirect_host
 
     def _failure(
         self,
@@ -430,6 +432,15 @@ class HTTPContentFetcher:
                         redirect_url = normalize_public_url(
                             urljoin(current_url, location), self._resolver
                         )
+                        if (
+                            self._restrict_redirect_host
+                            and urlsplit(redirect_url).hostname
+                            != urlsplit(current_url).hostname
+                        ):
+                            raise ContentFetchError(
+                                "INVALID_URL",
+                                "agent source scope forbids cross-host redirects",
+                            )
                         if (
                             urlsplit(current_url).scheme == "https"
                             and urlsplit(redirect_url).scheme == "http"
@@ -555,7 +566,9 @@ class SnapshotContentFetcher:
             )
 
 
-def build_content_fetcher(settings: Settings) -> ContentFetcher | None:
+def build_content_fetcher(
+    settings: Settings, *, restrict_redirect_host: bool = False
+) -> ContentFetcher | None:
     provider = settings.content_fetch_provider.lower()
     if provider == "auto":
         provider = {
@@ -576,6 +589,7 @@ def build_content_fetcher(settings: Settings) -> ContentFetcher | None:
             max_pdf_pages=settings.search_fetch_max_pdf_pages,
             max_text_chars=settings.search_fetch_max_text_chars,
             snapshot_store=store,
+            restrict_redirect_host=restrict_redirect_host,
         )
     raise ValueError(f"unknown content fetch provider: {provider}")
 

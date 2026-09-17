@@ -59,6 +59,13 @@ class ActionRegistry:
                 "read_only": item.read_only,
                 "unavailable_reason": item.unavailable_reason,
                 "arguments_schema": item.arguments_model.model_json_schema(),
+                **(
+                    {
+                        "description": "年度财务计算；仅使用当前 Run 可见的 agent_financial_input Artifact，不接收模型自造金额。支持 revenue_growth、receivables_growth、growth_gap、cash_profit_ratio；应收仅用应收账款账面价值，排除票据/融资/合同资产，现金利润比必须合并净利润>0。增速展示百分比，差展示百分点，比率展示倍；缺失/口径/期间/版本不符返回不可计算。"
+                    }
+                    if item.name == "compute_metrics"
+                    else {}
+                ),
             }
             for item in self._definitions.values()
         ]

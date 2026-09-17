@@ -47,9 +47,37 @@ class Receipt:
     failed: bool = False
 
 
-def diagnostic_failure() -> None:
+def diagnostic_failure(code="UNAVAILABLE", exception=None, phase=None) -> None:
+    # Only trusted stage labels and numeric OS codes; never exception strings,
+    # file paths, envelopes, provider responses or original LogRecord contents.
+    from .events import reference_id
+
+    if code not in {
+        "UNAVAILABLE",
+        "ADMISSION_TIMEOUT",
+        "QUEUE_FULL",
+        "ACK_UNCERTAIN",
+        "WRITE_FAILURE",
+        "EVENT_OR_DELIVERY_FAILURE",
+    }:
+        code = "UNAVAILABLE"
+    details = ""
+    if phase in {
+        "INITIALIZE",
+        "MANIFEST_WRITE",
+        "MANIFEST_REPLACE",
+        "JSONL_WRITE",
+        "TEXT_WRITE",
+    }:
+        details += f" phase={phase}"
+    if exception is not None:
+        details += " exception=" + reference_id(type(exception).__name__)
+        for name in ("errno", "winerror"):
+            number = getattr(exception, name, None)
+            if type(number) is int:
+                details += f" {name}={number}"
     print(
-        "CREDRA_LOG_UNAVAILABLE: new actions paused; delivery may be uncertain",
+        f"CREDRA_LOG_UNAVAILABLE: new actions paused; delivery may be uncertain; stage={code}{details}",
         file=sys.stderr,
     )
 
@@ -152,28 +180,29 @@ class Collector:
             "timeout": self.config.enqueue_timeout + self.config.ack_timeout + 0.5,
         }
 
-    def fail(self) -> None:
+    def fail(self, code="UNAVAILABLE", exception=None) -> None:
         if self.healthy:
             self.healthy = False
-            diagnostic_failure()
+            self.failure_code = code
+            diagnostic_failure(code, exception, self.writer.operation)
 
     def publish(self, record: dict) -> int:
         receipt = Receipt(record)
         deadline = monotonic() + self.config.enqueue_timeout
         if not self.admission_lock.acquire(timeout=self.config.enqueue_timeout):
-            self.fail()
+            self.fail("ADMISSION_TIMEOUT")
             raise LoggingUnavailable("LOGGING_UNAVAILABLE")
         try:
             if not self.accepting or not self.healthy:
                 raise LoggingUnavailable("LOGGING_UNAVAILABLE")
             self.queue.put(receipt, timeout=max(0, deadline - monotonic()))
         except queue.Full as exc:
-            self.fail()
+            self.fail("QUEUE_FULL", exc)
             raise LoggingUnavailable("LOGGING_UNAVAILABLE") from exc
         finally:
             self.admission_lock.release()
         if not receipt.ready.wait(self.config.ack_timeout) or receipt.failed:
-            self.fail()
+            self.fail("ACK_UNCERTAIN")
             raise LoggingUnavailable("LOGGING_UNAVAILABLE")
         assert receipt.sequence is not None
         return receipt.sequence
@@ -196,9 +225,15 @@ class Collector:
                         if len(self.seen) > self.config.queue_capacity * 4:
                             self.seen.pop(next(iter(self.seen)))
                     receipt.sequence = sequence
-                except (OSError, ValueError, KeyError, LoggingUnavailable):
+                except (
+                    OSError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    LoggingUnavailable,
+                ) as exc:
                     receipt.failed = True
-                    self.fail()
+                    self.fail("WRITE_FAILURE", exc)
                 finally:
                     receipt.ready.set()
                     self.queue.task_done()

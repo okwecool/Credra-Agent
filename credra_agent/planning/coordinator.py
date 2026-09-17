@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.llm.gateway import StructuredModel, StructuredModelError
 from app.tools.artifacts import ArtifactStore
+from credra_agent.evidence.artifacts import write_evidence_artifacts
 from credra_agent.execution.budget import (
     BudgetAuditRecord,
     BudgetError,
@@ -16,13 +17,26 @@ from credra_agent.execution.budget import (
     BudgetLedger,
     BudgetUnavailable,
 )
-from credra_agent.execution.executor import ActionExecutor, ExecutionOutcome
+from credra_agent.execution.executor import (
+    ActionExecutor,
+    ExecutionContext,
+    ExecutionOutcome,
+)
+from credra_agent.execution.model_budget import external_usage, model_reservation
 from credra_agent.execution.models import Action, AskUserArgs
 from credra_agent.execution.policy import ActionPolicy, PolicyViolation
 from credra_agent.execution.registry import ActionRegistry, default_registry
+from credra_agent.financial.actions import resolve_financial_citations
 from credra_agent.intent.models import TaskSpec
 from credra_agent.observability.events import log_context
 from credra_agent.observability.runtime import emit, require_logging
+from credra_agent.planning.evidence_context import (
+    assess_questions,
+    coordinator_evidence_context,
+    current_conflicts,
+    incomplete_completion_requirements,
+    store_proposals,
+)
 from credra_agent.planning.models import (
     CoordinatorLimits,
     CoordinatorResult,
@@ -34,7 +48,35 @@ from credra_agent.planning.models import (
     RunAuthorization,
 )
 
-PROMPT_VERSION = "coordinator-v2-p12"
+
+def _proposes_missing_finding(draft: DecisionDraft, context: dict) -> bool:
+    """Allow one verifiable requirement step to escape a no-progress lock."""
+    if draft.tool != "verify_claim" or len(draft.claim_proposals) != 1:
+        return False
+    proposal = draft.claim_proposals[0]
+    if proposal.proposal_id in {
+        item["proposal_id"] for item in context["claim_proposals"]
+    }:
+        return False
+    progress = next(
+        (
+            item
+            for item in context["completion_progress"]
+            if item["question_id"] == proposal.question_id
+        ),
+        None,
+    )
+    if progress is None:
+        return False
+    if progress["required_finding_aspects"]:
+        return proposal.finding_aspect in progress["missing_finding_aspects"]
+    return (
+        len(progress["verified_finding_claim_ids"])
+        < progress["minimum_verified_findings"]
+    )
+
+
+PROMPT_VERSION = "coordinator-v2-finish-recovery"
 PROMPT_PATH = Path(__file__).parents[1] / "prompts" / "coordinator.md"
 DecisionFallback = Callable[
     [dict[str, Any], BaseException], DecisionDraft | dict[str, Any]
@@ -64,6 +106,9 @@ class Coordinator:
             active_seconds_limit=authorization.active_seconds_limit,
         )
         self.limits: CoordinatorLimits = authorization.limits
+        self.model_external_reservation, self.model_token_reservation = (
+            model_reservation(model, self.limits)
+        )
         self.registry = registry or default_registry()
         self.fallback = fallback
         self.policy = ActionPolicy(self.registry)
@@ -148,6 +193,9 @@ class Coordinator:
 
         for decision_number in range(1, self.limits.max_decisions + 1):
             coverage = self._coverage(required, observations)
+            evidence_context = coordinator_evidence_context(
+                self.artifacts, available_refs, task_spec
+            )
             payload = {
                 "task_spec": task_spec.model_dump(mode="json"),
                 "hypotheses": [
@@ -160,6 +208,7 @@ class Coordinator:
                 "available_references": sorted(available_refs),
                 "available_tools": catalog,
                 "budget": self.budget.snapshot().model_dump(mode="json"),
+                "evidence_context": evidence_context,
                 "policy_rejections": rejections[-10:],
                 "no_progress_locked": no_progress_count
                 >= self.limits.no_progress_limit,
@@ -169,8 +218,8 @@ class Coordinator:
             try:
                 require_logging()
                 reservation = self.budget.reserve(
-                    external=self.limits.model_attempt_reservation,
-                    tokens=self.limits.decision_token_reservation,
+                    external=self.model_external_reservation,
+                    tokens=self.model_token_reservation,
                 )
             except (BudgetUnavailable, BudgetExhausted) as exc:
                 artifact_refs.append(
@@ -179,8 +228,8 @@ class Coordinator:
                         decision_number=decision_number,
                         action_id=None,
                         status="REJECTED",
-                        requested_external=self.limits.model_attempt_reservation,
-                        requested_tokens=self.limits.decision_token_reservation,
+                        requested_external=self.model_external_reservation,
+                        requested_tokens=self.model_token_reservation,
                         actual_external=None,
                         actual_tokens=None,
                         error_code=str(exc),
@@ -207,11 +256,16 @@ class Coordinator:
                     max_output_tokens=self.limits.decision_max_output_tokens,
                 )
             except StructuredModelError as exc:
-                actual_attempts = exc.attempts or None
+                actual_attempts = (
+                    exc.external_requests
+                    if exc.external_requests is not None
+                    else exc.attempts or None
+                )
+                failed_tokens = 0 if exc.external_requests == 0 else None
                 self.budget.settle(
                     reservation,
                     actual_external=actual_attempts,
-                    actual_tokens=None,
+                    actual_tokens=failed_tokens,
                 )
                 artifact_refs.append(
                     self._write_budget_audit(
@@ -219,10 +273,10 @@ class Coordinator:
                         decision_number=decision_number,
                         action_id=None,
                         status="SETTLED_UNCERTAIN",
-                        requested_external=self.limits.model_attempt_reservation,
-                        requested_tokens=self.limits.decision_token_reservation,
+                        requested_external=self.model_external_reservation,
+                        requested_tokens=self.model_token_reservation,
                         actual_external=actual_attempts,
-                        actual_tokens=None,
+                        actual_tokens=failed_tokens,
                         error_code=exc.code,
                         before=model_before,
                         after=self.budget.snapshot(),
@@ -249,8 +303,8 @@ class Coordinator:
                         decision_number=decision_number,
                         action_id=None,
                         status="SETTLED_UNCERTAIN",
-                        requested_external=self.limits.model_attempt_reservation,
-                        requested_tokens=self.limits.decision_token_reservation,
+                        requested_external=self.model_external_reservation,
+                        requested_tokens=self.model_token_reservation,
                         actual_external=None,
                         actual_tokens=None,
                         error_code=type(exc).__name__,
@@ -280,7 +334,7 @@ class Coordinator:
                     model_result.accounting_complete
                     and reported_token_usage is not None
                 )
-                actual_external = model_result.attempts if accounting_complete else None
+                actual_external = external_usage(model_result)
                 actual_tokens = reported_token_usage if accounting_complete else None
                 self.budget.settle(
                     reservation,
@@ -295,8 +349,8 @@ class Coordinator:
                         status=(
                             "SETTLED" if accounting_complete else "SETTLED_UNCERTAIN"
                         ),
-                        requested_external=self.limits.model_attempt_reservation,
-                        requested_tokens=self.limits.decision_token_reservation,
+                        requested_external=self.model_external_reservation,
+                        requested_tokens=self.model_token_reservation,
                         actual_external=actual_external,
                         actual_tokens=actual_tokens,
                         error_code=None,
@@ -314,11 +368,187 @@ class Coordinator:
                 task_spec_version=task_spec.version,
             )
             if draft.decision == "FINISH":
+                completion_gaps = incomplete_completion_requirements(evidence_context)
+                already_replanned = any(
+                    item["code"] == "INCOMPLETE_COMPLETION_REQUIREMENTS"
+                    for item in rejections
+                )
+                if (
+                    completion_gaps
+                    and not already_replanned
+                    and not payload["no_progress_locked"]
+                    and draft.finish_reason not in {"BUDGET_EXHAUSTED", "NO_PROGRESS"}
+                ):
+                    rejections.append(
+                        {
+                            "code": "INCOMPLETE_COMPLETION_REQUIREMENTS",
+                            "message": "; ".join(completion_gaps)[:200],
+                        }
+                    )
+                    emit(
+                        "PLAN_CHANGED",
+                        status="REJECTED",
+                        plan_version=decision_number,
+                        error_code="INCOMPLETE_COMPLETION_REQUIREMENTS",
+                    )
+                    no_progress_count += 1
+                    continue
+                if (
+                    completion_gaps
+                    and already_replanned
+                    and (
+                        draft.finish_reason != "NEEDS_REVIEW"
+                        or not draft.review_required
+                    )
+                ):
+                    rejections.append(
+                        {
+                            "code": "INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                            "message": "; ".join(completion_gaps)[:200],
+                        }
+                    )
+                    emit(
+                        "PLAN_CHANGED",
+                        status="REJECTED",
+                        plan_version=decision_number,
+                        error_code="INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                    )
+                    return self._limited(
+                        "INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                        required,
+                        actions,
+                        observations,
+                        hypothesis_map,
+                        artifact_refs,
+                    )
                 coverage = self._coverage(required, observations, draft=draft)
+                coverage.unresolved_conflict_ids = current_conflicts(
+                    self.artifacts,
+                    available_refs,
+                    task_spec,
+                    coverage.unresolved_conflict_ids,
+                )
+                coverage.review_required = (
+                    bool(coverage.unresolved_conflict_ids) or draft.review_required
+                )
+                try:
+                    resolve_financial_citations(
+                        self.artifacts,
+                        draft.financial_citations,
+                        references=available_refs,
+                        task=task_spec,
+                    )
+                except ValueError:
+                    return self._result(
+                        status="LIMITED",
+                        stop_reason="INVALID_FINANCIAL_CITATION",
+                        actions=actions,
+                        observations=observations,
+                        hypotheses=list(hypothesis_map.values()),
+                        coverage=coverage,
+                        artifact_refs=artifact_refs,
+                        limitations=[
+                            *draft.limitations,
+                            "INVALID_FINANCIAL_CITATION",
+                        ],
+                    )
+                try:
+                    answered, gaps = assess_questions(
+                        self.artifacts,
+                        draft.question_assessments,
+                        references=available_refs,
+                        task=task_spec,
+                        financial_citations=draft.financial_citations,
+                    )
+                except ValueError as exc:
+                    rejections.append(
+                        {
+                            "code": "INVALID_QUESTION_ASSESSMENT",
+                            "message": str(exc)[:200],
+                        }
+                    )
+                    emit(
+                        "PLAN_CHANGED",
+                        status="REJECTED",
+                        plan_version=decision_number,
+                        error_code="INVALID_QUESTION_ASSESSMENT",
+                    )
+                    no_progress_count += 1
+                    continue
+                coverage.answered_question_ids = sorted(
+                    set(coverage.answered_question_ids) | set(answered)
+                )
+                coverage.gap_question_ids = sorted(
+                    (set(coverage.gap_question_ids) - set(answered))
+                    | set(gaps)
+                    | set(draft.gap_question_ids)
+                )
+                artifact_refs.append(
+                    self.artifacts.write_json(
+                        f"artifacts/agent_question_assessment_v{decision_number}.json",
+                        {
+                            "schema_version": "question_assessment_v2_p22",
+                            "accepted_answered_question_ids": answered,
+                            "unresolved_question_ids": gaps,
+                            "assessments": [
+                                item.model_dump(mode="json")
+                                for item in draft.question_assessments
+                            ],
+                        },
+                    )
+                )
                 finish_ref = self._write_versioned(
                     "agent_coverage", None, coverage.model_dump(mode="json")
                 )
                 artifact_refs.append(finish_ref)
+                report_reason = (
+                    "ANSWERED"
+                    if draft.finish_reason == "ANSWERED" and coverage.complete
+                    else "FINISH_GATE_REJECTED"
+                    if draft.finish_reason == "ANSWERED"
+                    else draft.finish_reason or "NEEDS_REVIEW"
+                )
+                if (
+                    draft.question_assessments
+                    or draft.financial_citations
+                    or any(
+                        ref.startswith("artifacts/agent_financial_input_v")
+                        for ref in available_refs
+                    )
+                ):
+                    from app.report import write_agent_report
+
+                    available_refs.update(artifact_refs)
+                    try:
+                        artifact_refs.extend(
+                            write_agent_report(
+                                self.artifacts,
+                                task=task_spec,
+                                references=available_refs,
+                                citations=draft.financial_citations,
+                                coverage=coverage,
+                                status="COMPLETED"
+                                if report_reason == "ANSWERED"
+                                else "LIMITED",
+                                stop_reason=report_reason,
+                                limitations=draft.limitations,
+                                version=decision_number,
+                            )
+                        )
+                    except ValueError:
+                        return self._result(
+                            status="LIMITED",
+                            stop_reason="INVALID_FINANCIAL_CITATION",
+                            actions=actions,
+                            observations=observations,
+                            hypotheses=list(hypothesis_map.values()),
+                            coverage=coverage,
+                            artifact_refs=artifact_refs,
+                            limitations=[
+                                *draft.limitations,
+                                "INVALID_FINANCIAL_CITATION",
+                            ],
+                        )
                 if draft.finish_reason == "ANSWERED" and coverage.complete:
                     emit("STOP", status="SUCCESS", finish_reason="stop")
                     return self._result(
@@ -351,12 +581,15 @@ class Coordinator:
                 rejections.append(
                     {"code": "UNKNOWN_HYPOTHESIS", "message": "unknown hypothesis id"}
                 )
+                no_progress_count += 1
                 continue
             if not set(draft.evidence_refs) <= available_refs:
                 rejections.append(
                     {"code": "UNKNOWN_EVIDENCE", "message": "unknown evidence ref"}
                 )
+                no_progress_count += 1
                 continue
+            requirement_progress = _proposes_missing_finding(draft, evidence_context)
             try:
                 authorized = self.policy.authorize(
                     tool=draft.tool or "",
@@ -365,13 +598,37 @@ class Coordinator:
                     executable_tools=executable,
                     available_refs=available_refs,
                     prior_signatures=signatures,
-                    no_progress_locked=no_progress_count
-                    >= self.limits.no_progress_limit,
+                    no_progress_locked=(
+                        no_progress_count >= self.limits.no_progress_limit
+                        and not requirement_progress
+                    ),
                 )
             except PolicyViolation as exc:
                 rejections.append({"code": exc.code, "message": str(exc)[:200]})
                 emit("ACTION_STATE", status="REJECTED", error_code=exc.code)
+                no_progress_count += 1
                 continue
+
+            try:
+                proposal_ref = store_proposals(
+                    self.artifacts,
+                    draft.claim_proposals,
+                    references=available_refs,
+                    task=task_spec,
+                    version=decision_number,
+                )
+            except ValueError:
+                return self._limited(
+                    "INVALID_CLAIM_PROPOSAL",
+                    required,
+                    actions,
+                    observations,
+                    hypothesis_map,
+                    artifact_refs,
+                )
+            if proposal_ref:
+                artifact_refs.append(proposal_ref)
+                available_refs.add(proposal_ref)
 
             action_id = f"action-{decision_number}-{uuid4().hex[:12]}"
             action_budget_ref = f"artifacts/agent_action_budget_v{decision_number}.json"
@@ -428,11 +685,16 @@ class Coordinator:
                         )
                     )
                 else:
-                    requested_external = self.executor.reservation_for(action.tool)
+                    requested_external = self.executor.reservation_for(
+                        action.tool, self.limits
+                    )
+                    requested_tokens = self.executor.token_reservation_for(
+                        action.tool, self.limits
+                    )
                     try:
                         require_logging()
                         tool_reservation = self.budget.reserve(
-                            external=requested_external
+                            external=requested_external, tokens=requested_tokens
                         )
                     except (BudgetUnavailable, BudgetExhausted) as exc:
                         artifact_refs.append(
@@ -442,7 +704,7 @@ class Coordinator:
                                 action_id=action_id,
                                 status="REJECTED",
                                 requested_external=requested_external,
-                                requested_tokens=0,
+                                requested_tokens=requested_tokens,
                                 actual_external=None,
                                 actual_tokens=None,
                                 error_code=str(exc),
@@ -459,11 +721,20 @@ class Coordinator:
                             artifact_refs,
                         )
                     emit("ACTION_STATE", status="STARTED", tool=action.tool)
-                    outcome = self.executor.execute(action.tool, authorized.arguments)
+                    outcome = self.executor.execute(
+                        action.tool,
+                        authorized.arguments,
+                        context=ExecutionContext(
+                            artifacts=self.artifacts,
+                            task_spec=task_spec,
+                            limits=self.limits,
+                            available_refs=available_refs,
+                        ),
+                    )
                     self.budget.settle(
                         tool_reservation,
                         actual_external=outcome.actual_external_requests,
-                        actual_tokens=0,
+                        actual_tokens=outcome.actual_tokens,
                     )
                     artifact_refs.append(
                         self._write_budget_audit(
@@ -473,12 +744,13 @@ class Coordinator:
                             status=(
                                 "SETTLED"
                                 if outcome.actual_external_requests is not None
+                                and outcome.actual_tokens is not None
                                 else "SETTLED_UNCERTAIN"
                             ),
                             requested_external=requested_external,
-                            requested_tokens=0,
+                            requested_tokens=requested_tokens,
                             actual_external=outcome.actual_external_requests,
-                            actual_tokens=0,
+                            actual_tokens=outcome.actual_tokens,
                             error_code=outcome.error_code,
                             before=tool_before,
                             after=self.budget.snapshot(),
@@ -486,7 +758,12 @@ class Coordinator:
                     )
 
                 observation = self._record_observation(
-                    action_id, decision_number, outcome, artifact_refs, available_refs
+                    action_id,
+                    decision_number,
+                    outcome,
+                    artifact_refs,
+                    available_refs,
+                    task_spec,
                 )
                 observations.append(observation)
                 observation_index.append(
@@ -504,9 +781,13 @@ class Coordinator:
             self._apply_hypothesis_updates(
                 draft, hypothesis_map, available_refs | set(observation.artifact_refs)
             )
+            prior_novelty = {
+                key for item in observations[:-1] for key in item.novelty_keys
+            }
             no_progress_count = (
                 no_progress_count + 1
-                if observation.status == "NO_RESULT" or not observation.novelty_keys
+                if observation.status == "NO_RESULT"
+                or not set(observation.novelty_keys) - prior_novelty
                 else 0
             )
             if action.tool == "ask_user":
@@ -537,8 +818,19 @@ class Coordinator:
         outcome: ExecutionOutcome,
         artifact_refs: list[str],
         available_refs: set[str],
+        task_spec: TaskSpec,
     ) -> Observation:
         refs = list(outcome.artifact_refs)
+        if outcome.evidence_bundle is not None:
+            evidence_refs = write_evidence_artifacts(
+                self.artifacts,
+                outcome.evidence_bundle,
+                number,
+                as_of=task_spec.as_of,
+                subject_id=task_spec.subject_id,
+            )
+            refs.extend(evidence_refs)
+            artifact_refs.extend(evidence_refs)
         if outcome.payload:
             payload_ref = self._write_versioned(
                 "agent_tool_result", None, outcome.payload, suffix=number

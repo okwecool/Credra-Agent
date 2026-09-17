@@ -44,6 +44,10 @@ class ServiceLog:
             else self.collector.endpoint
         )
         self.healthy = True
+        self._lifetime_lock = threading.RLock()
+        self._background_users = 0
+        self._close_requested = False
+        self._closed = False
 
     def emit(self, kind: str, **fields) -> bool:
         if not self.healthy:
@@ -55,18 +59,35 @@ class ServiceLog:
             else:
                 send(self.endpoint, record)
             return True
-        except (LoggingUnavailable, OSError, ValueError, TypeError):
+        except (LoggingUnavailable, OSError, ValueError, TypeError) as exc:
             if self.healthy:
                 self.healthy = False
-                diagnostic_failure()
+                diagnostic_failure("EVENT_OR_DELIVERY_FAILURE", exc)
             return False
 
     def close(self):
-        self.emit(
-            "SERVICE_STOP" if self.collector else "PROCESS_STOP", status="SUCCESS"
-        )
-        if self.collector:
-            self.collector.close()
+        with self._lifetime_lock:
+            self._close_requested = True
+            if self._background_users or self._closed:
+                return
+            self._closed = True
+            self.emit(
+                "SERVICE_STOP" if self.collector else "PROCESS_STOP", status="SUCCESS"
+            )
+            if self.collector:
+                self.collector.close()
+
+    def retain_background(self):
+        with self._lifetime_lock:
+            if self._closed:
+                raise LoggingUnavailable("LOGGING_LIFETIME_CLOSED")
+            self._background_users += 1
+
+    def release_background(self):
+        with self._lifetime_lock:
+            self._background_users -= 1
+            if self._close_requested and not self._background_users:
+                self.close()
 
 
 def current() -> ServiceLog | None:

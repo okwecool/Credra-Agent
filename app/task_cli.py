@@ -9,10 +9,15 @@ from pathlib import Path
 from app.config import Settings
 from app.llm.gateway import StructuredModelError, build_analysis_model
 from app.runtime.tasks import get_task_status, resume_task, start_task
+from app.search.content import (
+    ContentSnapshotStore,
+    HTTPContentFetcher,
+    build_content_fetcher,
+)
 from credra_agent.intent.service import build_intent_model, interpret_message
 from credra_agent.observability.runtime import entrypoint
 from credra_agent.planning.models import RunAuthorization
-from credra_agent.runtime.executors import build_agentic_executor
+from credra_agent.runtime.executors import build_agentic_executor, build_agentic_model
 from credra_agent.runtime.service import interpret_and_execute
 
 
@@ -47,6 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--message-id", required=True)
     agent.add_argument("--text", required=True)
     agent.add_argument("--as-of", type=date.fromisoformat)
+    agent.add_argument(
+        "--evidence-source-kind",
+        choices=("REAL", "SYNTHETIC", "UNKNOWN"),
+        default="UNKNOWN",
+        help="Trusted material classification; unknown results cannot be accepted as facts",
+    )
     agent.add_argument(
         "--execution-mode", choices=("baseline", "shadow", "agentic"), default="agentic"
     )
@@ -100,6 +111,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 authorization = RunAuthorization.model_validate_json(
                     args.authorization.read_text(encoding="utf-8")
                 )
+            coordinator = (
+                build_agentic_model(settings, authorization.limits)
+                if authorization is not None and args.execution_mode != "baseline"
+                else build_analysis_model(settings)
+            )
+            fetcher = build_content_fetcher(settings, restrict_redirect_host=True)
+            snapshots = ContentSnapshotStore(settings.search_content_snapshot_dir)
+
+            def executor_factory(spec):
+                return build_agentic_executor(
+                    spec,
+                    verifier_model=coordinator,
+                    evidence_source_kind=args.evidence_source_kind,
+                    document_loader=snapshots.read,
+                    content_fetcher=fetcher.fetch if fetcher is not None else None,
+                    fetch_external_requests=settings.search_fetch_max_redirects + 1
+                    if isinstance(fetcher, HTTPContentFetcher)
+                    else 0,
+                    fetch_actual_external_requests=None
+                    if isinstance(fetcher, HTTPContentFetcher)
+                    else 0,
+                )
+
             payload = interpret_and_execute(
                 thread_id=args.thread_id,
                 source_message_id=args.message_id,
@@ -109,8 +143,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 execution_mode=args.execution_mode,
                 authorization=authorization,
                 intent_model=build_intent_model(settings),
-                coordinator_model=build_analysis_model(settings),
-                executor_factory=build_agentic_executor,
+                coordinator_model=coordinator,
+                executor_factory=executor_factory,
             ).model_dump(mode="json")
     except (OSError, StructuredModelError, ValueError) as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))

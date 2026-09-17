@@ -339,7 +339,7 @@ M4-E 两阶段流式网关继续复用，但不默认每个细小动作都调用
 | `docs/Credra Agent 自主调查架构与演进路线 v2.0（提案）.md` | 新增完整架构、数据/案例设计、迁移路线及门禁 |
 | `app/cases.py` | 标记 case_normal/case_risky 两个隐藏技术样例 ID |
 | `app/chainlit_app.py` | 默认目录隐藏合成技术样例，保留比亚迪/上汽与显式全部预检 |
-| `tests/test_chainlit_ui.py` | 验证两个技术样例隐藏、两个真实案例可见、全部预检可用 |
+| `tests/application/test_chainlit_ui.py` | 验证两个技术样例隐藏、两个真实案例可见、全部预检可用 |
 | `README.md` | 提案入口与正确的样例隐藏范围说明 |
 | `docs/演示指南.md` | 说明技术样例隐藏但 CLI 回归仍可用，保留原有真实案例演示与 Eval |
 | `docs/开发日志.md` | 记录本次需求差异、实际改动与验证结果 |

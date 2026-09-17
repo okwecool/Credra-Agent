@@ -28,14 +28,29 @@ class SourcePolicy(IntentModel):
     allowed: list[str] | None = None
     denied: list[str] = Field(default_factory=list)
 
+    @staticmethod
+    def canonical_tags(values) -> set[str]:
+        """One declared synonym; retain all other channel and category tags."""
+        return {
+            "exchange_disclosure" if value == "exchange" else value for value in values
+        }
+
+    def permits(self, values) -> bool:
+        tags = self.canonical_tags(values)
+        return bool(
+            not tags & self.canonical_tags(self.denied)
+            and (not self.denied or tags)
+            and (self.allowed is None or tags & self.canonical_tags(self.allowed))
+        )
+
     @model_validator(mode="after")
     def unambiguous(self) -> "SourcePolicy":
-        preferred = set(self.preferred)
-        denied = set(self.denied)
+        preferred = self.canonical_tags(self.preferred)
+        denied = self.canonical_tags(self.denied)
         if preferred & denied:
             raise ValueError("preferred source is denied")
         if self.allowed is not None:
-            allowed = set(self.allowed)
+            allowed = self.canonical_tags(self.allowed)
             if not allowed or allowed & denied:
                 raise ValueError("empty or contradictory source scope")
             if not preferred <= allowed:
@@ -48,6 +63,9 @@ class Question(IntentModel):
     text: str = Field(min_length=1)
     priority: Literal["REQUIRED", "OPTIONAL"] = "REQUIRED"
     completion_criteria: str = Field(min_length=1)
+    required_metric_ids: list[str] = Field(default_factory=list, max_length=20)
+    minimum_verified_findings: int = Field(default=0, ge=0, le=20)
+    required_finding_aspects: list[str] = Field(default_factory=list, max_length=20)
     focus: Literal[
         "cash_quality",
         "receivables",
@@ -57,6 +75,18 @@ class Question(IntentModel):
         "debt",
         "general",
     ] = "general"
+
+    @model_validator(mode="after")
+    def finding_requirements_are_distinct(self) -> "Question":
+        if len(set(self.required_finding_aspects)) != len(
+            self.required_finding_aspects
+        ):
+            raise ValueError("required finding aspects must be distinct")
+        if self.required_finding_aspects and self.minimum_verified_findings < len(
+            self.required_finding_aspects
+        ):
+            raise ValueError("minimum findings cannot be below required aspects")
+        return self
 
 
 class ConditionalInstruction(IntentModel):
@@ -77,6 +107,7 @@ class TaskSpec(IntentModel):
     case_id: str | None = None
     as_of: date
     periods: list[Period]
+    comparison_periods: list[Period] = Field(default_factory=list)
     source_policy: SourcePolicy
     questions: list[Question] = Field(min_length=1)
     conditions: list[ConditionalInstruction] = Field(default_factory=list)
@@ -94,7 +125,10 @@ class TaskSpec(IntentModel):
             )
         if self.readiness == "NEEDS_CLARIFICATION" and not self.unresolved_fields:
             raise ValueError("clarification needs named unresolved fields")
-        if any(period.end > self.as_of for period in self.periods):
+        if any(
+            period.end > self.as_of
+            for period in [*self.periods, *self.comparison_periods]
+        ):
             raise ValueError("period extends beyond as_of")
         question_ids = [item.question_id for item in self.questions]
         if len(question_ids) != len(set(question_ids)):
@@ -133,6 +167,8 @@ class IntentDraft(IntentModel):
     operation: Operation
     subject_hint: str | None = None
     years: list[int] = Field(default_factory=list)
+    comparison_years: list[int] = Field(default_factory=list)
+    periods: list[Period] = Field(default_factory=list)
     as_of: date | None = None
     focus: list[
         Literal[

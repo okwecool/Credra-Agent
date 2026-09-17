@@ -122,14 +122,14 @@ try {
 
     Write-Host "[3/5] Pytest"
     Invoke-Checked -Command $pythonExe -Arguments @(
-        "-m", "pytest", "-q", "-p", "no:cacheprovider", "--basetemp", $testTempDir
+        "-m", "pytest", "tests", "-q", "-p", "no:cacheprovider", "--basetemp", $testTempDir
     )
 
     Write-Host "[4/5] Dependency consistency"
     Invoke-Checked -Command $pythonExe -Arguments @("-m", "pip", "check")
 
     Write-Host "[5/5] Independent MCP stdio smoke"
-    Invoke-Checked -Command $pythonExe -Arguments @("-m", "tests.stdio_research_smoke")
+    Invoke-Checked -Command $pythonExe -Arguments @("-m", "tests.smoke.stdio_research_smoke")
 
     Write-Host "Credra Agent verification passed."
 }

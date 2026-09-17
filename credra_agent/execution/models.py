@@ -13,6 +13,7 @@ class ExecutionModel(BaseModel):
 
 class ReferenceArgs(ExecutionModel):
     reference_id: str = Field(min_length=1)
+    document_id: str | None = Field(default=None, min_length=1)
 
 
 class SearchEvidenceArgs(ExecutionModel):
@@ -27,6 +28,7 @@ class SearchEvidenceArgs(ExecutionModel):
 class VerifyClaimArgs(ExecutionModel):
     claim_id: str = Field(min_length=1)
     source_refs: list[str] = Field(min_length=1)
+    document_ids: list[str] = Field(default_factory=list, max_length=10)
 
 
 class ComputeMetricsArgs(ExecutionModel):

@@ -1,0 +1,316 @@
+{
+  "schema_version": "complex_case_v1",
+  "suite_id": "byd_cash_quality_v2",
+  "case_id": "case_byd_cash_quality_v2",
+  "subject_id": "002594",
+  "subject_name": "比亚迪",
+  "as_of": "2026-04-02",
+  "period": {
+    "start": "2025-01-01",
+    "end": "2025-12-31"
+  },
+  "comparison_period": {
+    "start": "2024-01-01",
+    "end": "2024-12-31"
+  },
+  "human_review_status": "NOT_REVIEWED",
+  "questions": [
+    {
+      "question_id": "q-financial",
+      "text": "2025年应收相对营收如何变化，经营现金流/合并净利润是多少？",
+      "focus": "cash_quality",
+      "completion_criteria": "引用应收净额、合并利润和保存的四项计算，说明口径与局限",
+      "required_metric_ids": [
+        "revenue_growth",
+        "receivables_growth",
+        "growth_gap",
+        "cash_profit_ratio"
+      ]
+    },
+    {
+      "question_id": "q-explanation",
+      "text": "年报支持哪些现金流变化解释，还缺哪些证据？",
+      "focus": "general",
+      "completion_criteria": "区分合并报表变化与公司解释，披露独立因果证据缺口",
+      "minimum_verified_findings": 1,
+      "required_finding_aspects": [
+        "年报现金流变化解释"
+      ]
+    },
+    {
+      "question_id": "q-settlement",
+      "text": "供应商结算和迪链报道、公司回应分别支持什么，哪些判断不能成立？",
+      "focus": "regulatory",
+      "completion_criteria": "分别定位承诺、匿名来源报道和公司回应；不推出履行、逾期、违法或现金危机",
+      "minimum_verified_findings": 3,
+      "required_finding_aspects": [
+        "付款承诺",
+        "匿名来源结算调整报道",
+        "公司回应"
+      ]
+    }
+  ],
+  "expected_financial": {
+    "revenue_growth": {
+      "display": "3.46%",
+      "numerator": "803964958",
+      "denominator": "777102455",
+      "subtract_one": true
+    },
+    "receivables_growth": {
+      "display": "-40.60%",
+      "numerator": "37004685",
+      "denominator": "62298988",
+      "subtract_one": true
+    },
+    "growth_gap": {
+      "display": "-44.06 个百分点",
+      "expression": "receivables_growth - revenue_growth"
+    },
+    "cash_profit_ratio": {
+      "display": "1.75 倍",
+      "numerator": "59135544",
+      "denominator": "33760758",
+      "subtract_one": false
+    }
+  },
+  "absolute_ratio_tolerance": "0.000001",
+  "required_finding_receipts": [
+    {
+      "requirement_id": "explanation-annual-cashflow",
+      "question_id": "q-explanation",
+      "document_id": "byd-2025-annual",
+      "location": "page:41"
+    },
+    {
+      "requirement_id": "settlement-pledge",
+      "question_id": "q-settlement",
+      "document_id": "reuters-payment-pledges-2025"
+    },
+    {
+      "requirement_id": "settlement-anonymous-shift",
+      "question_id": "q-settlement",
+      "document_id": "reuters-dilian-2025",
+      "location": "html:body:anonymous-report:shift"
+    },
+    {
+      "requirement_id": "settlement-company-response",
+      "question_id": "q-settlement",
+      "document_id": "reuters-dilian-2025",
+      "location": "html:body:company-response:regulation"
+    }
+  ],
+  "human_answers": [
+    {
+      "question_id": "q-financial",
+      "facts": [
+        "2025年收入803,964,958千元，2024年777,102,455千元。",
+        "2025年末应收账款净额37,004,685千元，2024年末62,298,988千元。",
+        "2025年合并净利润33,760,758千元；归母净利润32,619,022千元不能替代现金利润比分母。",
+        "2025年经营现金流净额59,135,544千元，2024年133,453,873千元。"
+      ],
+      "inferences": [
+        "应收净额下降而收入增长；期末应收净额的相对增长更低。",
+        "现金利润比为1.75倍，不能据此证明所有客户已付款或不存在信用风险。"
+      ],
+      "locations": [
+        "byd-2025-annual/page:124",
+        "byd-2025-annual/page:127",
+        "byd-2025-annual/page:131",
+        "byd-2025-annual/page:168"
+      ],
+      "gaps": [
+        "应收净额同时受账面余额和减值影响，不能直接解释为全部回款。",
+        "资料只有必要片段，未逐项核验现金流附注和完整应收明细。"
+      ]
+    },
+    {
+      "question_id": "q-explanation",
+      "facts": [
+        "现金流表列示购买商品、接受劳务支付现金由489,866,241增至579,332,669千元。",
+        "现金流表列示经营现金流入小计814,817,630增至861,740,107千元，流出小计681,363,757增至802,604,563千元。",
+        "公司年报解释：经营现金流净额同比变动-55.69%，主要由于购买商品、接受劳务支付现金增加。"
+      ],
+      "inferences": [
+        "报表方向与公司解释相容，经营流出增加超过流入增加。",
+        "相容不等于独立证明供应商结算调整是唯一或主要原因。"
+      ],
+      "locations": [
+        "byd-2025-annual/page:131",
+        "byd-2025-annual/page:41"
+      ],
+      "gaps": [
+        "供应商级结算方式、合同、期限、付款流水及其他现金流驱动因素未冻结。",
+        "全年销量和行业数据可作背景，不能替代现金回收或公司因果证据。"
+      ]
+    },
+    {
+      "question_id": "q-settlement",
+      "facts": [
+        "路透承诺报道将BYD列入承诺车企名单，并报道60天付款窗口。",
+        "2025-11-14路透报道匿名供应商所述内部票据结算调整。",
+        "同一报道转述比亚迪声明称迪链系统符合监管指引。"
+      ],
+      "inferences": [
+        "报道与回应讨论的断言不同，不能自动组成同一主张的支持/反证。",
+        "两个转载平台承载路透内容，不是多个独立采信渠道。"
+      ],
+      "locations": [
+        "reuters-payment-pledges-2025/html:body:pledges:byd",
+        "reuters-payment-pledges-2025/html:body:opening:payment-window",
+        "reuters-dilian-2025/html:body:anonymous-report:shift",
+        "reuters-dilian-2025/html:body:company-response:regulation"
+      ],
+      "gaps": [
+        "公司原始承诺和回应全文未取得，履行情况未独立核验。",
+        "报道中低层级企业明确不是比亚迪供应商，不能推成直接供应商逾期。",
+        "法规规定与车企反馈窗口不能替代针对比亚迪的执法或合同证据。"
+      ]
+    }
+  ],
+  "prohibited_claims": [
+    "比亚迪供应商全部逾期",
+    "比亚迪已经履行所有60天付款承诺",
+    "迪链已被监管认定违法",
+    "比亚迪已发生现金危机",
+    "两个路透转载平台构成独立印证",
+    "汽车行业利润等于比亚迪合并净利润",
+    "应收净额下降证明全部回款"
+  ],
+  "allowed_action_partial_order": [
+    {
+      "before": "read_document",
+      "after": "verify_claim",
+      "scope": "same_document"
+    },
+    {
+      "before": "compute_metrics",
+      "after": "FINISH",
+      "scope": "financial_citations"
+    },
+    {
+      "before": "verify_claim",
+      "after": "FINISH",
+      "scope": "answered_claims"
+    }
+  ],
+  "replanning_instruction": "保留已核对的年报计算，进一步区分迪链报道和公司回应，不能将承诺当履行。",
+  "synthetic_counterexamples": [
+    {
+      "phenomenon": "missing_financial_field",
+      "fixture": "tests/fixtures/v2_readiness/synthetic_ac.json",
+      "expected": "NOT_COMPUTABLE; never substitute owners-of-parent profit"
+    },
+    {
+      "phenomenon": "conflicting_evidence",
+      "fixture": "tests/fixtures/v2_evidence/synthetic_sources.json",
+      "expected": "CONFLICTING; disclose and require review"
+    },
+    {
+      "phenomenon": "wrong_entity",
+      "fixture": "tests/fixtures/v2_evidence/synthetic_sources.json",
+      "expected": "REJECTED; subsidiary and same-name entity are not the target"
+    }
+  ],
+  "rubric": {
+    "dimensions": [
+      "instruction_following",
+      "investigation_decisions",
+      "evidence_support",
+      "financial_correctness",
+      "completion_and_gap_disclosure"
+    ],
+    "range": [
+      0,
+      5
+    ],
+    "equal_weights": true,
+    "minimum_mean": 4,
+    "hard_failures": [
+      "fabricated_key_fact",
+      "numerical_error",
+      "unauthorized_action",
+      "skipped_required_review",
+      "corrupted_resume"
+    ],
+    "scores": null
+  },
+  "offline_verifier_snapshots": [
+    {
+      "proposal_id": "proposal:cash",
+      "question_id": "q-financial",
+      "kind": "REPORTED_FACT",
+      "statement": "比亚迪2025年合并经营活动产生的现金流量净额为59,135,544千元。",
+      "document_id": "byd-2025-annual",
+      "fragment_index": 2,
+      "entity_fragment_index": 2,
+      "entity_excerpt": "比亚迪股份有限公司",
+      "relation": "SUPPORTS"
+    },
+    {
+      "proposal_id": "proposal:explanation",
+      "question_id": "q-explanation",
+      "kind": "PARTY_STATEMENT",
+      "attributed_to": "比亚迪",
+      "statement": "比亚迪年报称经营现金流净额下降主要由于购买商品、接受劳务支付现金增加。",
+      "document_id": "byd-2025-annual",
+      "fragment_index": 4,
+      "entity_fragment_index": 2,
+      "entity_excerpt": "比亚迪股份有限公司",
+      "finding_aspect": "年报现金流变化解释",
+      "relation": "SUPPORTS"
+    },
+    {
+      "proposal_id": "proposal:pledge",
+      "question_id": "q-settlement",
+      "kind": "PARTY_STATEMENT",
+      "attributed_to": "比亚迪（路透转述）",
+      "statement": "路透报道将比亚迪列入承诺向供应商在60天内付款的车企名单。",
+      "document_id": "reuters-payment-pledges-2025",
+      "fragment_index": 0,
+      "entity_fragment_index": 0,
+      "entity_excerpt": "BYD",
+      "finding_aspect": "付款承诺",
+      "relation": "SUPPORTS"
+    },
+    {
+      "proposal_id": "proposal:shift",
+      "question_id": "q-settlement",
+      "kind": "REPORTED_FACT",
+      "statement": "路透报道匿名供应商所述比亚迪减少内部财务票据结算的情况。",
+      "document_id": "reuters-dilian-2025",
+      "fragment_index": 0,
+      "entity_fragment_index": 1,
+      "entity_excerpt": "BYD",
+      "finding_aspect": "匿名来源结算调整报道",
+      "relation": "SUPPORTS"
+    },
+    {
+      "proposal_id": "proposal:response",
+      "question_id": "q-settlement",
+      "kind": "PARTY_STATEMENT",
+      "attributed_to": "比亚迪（路透转述）",
+      "statement": "路透转述比亚迪声明称迪链系统符合监管指引。",
+      "document_id": "reuters-dilian-2025",
+      "fragment_index": 1,
+      "entity_fragment_index": 1,
+      "entity_excerpt": "BYD",
+      "finding_aspect": "公司回应",
+      "relation": "SUPPORTS"
+    }
+  ],
+  "limitations": [
+    "人工答案草案待人工审核；冻结后不得依据生成结果修改期望答案。",
+    "离线模型回放仅验证链路、门禁及可引用答案，不证明真实模型质量提升。",
+    "资料版本截止2026-04-02，检索日期2026-09-14，不等于历史网页快照。",
+    "策略对照P50/P51复用这些样本，本轮不切换thinking/JSON请求策略。"
+  ],
+  "material_files": {
+    "business_info.md": "sha256:d67850bab4317a495454e0c15eaf8b4946fa546436de4c9ca5d778315d8c3f8f",
+    "company_profile.json": "sha256:e93f2174968dfca063dbd9637743d8f8c05212017fb3e26e4e1a933ff2258bb4",
+    "evidence_bundle_v2.json": "sha256:f4f9f99046af57861dcbc1ba904e87a2ce79b8941dd1ce675711903af03ba507",
+    "financial_input_v2.json": "sha256:6ffbe11ee2696cba790f97b61429d48524d8cab0a18293134470790048868a3b",
+    "financial_statement.json": "sha256:c43345df90c62900b325f1fd7a0f420ceb9851fcb5f0c6c7fab1544c250e040c",
+    "source_manifest.json": "sha256:f09a0e710782ae6038de1f076758bf5d23cc9d6d33a04630825888e154c2214f"
+  }
+}

@@ -28,6 +28,7 @@ class AgenticState(TypedDict):
     hypotheses_ref: str
     observation_index_ref: str
     coverage_ref: str | None
+    report_ref: str | None
     active_action_id: str | None
     active_action_ref: str | None
     active_decision_ref: str | None
@@ -68,6 +69,7 @@ def initial_agentic_state(
         "hypotheses_ref": hypotheses_ref,
         "observation_index_ref": observation_index_ref,
         "coverage_ref": None,
+        "report_ref": None,
         "active_action_id": None,
         "active_action_ref": None,
         "active_decision_ref": None,

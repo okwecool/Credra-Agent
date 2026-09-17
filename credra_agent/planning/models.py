@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from credra_agent.financial.models import FinancialCitation
+
 
 class PlanningModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -33,6 +35,8 @@ class RunAuthorization(PlanningModel):
     )
     authorization_id: str = Field(min_length=1, max_length=200)
     authorized_by: Literal["USER", "RUNTIME_POLICY", "OFFLINE_TEST"]
+    task_id: str | None = None
+    policy_ref: str | None = None
     task_spec_version: int = Field(ge=1)
     approval: Literal["UNCONFIRMED", "APPROVED"]
     external_request_limit: int | None = Field(default=None, ge=1)
@@ -65,6 +69,38 @@ class HypothesisUpdate(PlanningModel):
     hypothesis_id: str = Field(min_length=1)
     status: Literal["OPEN", "SUPPORTED", "REFUTED", "CONFLICTING", "UNRESOLVED"]
     evidence_refs: list[str] = Field(default_factory=list, max_length=50)
+
+
+class ClaimProposal(PlanningModel):
+    """A model hypothesis bound to one question; never a verification receipt."""
+
+    proposal_id: str = Field(pattern=r"^proposal:[a-zA-Z0-9_-]{1,80}$")
+    question_id: str = Field(min_length=1)
+    statement: str = Field(min_length=1, max_length=1200)
+    kind: Literal["HYPOTHESIS", "REPORTED_FACT", "PARTY_STATEMENT", "ANALYST_ESTIMATE"]
+    attributed_to: str | None = Field(default=None, min_length=1)
+    source_document_ids: list[str] = Field(min_length=1, max_length=5)
+    finding_aspect: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def attribution(self) -> "ClaimProposal":
+        if (
+            self.kind in {"PARTY_STATEMENT", "ANALYST_ESTIMATE"}
+            and not self.attributed_to
+        ):
+            raise ValueError("statement or estimate proposal requires attribution")
+        return self
+
+
+class QuestionAssessment(PlanningModel):
+    """Semantic completion proposal subject to runtime evidence gates."""
+
+    question_id: str = Field(min_length=1)
+    status: Literal["ANSWERED", "UNRESOLVED"]
+    conclusion: str = Field(min_length=1, max_length=1600)
+    evidence_refs: list[str] = Field(default_factory=list, max_length=20)
+    claim_ids: list[str] = Field(default_factory=list, max_length=20)
+    limitations: list[str] = Field(default_factory=list, max_length=20)
 
 
 class Observation(PlanningModel):
@@ -126,10 +162,19 @@ class DecisionDraft(PlanningModel):
     conflict_ids: list[str] = Field(default_factory=list, max_length=50)
     review_required: bool = False
     limitations: list[str] = Field(default_factory=list, max_length=50)
+    claim_proposals: list[ClaimProposal] = Field(default_factory=list, max_length=10)
+    question_assessments: list[QuestionAssessment] = Field(
+        default_factory=list, max_length=20
+    )
+    financial_citations: list[FinancialCitation] = Field(
+        default_factory=list, max_length=30
+    )
 
     @model_validator(mode="after")
     def coherent(self) -> "DecisionDraft":
         if self.decision == "ACTION":
+            if self.financial_citations:
+                raise ValueError("financial report citations belong to FINISH")
             if not self.tool or not self.expected_observation or self.finish_reason:
                 raise ValueError("ACTION requires tool/expected_observation only")
         elif (
@@ -139,6 +184,22 @@ class DecisionDraft(PlanningModel):
             or not self.finish_reason
         ):
             raise ValueError("FINISH requires finish_reason and no action fields")
+        if self.claim_proposals:
+            target = self.arguments.get("claim_id")
+            documents = set(self.arguments.get("document_ids", []))
+            proposal = (
+                self.claim_proposals[0] if len(self.claim_proposals) == 1 else None
+            )
+            if (
+                self.decision != "ACTION"
+                or self.tool != "verify_claim"
+                or proposal is None
+                or proposal.proposal_id != target
+                or not set(proposal.source_document_ids) <= documents
+            ):
+                raise ValueError(
+                    "claim proposal must be the matching verify_claim target"
+                )
         return self
 
 
