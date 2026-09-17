@@ -355,6 +355,7 @@ class AgenticGraphRuntime:
                 budget_ref = self._budget_ref(state, authorization)
                 return self._limited(state, str(exc), budget_ref)
             except StructuredModelError as exc:
+                emit("DEGRADED", status="DEGRADED", error_code=exc.code)
                 self.ledger.settle_budget(
                     state["task_id"],
                     operation_id,
@@ -435,6 +436,32 @@ class AgenticGraphRuntime:
                     "iteration": plan_version,
                     "budget_ledger_ref": budget_ref,
                     "no_progress_count": state["no_progress_count"] + 1,
+                    "artifact_refs": refs,
+                    "policy_rejections": [
+                        *state["policy_rejections"],
+                        rejection,
+                    ],
+                }
+            if (
+                completion_gaps
+                and already_replanned
+                and (draft.finish_reason != "NEEDS_REVIEW" or not draft.review_required)
+            ):
+                rejection = {
+                    "code": "INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                    "message": "; ".join(completion_gaps)[:200],
+                }
+                emit(
+                    "PLAN_CHANGED",
+                    status="REJECTED",
+                    plan_version=plan_version,
+                    error_code="INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                )
+                return {
+                    **self._limited(
+                        state, "INCOMPLETE_COMPLETION_REVIEW_REQUIRED", budget_ref
+                    ),
+                    "iteration": plan_version,
                     "artifact_refs": refs,
                     "policy_rejections": [
                         *state["policy_rejections"],

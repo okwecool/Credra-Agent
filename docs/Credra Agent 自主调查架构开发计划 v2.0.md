@@ -289,12 +289,12 @@ chainlit run chainlit_app.py
 
 #### 6.1.1.4 离线浏览器复验
 
-自动验证：`python -m pytest tests/test_v2_ui_execution.py -q`。标准门禁使用 `scripts/verify.ps1`。
+自动验证：`python -m pytest tests/entry/test_v2_ui_execution.py -q`。标准门禁使用 `scripts/verify.ps1`。
 
 隔离浏览器入口：
 
 ```powershell
-chainlit run tests/ui_browser_app.py --host 127.0.0.1 --port 8013 --headless
+chainlit run tests/support/ui_browser_app.py --host 127.0.0.1 --port 8013 --headless
 ```
 
 该入口固定模型输出，通过真实 MCP 子进程调用 Mock Provider，页面明确标为离线验收，不改用户 `.env`。数据、授权、账本和日志位于 `checkpoints/.p25-browser/`，不是生产入口，不证明真实模型质量。正式入口仍是根目录 `chainlit_app.py`。
@@ -339,7 +339,7 @@ P10 解析调用发生在运行授权之前，因此新增前置可信解析额�
 
 #### 6.1.2.4 浏览器操作记录
 
-隔离入口 tests/ui_browser_app.py，监听 127.0.0.1:8013；固定模型 + 真实 stdio MCP + Mock Provider，独立数据/日志，不改 .env。
+隔离入口 tests/support/ui_browser_app.py，监听 127.0.0.1:8013；固定模型 + 真实 stdio MCP + Mock Provider，独立数据/日志，不改 .env。
 
 1. 首页显示离线说明、策略就绪和比亚迪/上汽目录。
 2. 输入“比较去年和今年的现金流”：任务 `agentic-ui-85ad179e182d4aef` 等待主体/年度，消耗 1 请求/30 Token，没有工具调用。
@@ -371,7 +371,7 @@ P25 已有工具的离线最小闭环技术状态为 `VERIFIED`，待人工审�
 | 执行/恢复 | `app/runtime/tasks.py`、`credra_agent/runtime/service.py`、`credra_agent/graph/workflow.py`、`credra_agent/planning/models.py` |
 | 意图 | `credra_agent/intent/parser.py`、`credra_agent/intent/service.py`、`credra_agent/intent/store.py` |
 | UI Runtime | `credra_agent/runtime/ui_policy.py`、`credra_agent/runtime/ui_store.py`、`credra_agent/runtime/ui_budget.py`、`credra_agent/runtime/ui_service.py` |
-| 验证 | `tests/test_v2_ui_execution.py`、`tests/ui_execution_cli.py`、`tests/ui_browser_app.py` |
+| 验证 | `tests/entry/test_v2_ui_execution.py`、`tests/support/ui_execution_cli.py`、`tests/support/ui_browser_app.py` |
 | 文档 | `README.md`、`docs/Credra Agent 自主调查架构开发计划 v2.0.md`、`docs/开发日志.md` |
 
 包含开始时未提交的已认可 P25 计划；原独立使用说明和实施记录已并入本计划。各节点提交须只包含相关段落，入口提案和日志补齐范围分别审核。临时测试/浏览器数据、用户策略和 .env 不纳入提交。
@@ -611,7 +611,7 @@ flowchart TD
 
 **本基础节点完成时的验收状态：** P26-0/P26-1 技术 `VERIFIED`，当时待人工审核，P26-2–P26-4 未开始。本节点验收只覆盖 E01 上下文静态准备、E02 列表本地工具部分、E03 选择持久化部分、E07 动态工具/参数门禁及 E08 日志/投影基础；没有实际 LLM→工具→LLM，没有 UI 消息联通，没有调查委派或两个账本独立耗尽验证。E01–E10 的完整端到端状态保留待实施，P26 整体未完成。后续审核提交为 `6e1b139`；接下来的 P26-2 要先落实会话授权/预留，再接模型，实施事实见第 6.2.14 节。
 
-**本节点拟提交范围（11 文件）：** `credra_agent/entry/{models,store,query,registry,context}.py`、`credra_agent/intent/store.py`、`credra_agent/observability/{events,text}.py`、`tests/test_v2_entry_context.py`、本计划和 `docs/开发日志.md`。建议提交信息：`V2-2：建立对话入口上下文与任务查询接口`。未经人工审核批准不暂存/提交/推送；.env、配置、UI/按钮、案例、既有调查 Graph、模型重试策略和依赖不改。
+**本节点拟提交范围（11 文件）：** `credra_agent/entry/{models,store,query,registry,context}.py`、`credra_agent/intent/store.py`、`credra_agent/observability/{events,text}.py`、`tests/entry/test_v2_entry_context.py`、本计划和 `docs/开发日志.md`。建议提交信息：`V2-2：建立对话入口上下文与任务查询接口`。未经人工审核批准不暂存/提交/推送；.env、配置、UI/按钮、案例、既有调查 Graph、模型重试策略和依赖不改。
 
 #### 6.2.14 P26-2：受控 LLM 对话入口与实际取数循环
 
@@ -645,7 +645,7 @@ flowchart TD
 
 **验收状态：** P26-2 本节点离线技术 `VERIFIED`，待人工审核；E01/E02 的请求上下文/查询反馈、E06 会话侧账本、E07 动态目录与参数门禁、E08 同消息回放/日志暂停及 E09 真实 on_message 路径已离线验证。E03 多任务真实指代、E04/E05 调查纵向、E06 两账本分别耗尽、E08 独立进程/命令队列、E09 浏览器及 E10 真实模型语义仍待后续。有限真实调试次数尚待答复，本节点未使用真实模型或付费搜索。最终文档/配置示例检查与 git diff --check 通过，暂存区为空；本轮三处已结束的定向临时目录已清理，未提交或推送。下一节点 P26-3，P26 整体未完成。
 
-**本节点拟提交范围（15 文件）：** `.env.example`、`app/{config,chainlit_app}.py`、`credra_agent/runtime/ui_service.py`、`credra_agent/entry/{models,store,context,policy,budget,service}.py`、`credra_agent/prompts/entry.py`、`config/agent_entry_policy.example.json`、`tests/test_v2_entry_dialogue.py`、本计划及 `docs/开发日志.md`。建议提交信息：`V2-2：接通预算受控的 LLM 对话入口与取数循环`。未获人工审核不暂存/提交/推送；不修改 .env、案例、调查 Graph、依赖或按钮布局，不另建说明文档。
+**本节点拟提交范围（15 文件）：** `.env.example`、`app/{config,chainlit_app}.py`、`credra_agent/runtime/ui_service.py`、`credra_agent/entry/{models,store,context,policy,budget,service}.py`、`credra_agent/prompts/entry.py`、`config/agent_entry_policy.example.json`、`tests/entry/test_v2_entry_dialogue.py`、本计划及 `docs/开发日志.md`。建议提交信息：`V2-2：接通预算受控的 LLM 对话入口与取数循环`。未获人工审核不暂存/提交/推送；不修改 .env、案例、调查 Graph、依赖或按钮布局，不另建说明文档。
 
 | 拟提交文件 | 变更摘要 |
 |---|---|
@@ -661,7 +661,7 @@ flowchart TD
 | `credra_agent/entry/service.py`（新） | 受控入口模型→实际本地工具→模型循环及事实回复 |
 | `credra_agent/prompts/entry.py`（新） | 独立对话入口 Prompt 与版本 |
 | `config/agent_entry_policy.example.json`（新） | 未批准、总额度留空的配置模板 |
-| `tests/test_v2_entry_dialogue.py`（新） | 24 项有状态离线链路及故障验证 |
+| `tests/entry/test_v2_entry_dialogue.py`（新） | 24 项有状态离线链路及故障验证 |
 | `docs/Credra Agent 自主调查架构开发计划 v2.0.md` | 在现有计划中补齐状态、实施/配置/边界/验收和审核范围 |
 | `docs/开发日志.md` | 记录本节点实施事实、适配和验证结果 |
 
@@ -691,7 +691,7 @@ flowchart TD
 
 **验证：** 新增 22 项离线测试，使用真实 SQLite、Graph、授权 Artifact 和 TaskLedger、实际本地 Handler；模型替身读取完整上下文，费用/用量为模拟值。覆盖一次解析→实际调查、同草稿及真实等待 Graph 澄清、来源/主体/Case/版本/授权门禁、多 Case、两个预算分别受限、运行中 task_lock 持有时模型取状态、原 Run/预算恢复、P25 历史意图费用、队列恢复、回执丢失/不确定状态回放、同批次日志与真实 Chainlit on_message。早期兼容 80 通过/1 失败为旧“尚未接入”提示断言，按实际策略门禁更新；首批 12 项通过（15.35 秒），扩展 41 通过/1 多 Case 测试清单 ID 不匹配，修复临时 fixture 后 18 通过（27.36 秒）。入口/UI/日志定向 126 项通过（127.92 秒）；补实际等待 Graph 的问题上下文和 amend 后最终委派 22 项通过（31.90 秒）。普通标准门禁前两次均为 490 通过/1 失败（260.87、279.85 秒）：旧 test_evidence_changes_route_and_completion[True] 触发日志不可用保护，任务留在 RUNNING；第二次启动清单记录 LOG_DELIVERY_UNCERTAIN，未确认具体原因，不归因于模型或擅自取消保护。单独证据回归 25 项通过（12.35 秒），入口/证据组合安全诊断 141 项通过（69.48 秒），直接全量安全诊断 491 项通过（272.04 秒），模拟标准环境的证据回归 25 项通过（13.27 秒）。一次性仅捕获异常类型/系统码的诊断插件原样执行标准脚本，Ruff lint/208 文件 format、491 项 pytest（253.00 秒）、pip check、独立 MCP stdio Mock smoke 均通过；未捕获日志异常，插件结束即删除，未改生产代码。去除插件后的最终普通标准脚本通过 Ruff lint/208 文件 format、491 项 pytest（276.21 秒）、pip check、独立 MCP stdio Mock smoke（document → financial → research → risk；research COMPLETE）；仅既有第三方 Traceloop Pydantic 弃用警告。P26-3 离线技术 VERIFIED、待人工审核；首次异常事实仍保留，并作为 P26-4 日志可靠性验证的已知输入。没有真实 LLM/付费搜索或 E10 试跑。
 
-**审核范围：** P26-3 增量涉及 18 路径，其中新增 credra_agent/entry/delegation.py 和 tests/test_v2_entry_delegation.py；其余是入口 Models/Policy/Store/Service/Registry/Query、Prompt/策略示例、根启动入口、日志寿命、现有 UI 提示/模型构造器、.env.example、旧不可用提示测试及两份既有文档。与未提交的 P26-2 合计 21 文件，完整清单如下；不把上一节点误标已提交，不改 .env、案例/财务输入、原调查 Graph、依赖或 AGENTS.md，不另建说明文档。
+**审核范围：** P26-3 增量涉及 18 路径，其中新增 credra_agent/entry/delegation.py 和 tests/entry/test_v2_entry_delegation.py；其余是入口 Models/Policy/Store/Service/Registry/Query、Prompt/策略示例、根启动入口、日志寿命、现有 UI 提示/模型构造器、.env.example、旧不可用提示测试及两份既有文档。与未提交的 P26-2 合计 21 文件，完整清单如下；不把上一节点误标已提交，不改 .env、案例/财务输入、原调查 Graph、依赖或 AGENTS.md，不另建说明文档。
 
 | 当前拟审核文件 | 范围 |
 |---|---|
@@ -712,8 +712,8 @@ flowchart TD
 | credra_agent/observability/runtime.py | 根日志收集器后台寿命租用 |
 | credra_agent/runtime/ui_service.py | 独立 Coordinator 构造器和实际入口提示 |
 | config/agent_entry_policy.example.json（新） | 未批准、总额度留空的控制策略模板 |
-| tests/test_v2_entry_dialogue.py（新） | P26-2 验收及真实门禁提示适配 |
-| tests/test_v2_entry_delegation.py（新） | 22 项实际 Graph/账本/Handler/UI 验收 |
+| tests/entry/test_v2_entry_dialogue.py（新） | P26-2 验收及真实门禁提示适配 |
+| tests/entry/test_v2_entry_delegation.py（新） | 22 项实际 Graph/账本/Handler/UI 验收 |
 | docs/Credra Agent 自主调查架构开发计划 v2.0.md | 集中维护本节点事实/配置/验收/审核 |
 | docs/开发日志.md | 实施事实、适配及基线状态记录 |
 
@@ -770,12 +770,12 @@ flowchart TD
 | credra_agent/observability/collector.py | 安全 stage 与 TypeError 失败 ACK |
 | credra_agent/observability/runtime.py | 日志投递失败安全异常类型诊断 |
 | credra_agent/observability/writer.py | phase 与 Windows 清单 replace 有界重试 |
-| tests/entry_recovery_cli.py | 独立进程故障/本地 Handler 夹具 |
-| tests/test_v2_entry_recovery.py | 12 项进程恢复/未知/持锁/去重测试 |
-| tests/test_v2_entry_integration.py | 日志、并发、指代、纠错、容量、效果门禁 |
-| tests/test_service_log_writer.py | 暂时/持续拒绝与实际 Windows 句柄 |
-| tests/live_entry_smoke.py | 明确批准才运行的真实入口/离线调查与累计预算 |
-| tests/ui_browser_app.py | 原 P25 夹具增加 P26 隔离模式 |
+| tests/support/entry_recovery_cli.py | 独立进程故障/本地 Handler 夹具 |
+| tests/entry/test_v2_entry_recovery.py | 12 项进程恢复/未知/持锁/去重测试 |
+| tests/entry/test_v2_entry_integration.py | 日志、并发、指代、纠错、容量、效果门禁 |
+| tests/observability/test_service_log_writer.py | 暂时/持续拒绝与实际 Windows 句柄 |
+| tests/smoke/live_entry_smoke.py | 明确批准才运行的真实入口/离线调查与累计预算 |
+| tests/support/ui_browser_app.py | 原 P25 夹具增加 P26 隔离模式 |
 | docs/Credra Agent 自主调查架构开发计划 v2.0.md | 本节实现、预算、结果、审核清单 |
 | docs/开发日志.md | 原约定、实际缺陷、最小适配、验证事实 |
 
@@ -834,7 +834,7 @@ flowchart TD
 | credra_agent/execution/registry.py | 模型工具目录适用说明 |
 | credra_agent/planning/evidence_context.py | 有界财务输入与结果上下文 |
 | app/runtime/tasks.py | 可选、主体校验后的版本化输入接入 |
-| tests/test_v2_financial.py | 数值、来源、兼容及持久化链路验证 |
+| tests/financial/test_v2_financial.py | 数值、来源、兼容及持久化链路验证 |
 | docs/Credra Agent 自主调查架构开发计划 v2.0.md | 本节实施记录、表达依据与审核清单 |
 | docs/开发日志.md | 适配原因、范围及验证事实 |
 
@@ -919,7 +919,7 @@ Case 可以可选声明 `source/financial_input_v2.json`，内容采用第 6.3 �
 
 - `.gitignore`、`app/runtime/tasks.py`。
 - `credra_agent/financial/models.py`、`credra_agent/financial/adapters.py`、`credra_agent/evidence/adapters.py`、`credra_agent/intent/catalog.py`、`credra_agent/entry/context.py`、`credra_agent/entry/registry.py`、`credra_agent/planning/evidence_context.py`。
-- `tests/test_v2_financial.py`、`tests/test_v2_entry_context.py`。
+- `tests/financial/test_v2_financial.py`、`tests/entry/test_v2_entry_context.py`。
 - `docs/Credra Agent 自主调查架构开发计划 v2.0.md`、`docs/开发日志.md`。
 - `data/case_byd_cash_quality_v2/source/`下的`company_profile.json`、`financial_statement.json`、`business_info.md`、`source_manifest.json`、`financial_input_v2.json`、`evidence_bundle_v2.json`。
 
@@ -976,7 +976,7 @@ FINISH模型响应沿用原决策账本，报告JSON已保存、Markdown未保�
 - `credra_agent/financial/models.py`、`credra_agent/financial/calculations.py`、`credra_agent/financial/actions.py`。
 - `credra_agent/planning/models.py`、`credra_agent/planning/coordinator.py`、`credra_agent/planning/evidence_context.py`。
 - `credra_agent/graph/state.py`、`credra_agent/graph/workflow.py`、`credra_agent/prompts/entry.py`、`credra_agent/prompts/coordinator.md`。
-- `tests/test_v2_financial.py`、`tests/test_v2_intent_entry.py`、`tests/test_v2_entry_delegation.py`。
+- `tests/financial/test_v2_financial.py`、`tests/entry/test_v2_intent_entry.py`、`tests/entry/test_v2_entry_delegation.py`。
 - 本开发计划、`docs/开发日志.md`。
 
 建议提交信息：`V2-2：接通年度范围解析与财务报告引用`。P24-3本轮技术VERIFIED，待本次人工审核，不自行暂存、commit或push。下一轮以相同冻结材料开展P23人工答案、baseline/agentic对照及证据/计算/报告的联合验收；P24/P23/G2整体状态不在本轮提前关闭。
@@ -1038,6 +1038,16 @@ FINISH模型响应沿用原决策账本，报告JSON已保存、Markdown未保�
 精确版本试跑后的完成进度、任务感知研判和无进展收敛修改先通过 91 项定向回归。首次收尾全量在 625 项通过、2 项失败时发现两个兼容边界：入口同轮工具结果与 `current_task` 重复导致 30,000 字符容量失败；无效财务引用在新的语义重规划分支中多调用一次模型。前者仅在两份 TaskView 完全相同时去除重复投影，后者恢复为 `INVALID_FINANCIAL_CITATION` 立即受限结束；93 项相关回归通过。最终标准脚本通过 Ruff lint、220 文件 format check、627 项 pytest（414.37 秒）、依赖一致性及独立 MCP stdio Mock smoke，路径仍为 document → financial → research → risk、research 状态 COMPLETE；没有真实模型、搜索或抓取调用，警告仍只有既有 Traceloop/Pydantic 弃用提示。
 
 **门禁状态：** P23 离线技术状态为 `VERIFIED`；同材料对照和 UI 联合链路满足可复现、同源、引用及计算技术门禁。真实 fixed 已有可审核报告；精确版本 `qwen3.7-max-2026-06-08` 的 agentic 试跑新增一份通过技术检查的候选报告，但七轮结果仍存在提前结束、关键 finding 缺失、重复核验或无报告，最后的策略拒绝收敛修复也尚未真实复测，因此真实配对质量状态仍为 `OUTPUT_READY_QUALITY_GATE_PENDING`。五项人工评分和 G2 整体批准为 `PENDING`。当前证据只能证明链路能够产生合格候选，不能证明 agentic 稳定优于 baseline，也不自动关闭 P25/U09 或 E10。
+
+**2026-09-16 收敛复测：** 本轮开始前，精确模型共享 1,000,000 Token 调试池因既有七轮调查及入口问候复测已累计使用 767,019 Token，实际余额为 232,981。第一轮修复后 agentic 复测发生 10 次请求、101,802 Token/81.965 秒；模型完成四项财务计算、年报现金流解释核验和 Reuters 60 天付款承诺核验，但付款承诺核验器把两个正文片段拼成一个摘录，证据门禁正确拒绝，最终在第一次不完整 FINISH 和一次重复核验后达到 8 次决策上限，无报告。核验 Prompt 因此升级为功能版本 `evidence-verifier-v3-single-fragment-grounding`，明确 excerpt/location 必须属于同一单一片段，实体摘录可以单独指向另一片段；旧回执保留旧版本，不迁移或改写。
+
+第二轮发生 9 次请求、88,599 Token/72.524 秒，正确生成两条受支持主张及四项财务引用，并以 `COMPLETED/ANSWERED` 生成报告；跨片段核验问题已消失。技术检查 6 通过、1 失败：报告自身披露未取得实际付款周期、现金流解释缺独立因果验证，却设置 `review_required=false`，触发 `review.required` 失败；同时只回答 60 天承诺，没有核验同一冻结问题明确要求的匿名供应商/迪链报道和公司回应。评测包原 `minimum_verified_findings=1` 与人工答案的三类事实不一致，现收紧为 3，不降低检查标准。初步五项评分建议为指令遵循 3、调查决策 3、证据支持 4、财务正确性 5、完成与缺口披露 2，均分 3.4；并触发 `skipped_required_review` 硬失败。该评分为待用户复核的审核建议，不写入冻结包的正式 scores。
+
+两轮合计 19 次请求、190,401 Token；共享池累计 957,420 Token，余额 42,580，不足以按本轮 88,599–101,802 Token 的实际规模再完成一轮同等复测，因此停止派发，不用部分运行消耗余额。核验 Prompt 和三 finding 门禁通过 47 项证据/复杂案例离线回归；最终标准脚本通过 Ruff lint、219 文件格式检查、628 项 pytest（446.50 秒）、依赖一致性和独立 MCP stdio Mock smoke，路径为 document → financial → research → risk、research COMPLETE，仅保留既有 Traceloop/Pydantic 弃用警告。真实状态更新为 `OUTPUT_READY_QUALITY_GATE_FAILED`，G2 保持未通过；后续复测必须覆盖承诺、匿名来源报道和公司回应三类 finding，并保持 `NEEDS_REVIEW/review_required=true`，除非所有必答范围和缺口均确已解决。
+
+**2026-09-16 精确模型后续复测：** 用户将后续验证切换为 `qwen3.7-max-2026-05-20` 并批准新的 1,000,000 Token 共享池。六轮共 90 次 Provider 请求、1,005,954 Token、约 582.483 秒。运行时根据真实轨迹补齐结构化必需事项、精确回执检查、已核验主张压缩索引、同文档读取去重、缺失事项核验穿过无进展锁、核验来源类型门禁，以及二次不完整 FINISH 必须进入 `NEEDS_REVIEW`。最后一轮通过四项财务及三项结算回执，只剩年报现金流解释未核验；因此冻结包进一步把该解释设为独立 finding aspect，并要求年报第 41 页回执。
+
+最后一轮结算使共享池超出 5,954 Token，证明固定 6,000 Token 预留不能充当真实总额硬上限。评测试跑现按完整请求字节、输出上限、尝试数与阶段倍数保守预留，最坏单次调用无法被余额覆盖时在 Provider 派发前停止。共享池已经耗尽，禁止继续真实调用，直到用户追加授权。P23 离线技术链路保持可复现，真实状态仍为 `OUTPUT_READY_QUALITY_GATE_FAILED`；G2 需要修复后的真实复测与五项人工评分，不能由最后一轮部分通过自动关闭。
 
 本节点拟提交范围见开发日志。建议提交信息：`V2-2：完成比亚迪复杂首例联合验收`；待人工审核，不自行暂存、commit或push。
 
@@ -1277,7 +1287,7 @@ python -m credra_agent.observability.export --startup-dir logs/<startup_id>
 
 先行旧日志/网关 28 项通过；新文本/旧集成首轮 23 通过、1 个 Windows GBK 测试读取失败，显式 UTF-8 后新文本 8 项通过（2.59 秒）。最终标准门禁通过：Ruff lint、195 文件 format、425 项 pytest（207.80 秒）、pip check 与独立 MCP stdio smoke（document → financial → research → risk；research COMPLETE）。只有第三方 Traceloop 既有 Pydantic 弃用警告。文档/源码路径、实际导出行号与 diff 检查通过，暂存区为空，定向测试临时目录已清理；技术状态 VERIFIED，待人工审核，不通过真实 LLM 调用验证日志格式。
 
-本次拟审核文件：app/llm/gateway.py；credra_agent/observability 的 writer.py、events.py、wire.py、text.py、validation.py、export.py；tests/test_service_text_logs.py、tests/test_service_log_integration.py；README.md、本计划第 10.5 节及 docs/开发日志.md。建议独立提交信息：`补齐可读文本服务日志与结构化失败诊断`。已有 P25/入口提案修改保留，本次只准备日志范围，不自行暂存/提交/推送。
+本次拟审核文件：app/llm/gateway.py；credra_agent/observability 的 writer.py、events.py、wire.py、text.py、validation.py、export.py；tests/observability/test_service_text_logs.py、tests/observability/test_service_log_integration.py；README.md、本计划第 10.5 节及 docs/开发日志.md。建议独立提交信息：`补齐可读文本服务日志与结构化失败诊断`。已有 P25/入口提案修改保留，本次只准备日志范围，不自行暂存/提交/推送。
 
 README.md、本计划和开发日志.md 同时含其他节点修改，独立提交时只包含日志相关段落，不能整文件带入 P25/入口提案；具体暂存和 commit 均等待人工审核。
 

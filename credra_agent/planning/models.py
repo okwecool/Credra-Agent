@@ -80,6 +80,7 @@ class ClaimProposal(PlanningModel):
     kind: Literal["HYPOTHESIS", "REPORTED_FACT", "PARTY_STATEMENT", "ANALYST_ESTIMATE"]
     attributed_to: str | None = Field(default=None, min_length=1)
     source_document_ids: list[str] = Field(min_length=1, max_length=5)
+    finding_aspect: str | None = Field(default=None, min_length=1, max_length=120)
 
     @model_validator(mode="after")
     def attribution(self) -> "ClaimProposal":

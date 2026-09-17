@@ -32,14 +32,22 @@
       "text": "年报支持哪些现金流变化解释，还缺哪些证据？",
       "focus": "general",
       "completion_criteria": "区分合并报表变化与公司解释，披露独立因果证据缺口",
-      "minimum_verified_findings": 1
+      "minimum_verified_findings": 1,
+      "required_finding_aspects": [
+        "年报现金流变化解释"
+      ]
     },
     {
       "question_id": "q-settlement",
       "text": "供应商结算和迪链报道、公司回应分别支持什么，哪些判断不能成立？",
       "focus": "regulatory",
       "completion_criteria": "分别定位承诺、匿名来源报道和公司回应；不推出履行、逾期、违法或现金危机",
-      "minimum_verified_findings": 1
+      "minimum_verified_findings": 3,
+      "required_finding_aspects": [
+        "付款承诺",
+        "匿名来源结算调整报道",
+        "公司回应"
+      ]
     }
   ],
   "expected_financial": {
@@ -67,6 +75,31 @@
     }
   },
   "absolute_ratio_tolerance": "0.000001",
+  "required_finding_receipts": [
+    {
+      "requirement_id": "explanation-annual-cashflow",
+      "question_id": "q-explanation",
+      "document_id": "byd-2025-annual",
+      "location": "page:41"
+    },
+    {
+      "requirement_id": "settlement-pledge",
+      "question_id": "q-settlement",
+      "document_id": "reuters-payment-pledges-2025"
+    },
+    {
+      "requirement_id": "settlement-anonymous-shift",
+      "question_id": "q-settlement",
+      "document_id": "reuters-dilian-2025",
+      "location": "html:body:anonymous-report:shift"
+    },
+    {
+      "requirement_id": "settlement-company-response",
+      "question_id": "q-settlement",
+      "document_id": "reuters-dilian-2025",
+      "location": "html:body:company-response:regulation"
+    }
+  ],
   "human_answers": [
     {
       "question_id": "q-financial",
@@ -224,6 +257,7 @@
       "fragment_index": 4,
       "entity_fragment_index": 2,
       "entity_excerpt": "比亚迪股份有限公司",
+      "finding_aspect": "年报现金流变化解释",
       "relation": "SUPPORTS"
     },
     {
@@ -236,6 +270,7 @@
       "fragment_index": 0,
       "entity_fragment_index": 0,
       "entity_excerpt": "BYD",
+      "finding_aspect": "付款承诺",
       "relation": "SUPPORTS"
     },
     {
@@ -247,6 +282,7 @@
       "fragment_index": 0,
       "entity_fragment_index": 1,
       "entity_excerpt": "BYD",
+      "finding_aspect": "匿名来源结算调整报道",
       "relation": "SUPPORTS"
     },
     {
@@ -259,6 +295,7 @@
       "fragment_index": 1,
       "entity_fragment_index": 1,
       "entity_excerpt": "BYD",
+      "finding_aspect": "公司回应",
       "relation": "SUPPORTS"
     }
   ],

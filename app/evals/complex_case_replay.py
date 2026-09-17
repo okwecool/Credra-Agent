@@ -168,6 +168,8 @@ class SnapshotCoordinator:
                 for bundle in context["bundles"]
                 for claim in bundle["claims"]
             }
+            for claim in context.get("verified_claim_index", []):
+                claims.setdefault(claim["claim_id"], (claim["reference"], claim))
             missing = next(
                 (
                     row
@@ -189,10 +191,17 @@ class SnapshotCoordinator:
                     ),
                     None,
                 )
-                if bundle is None:
-                    raise ValueError(
-                        "Complex-case source metadata was omitted from the bounded model context"
+                bundle_reference = (
+                    bundle["reference"]
+                    if bundle is not None
+                    else next(
+                        reference
+                        for reference in reversed(
+                            kwargs["payload"]["available_references"]
+                        )
+                        if reference.startswith("artifacts/agent_evidence_v")
                     )
+                )
                 proposal = ClaimProposal.model_validate(
                     {
                         key: missing[key]
@@ -202,6 +211,7 @@ class SnapshotCoordinator:
                             "statement",
                             "kind",
                             "attributed_to",
+                            "finding_aspect",
                         )
                         if key in missing
                     }
@@ -211,7 +221,7 @@ class SnapshotCoordinator:
                     output = self.action(
                         "read_document",
                         {
-                            "reference_id": bundle["reference"],
+                            "reference_id": bundle_reference,
                             "document_id": missing["document_id"],
                         },
                     )
@@ -220,7 +230,7 @@ class SnapshotCoordinator:
                         "verify_claim",
                         {
                             "claim_id": missing["proposal_id"],
-                            "source_refs": [bundle["reference"]],
+                            "source_refs": [bundle_reference],
                             "document_ids": [missing["document_id"]],
                         },
                         [proposal],
@@ -313,6 +323,37 @@ class PooledTrialModel:
         self.calls = 0
         self.started = perf_counter()
 
+    def _request_token_bound(self, kwargs) -> int:
+        """Conservatively cover every authorized attempt before dispatch."""
+        output_schema = kwargs.get("output_schema")
+        system_prompt = kwargs.get("system_prompt")
+        if output_schema is None or not isinstance(system_prompt, str):
+            return 0
+        max_output = (
+            kwargs.get("max_output_tokens")
+            or self.authorization.limits.decision_max_output_tokens
+        )
+        request_body = json.dumps(
+            {
+                "system_prompt": system_prompt,
+                "purpose": kwargs.get("purpose"),
+                "prompt_version": kwargs.get("prompt_version"),
+                "input": kwargs.get("payload"),
+                "public_process_summary": None,
+                "output_json_schema": output_schema.model_json_schema(),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        # Byte length is a conservative tokenizer-independent ceiling for the
+        # request text. Extra output space covers a repair turn and framing.
+        per_attempt = len(request_body.encode("utf-8")) + max_output * 8 + 1_024
+        return (
+            per_attempt
+            * self.authorization.limits.model_attempt_reservation
+            * self.request_reservation_multiplier
+        )
+
     def generate(self, **kwargs):
         from credra_agent.observability.runtime import require_logging
 
@@ -333,6 +374,7 @@ class PooledTrialModel:
                 "MODEL_ERROR", "trial active time exhausted", external_requests=0
             )
         external, tokens = model_reservation(self, self.authorization.limits)
+        tokens = max(tokens, self._request_token_bound(kwargs))
         self.calls += 1
         operation = f"call-{self.calls}"
         try:
@@ -501,10 +543,19 @@ def check_report(
     report: dict,
     package: dict,
     *,
-    required_finding_questions: set[str] | None = None,
+    required_finding_counts: dict[str, int] | None = None,
 ) -> list[dict]:
     """Financial truth is independently evaluated from frozen annual amounts."""
     checks = []
+    finding_counts = (
+        required_finding_counts
+        if required_finding_counts is not None
+        else {
+            item["question_id"]: item["minimum_verified_findings"]
+            for item in package["questions"]
+            if item.get("minimum_verified_findings", 0) > 0
+        }
+    )
     with localcontext() as context:
         context.prec = 50
         expected = {}
@@ -559,20 +610,52 @@ def check_report(
                 else "FAIL",
             }
         )
-    present_finding_questions = {
-        finding["question_id"]
-        for finding in report["findings"]
-        if finding["status"] in {"SUPPORTED", "REFUTED", "CONFLICTING"}
-        and finding["receipts"]
-    }
-    for question_id in sorted(
-        (required_finding_questions or set()) - present_finding_questions
-    ):
+    finding_claims_by_question: dict[str, set[str]] = {}
+    for finding in report["findings"]:
+        if (
+            finding["status"] in {"SUPPORTED", "REFUTED", "CONFLICTING"}
+            and finding["receipts"]
+        ):
+            finding_claims_by_question.setdefault(finding["question_id"], set()).add(
+                finding["claim_id"]
+            )
+    for question_id, required in sorted(finding_counts.items()):
+        actual = len(finding_claims_by_question.get(question_id, set()))
+        if actual < required:
+            checks.append(
+                {
+                    "check_id": f"evidence.required_question:{question_id}",
+                    "status": "FAIL",
+                    "reason": "INSUFFICIENT_VERIFIED_FINDINGS",
+                    "actual": actual,
+                    "required": required,
+                }
+            )
+    receipt_requirements = (
+        package.get("required_finding_receipts", [])
+        if required_finding_counts != {}
+        else []
+    )
+    for requirement in receipt_requirements:
+        matched = any(
+            finding["question_id"] == requirement["question_id"]
+            and finding["status"] in {"SUPPORTED", "REFUTED", "CONFLICTING"}
+            and any(
+                receipt["document_id"] == requirement["document_id"]
+                and (
+                    not requirement.get("location")
+                    or receipt["location"]["location"] == requirement["location"]
+                )
+                for receipt in finding["receipts"]
+            )
+            for finding in report["findings"]
+        )
         checks.append(
             {
-                "check_id": f"evidence.required_question:{question_id}",
-                "status": "FAIL",
-                "reason": "MISSING_VERIFIED_FINDING",
+                "check_id": "evidence.required_receipt:"
+                + requirement["requirement_id"],
+                "status": "PASS" if matched else "FAIL",
+                **({} if matched else {"reason": "MISSING_REQUIRED_RECEIPT"}),
             }
         )
     checks.append(
@@ -710,13 +793,13 @@ def run_complex_case_replay(
             check_report(
                 report,
                 package,
-                required_finding_questions={
-                    item.question_id
+                required_finding_counts={
+                    item.question_id: item.minimum_verified_findings
                     for item in task.questions
                     if item.minimum_verified_findings > 0
                 }
                 if mode == "agentic_replay"
-                else set(),
+                else {},
             )
             if state.get("report_ref")
             else [

@@ -48,6 +48,34 @@ from credra_agent.planning.models import (
     RunAuthorization,
 )
 
+
+def _proposes_missing_finding(draft: DecisionDraft, context: dict) -> bool:
+    """Allow one verifiable requirement step to escape a no-progress lock."""
+    if draft.tool != "verify_claim" or len(draft.claim_proposals) != 1:
+        return False
+    proposal = draft.claim_proposals[0]
+    if proposal.proposal_id in {
+        item["proposal_id"] for item in context["claim_proposals"]
+    }:
+        return False
+    progress = next(
+        (
+            item
+            for item in context["completion_progress"]
+            if item["question_id"] == proposal.question_id
+        ),
+        None,
+    )
+    if progress is None:
+        return False
+    if progress["required_finding_aspects"]:
+        return proposal.finding_aspect in progress["missing_finding_aspects"]
+    return (
+        len(progress["verified_finding_claim_ids"])
+        < progress["minimum_verified_findings"]
+    )
+
+
 PROMPT_VERSION = "coordinator-v2-finish-recovery"
 PROMPT_PATH = Path(__file__).parents[1] / "prompts" / "coordinator.md"
 DecisionFallback = Callable[
@@ -339,27 +367,6 @@ class Coordinator:
                 plan_version=decision_number,
                 task_spec_version=task_spec.version,
             )
-            try:
-                proposal_ref = store_proposals(
-                    self.artifacts,
-                    draft.claim_proposals,
-                    references=available_refs,
-                    task=task_spec,
-                    version=decision_number,
-                )
-            except ValueError:
-                return self._limited(
-                    "INVALID_CLAIM_PROPOSAL",
-                    required,
-                    actions,
-                    observations,
-                    hypothesis_map,
-                    artifact_refs,
-                )
-            if proposal_ref:
-                artifact_refs.append(proposal_ref)
-                available_refs.add(proposal_ref)
-
             if draft.decision == "FINISH":
                 completion_gaps = incomplete_completion_requirements(evidence_context)
                 already_replanned = any(
@@ -386,6 +393,34 @@ class Coordinator:
                     )
                     no_progress_count += 1
                     continue
+                if (
+                    completion_gaps
+                    and already_replanned
+                    and (
+                        draft.finish_reason != "NEEDS_REVIEW"
+                        or not draft.review_required
+                    )
+                ):
+                    rejections.append(
+                        {
+                            "code": "INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                            "message": "; ".join(completion_gaps)[:200],
+                        }
+                    )
+                    emit(
+                        "PLAN_CHANGED",
+                        status="REJECTED",
+                        plan_version=decision_number,
+                        error_code="INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                    )
+                    return self._limited(
+                        "INCOMPLETE_COMPLETION_REVIEW_REQUIRED",
+                        required,
+                        actions,
+                        observations,
+                        hypothesis_map,
+                        artifact_refs,
+                    )
                 coverage = self._coverage(required, observations, draft=draft)
                 coverage.unresolved_conflict_ids = current_conflicts(
                     self.artifacts,
@@ -554,6 +589,7 @@ class Coordinator:
                 )
                 no_progress_count += 1
                 continue
+            requirement_progress = _proposes_missing_finding(draft, evidence_context)
             try:
                 authorized = self.policy.authorize(
                     tool=draft.tool or "",
@@ -562,14 +598,37 @@ class Coordinator:
                     executable_tools=executable,
                     available_refs=available_refs,
                     prior_signatures=signatures,
-                    no_progress_locked=no_progress_count
-                    >= self.limits.no_progress_limit,
+                    no_progress_locked=(
+                        no_progress_count >= self.limits.no_progress_limit
+                        and not requirement_progress
+                    ),
                 )
             except PolicyViolation as exc:
                 rejections.append({"code": exc.code, "message": str(exc)[:200]})
                 emit("ACTION_STATE", status="REJECTED", error_code=exc.code)
                 no_progress_count += 1
                 continue
+
+            try:
+                proposal_ref = store_proposals(
+                    self.artifacts,
+                    draft.claim_proposals,
+                    references=available_refs,
+                    task=task_spec,
+                    version=decision_number,
+                )
+            except ValueError:
+                return self._limited(
+                    "INVALID_CLAIM_PROPOSAL",
+                    required,
+                    actions,
+                    observations,
+                    hypothesis_map,
+                    artifact_refs,
+                )
+            if proposal_ref:
+                artifact_refs.append(proposal_ref)
+                available_refs.add(proposal_ref)
 
             action_id = f"action-{decision_number}-{uuid4().hex[:12]}"
             action_budget_ref = f"artifacts/agent_action_budget_v{decision_number}.json"

@@ -65,6 +65,7 @@ class Question(IntentModel):
     completion_criteria: str = Field(min_length=1)
     required_metric_ids: list[str] = Field(default_factory=list, max_length=20)
     minimum_verified_findings: int = Field(default=0, ge=0, le=20)
+    required_finding_aspects: list[str] = Field(default_factory=list, max_length=20)
     focus: Literal[
         "cash_quality",
         "receivables",
@@ -74,6 +75,18 @@ class Question(IntentModel):
         "debt",
         "general",
     ] = "general"
+
+    @model_validator(mode="after")
+    def finding_requirements_are_distinct(self) -> "Question":
+        if len(set(self.required_finding_aspects)) != len(
+            self.required_finding_aspects
+        ):
+            raise ValueError("required finding aspects must be distinct")
+        if self.required_finding_aspects and self.minimum_verified_findings < len(
+            self.required_finding_aspects
+        ):
+            raise ValueError("minimum findings cannot be below required aspects")
+        return self
 
 
 class ConditionalInstruction(IntentModel):

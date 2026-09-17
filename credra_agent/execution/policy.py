@@ -30,6 +30,8 @@ def canonical_action_signature(tool: str, arguments: dict) -> str:
             "claim_id": arguments.get("claim_id"),
             "document_ids": sorted(set(arguments.get("document_ids", []))),
         }
+    elif tool == "read_document":
+        arguments = {"document_id": arguments.get("document_id")}
     body = json.dumps(
         {"tool": tool, "arguments": arguments},
         ensure_ascii=False,
@@ -74,9 +76,15 @@ class ActionPolicy:
         if isinstance(typed, SearchEvidenceArgs):
             self._validate_search(typed, task_spec)
         self._validate_references(typed, available_refs)
+        self._validate_reference_types(typed)
 
         signature = canonical_action_signature(tool, typed.model_dump(mode="json"))
         if signature in prior_signatures:
+            if tool == "read_document":
+                raise PolicyViolation(
+                    "DOCUMENT_ALREADY_READ",
+                    "use the retained document_read and propose verify_claim",
+                )
             raise PolicyViolation("DUPLICATE_ACTION", tool)
         return AuthorizedAction(arguments=typed, signature=signature)
 
@@ -122,3 +130,14 @@ class ActionPolicy:
         missing = sorted(set(refs) - available_refs)
         if missing:
             raise PolicyViolation("UNKNOWN_REFERENCE", missing[0])
+
+    @staticmethod
+    def _validate_reference_types(arguments: BaseModel) -> None:
+        if isinstance(arguments, VerifyClaimArgs) and any(
+            not reference.startswith("artifacts/agent_evidence_v")
+            for reference in arguments.source_refs
+        ):
+            raise PolicyViolation(
+                "INVALID_REFERENCE_TYPE",
+                "verify_claim requires an agent_evidence bundle reference",
+            )

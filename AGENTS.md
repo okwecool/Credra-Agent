@@ -23,6 +23,7 @@
 - 生产代码、测试、CLI、Schema、运行标识和 Prompt 版本使用稳定的功能或领域名称，不使用 `P20`、`P23` 等开发计划编号命名。计划编号只用于开发计划、阶段实施记录和开发日志的追踪。
 - 新文件或新模块必须对应清晰且可独立说明的职责；现有模块能够自然承载时优先扩展现有实现，不为单个开发步骤创建临时模块。
 - 测试文件按被测功能或模块命名，并与生产模块保持可识别的对应关系；测试名称描述行为和预期结果，不描述开发顺序。
+- Pytest 测试按职责放入 `tests/application/`、`tests/analysis/`、`tests/agentic/`、`tests/entry/`、`tests/financial/`、`tests/research/`、`tests/observability/` 或 `tests/runtime/`；测试辅助进程放入 `tests/support/`，需要显式运行的在线或协议冒烟程序放入 `tests/smoke/`，共享样本保留在 `tests/fixtures/`。除 `conftest.py` 和包初始化文件外，不在 `tests/` 根目录新增测试或辅助脚本。
 - 公共命名一旦持久化或形成兼容接口，修改时必须说明迁移和恢复影响；尚未发布的步骤编号命名应在提交前改为功能命名。
 
 ## 环境配置保护

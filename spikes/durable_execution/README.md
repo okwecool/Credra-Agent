@@ -58,7 +58,7 @@ asserted without parsing console prose.
 ## Automated verification
 
 ```powershell
-python -m pytest -q tests/test_durable_execution.py
+python -m pytest -q tests/runtime/test_durable_execution.py
 ruff check spikes tests
 ruff format --check spikes tests
 python -m pip check

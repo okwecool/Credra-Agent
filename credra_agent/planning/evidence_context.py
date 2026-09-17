@@ -187,36 +187,67 @@ def coordinator_evidence_context(store, references, task) -> dict:
                 }
             ]
     latest_claims = {}
+    latest_claim_references = {}
     for bundle in context["bundles"]:
         if bundle["eligible_for_current_task"]:
             for claim in bundle["claims"]:
                 latest_claims[claim["claim_id"]] = claim
+                latest_claim_references[claim["claim_id"]] = bundle["reference"]
     proposal_questions = {
         item["proposal_id"]: item["question_id"] for item in context["claim_proposals"]
     }
+    proposal_aspects = {
+        item["proposal_id"]: item.get("finding_aspect")
+        for item in context["claim_proposals"]
+    }
+    context["verified_claim_index"] = [
+        {
+            "claim_id": claim_id,
+            "question_id": proposal_questions.get(claim_id),
+            "finding_aspect": proposal_aspects.get(claim_id),
+            "status": claim["status"],
+            "reference": latest_claim_references[claim_id],
+        }
+        for claim_id, claim in sorted(latest_claims.items())
+        if claim["status"] in {"SUPPORTED", "REFUTED", "CONFLICTING"}
+    ]
     computed_metrics = {
         item["metric_id"]
         for result in context["financial_results"]
         for item in result["results"]
     }
-    context["completion_progress"] = [
-        {
-            "question_id": question.question_id,
-            "required_metric_ids": question.required_metric_ids,
-            "missing_metric_ids": sorted(
-                set(question.required_metric_ids) - computed_metrics
-            ),
-            "minimum_verified_findings": question.minimum_verified_findings,
-            "verified_finding_claim_ids": sorted(
-                claim_id
-                for claim_id, bound_question in proposal_questions.items()
-                if bound_question == question.question_id
-                and latest_claims.get(claim_id, {}).get("status")
-                in {"SUPPORTED", "REFUTED", "CONFLICTING"}
-            ),
-        }
-        for question in task.questions
-    ]
+    context["completion_progress"] = []
+    for question in task.questions:
+        verified_claim_ids = sorted(
+            claim_id
+            for claim_id, bound_question in proposal_questions.items()
+            if bound_question == question.question_id
+            and latest_claims.get(claim_id, {}).get("status")
+            in {"SUPPORTED", "REFUTED", "CONFLICTING"}
+        )
+        verified_aspects = sorted(
+            {
+                proposal_aspects[claim_id]
+                for claim_id in verified_claim_ids
+                if proposal_aspects.get(claim_id)
+            }
+        )
+        context["completion_progress"].append(
+            {
+                "question_id": question.question_id,
+                "required_metric_ids": question.required_metric_ids,
+                "missing_metric_ids": sorted(
+                    set(question.required_metric_ids) - computed_metrics
+                ),
+                "minimum_verified_findings": question.minimum_verified_findings,
+                "required_finding_aspects": question.required_finding_aspects,
+                "missing_finding_aspects": sorted(
+                    set(question.required_finding_aspects) - set(verified_aspects)
+                ),
+                "verified_finding_aspects": verified_aspects,
+                "verified_finding_claim_ids": verified_claim_ids,
+            }
+        )
     context["metadata_compacted"] = True
     truncated = len(context["bundles"]) > 10 or len(context["document_reads"]) > 3
     latest = {}
@@ -234,7 +265,12 @@ def coordinator_evidence_context(store, references, task) -> dict:
         }
         for bundle in context["bundles"][-10:]
     ]
-    context["document_reads"] = context["document_reads"][-3:]
+    latest_reads = {}
+    for read in context["document_reads"]:
+        document_id = read["document_id"]
+        latest_reads.pop(document_id, None)
+        latest_reads[document_id] = read
+    context["document_reads"] = list(latest_reads.values())[-3:]
     # Verification versions retain the full source corpus on disk. Do not send
     # that identical catalog once per receipt or discard the only usable catalog.
     seen_documents = set()
@@ -304,7 +340,16 @@ def incomplete_completion_requirements(context: dict) -> list[str]:
                 f"{item['question_id']}:missing_metrics="
                 + ",".join(item["missing_metric_ids"])
             )
-        actual = len(item["verified_finding_claim_ids"])
+        if item.get("missing_finding_aspects"):
+            gaps.append(
+                f"{item['question_id']}:missing_finding_aspects="
+                + ",".join(item["missing_finding_aspects"])
+            )
+        actual = len(
+            item["verified_finding_aspects"]
+            if item.get("required_finding_aspects")
+            else item["verified_finding_claim_ids"]
+        )
         required = item["minimum_verified_findings"]
         if actual < required:
             gaps.append(f"{item['question_id']}:verified_findings={actual}/{required}")
@@ -347,10 +392,13 @@ def store_proposals(
         item["proposal_id"]: ClaimProposal.model_validate(item)
         for item in evidence_context(store, references, task)["claim_proposals"]
     }
-    question_ids = {item.question_id for item in task.questions}
+    questions = {item.question_id: item for item in task.questions}
     for proposal in proposals:
-        if proposal.question_id not in question_ids:
+        if proposal.question_id not in questions:
             raise ValueError("proposal references unknown question")
+        required_aspects = questions[proposal.question_id].required_finding_aspects
+        if required_aspects and proposal.finding_aspect not in required_aspects:
+            raise ValueError("proposal must bind a required finding aspect")
         if proposal.proposal_id in known and known[proposal.proposal_id] != proposal:
             raise ValueError("proposal id is immutable")
         known[proposal.proposal_id] = proposal
